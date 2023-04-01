@@ -33,11 +33,11 @@ openai.api_version = "2022-12-01"
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 # max LLM token input size
-max_input_size = 500
+max_input_size = 512
 # set number of output tokens
-num_output = 48
+num_output = 256
 # set maximum chunk overlap
-max_chunk_overlap = 20
+max_chunk_overlap = 32
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
 
 llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
@@ -82,10 +82,10 @@ def craving_satisfier(city, food_craving):
         food_craving = openai.Completion.create(
             engine="text-davinci-003",
             prompt="Generate a random food craving",
-            max_tokens=50,
+            max_tokens=64,
             n=1,
             stop=None,
-            temperature=0.5,
+            temperature=0.8,
         )
         food_craving = food_craving.choices[0].text
         # Remove 2 new line characters from the beginning of the string
@@ -99,7 +99,7 @@ def craving_satisfier(city, food_craving):
     completions = openai.Completion.create(
         engine="text-davinci-003",
         prompt=prompt,
-        max_tokens=120,
+        max_tokens=128,
         n=1,
         stop=None,
         temperature=0.5,
