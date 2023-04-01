@@ -349,7 +349,7 @@ def summary_generator():
     global summary
     try:
         # summary = ask_query("Generate a short summary from the input context. The summary should include all the key points discussed").replace('\n', '')
-        summary = ask_query("Write a summary of the article that accurately conveys its main point while retaining important contextual information. The summary should be written in a clear and concise manner, avoiding direct copying of phrases or sentences from the original text. Your target audience is someone who may not have read the article, and the summary should be tailored to their level of familiarity with the subject matter. The length and format of the summary are up to you, but it should be informative and engaging.").replace('\n', '')
+        summary = ask_query("Write a summary of the article that accurately conveys its main point while retaining important contextual information. The summary should be a bulleted list written in a clear and concise manner, avoiding direct copying of phrases or sentences from the original text. Your target audience is someone who may not have read the article, and the summary should be tailored to their level of familiarity with the subject matter. The length and format of the summary are up to you, but it should be informative and engaging.").replace('\n', '')
     except:
         summary = "Summary not available"
     return summary
