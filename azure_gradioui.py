@@ -33,9 +33,9 @@ openai.api_version = "2022-12-01"
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 # max LLM token input size
-max_input_size = 512
+max_input_size = 1024
 # set number of output tokens
-num_output = 256
+num_output = 512
 # set maximum chunk overlap
 max_chunk_overlap = 32
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
@@ -202,8 +202,7 @@ def savetodisk(files):
 def build_index():
 
     documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
-    index = GPTSimpleVectorIndex(documents, embed_model=embedding_llm,
-                                 llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex(documents, embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     index.save_to_disk(UPLOAD_FOLDER + "/index.json")
 
 
@@ -341,7 +340,7 @@ def example_generator():
     global example_queries, example_qs
     try:
         example_qs = [[str(item)] for item in eval(ask_query(
-            "Generate the top 5 relevant questions from the input context. The questions should be general and applicable to a variety of topics and sources. Output must be must in the form of python list of 5 strings.").replace('\n', ''))]
+            "Generate the top 5 relevant questions from the input context. The questions should be general and applicable to a variety of topics and sources. Output must be must in the form of python list of 5 strings, 1 string for each question.").replace('\n', ''))]
     except:
         example_qs = example_queries
     return example_qs
@@ -351,7 +350,7 @@ def summary_generator():
     global summary
     try:
         # summary = ask_query("Generate a short summary from the input context. The summary should include all the key points discussed").replace('\n', '')
-        summary = ask_query("Write a summary of the article that accurately conveys its main point while retaining important contextual information. The summary should be a bulleted list written in a clear and concise manner, avoiding direct copying of phrases or sentences from the original text. Your target audience is someone who may not have read the article, and the summary should be tailored to their level of familiarity with the subject matter. The length and format of the summary are up to you, but it should be informative and engaging.").replace('\n', '')
+        summary = ask_query("Write a summary of input context that accurately conveys all its main point while retaining important contextual information. The summary should be a bulleted list written in a clear and concise manner, avoiding direct copying of phrases or sentences from the original text. Please remember that your audience is someone who may not have seen the context. The format of the summary should be informative and engaging with atleast 5 key points and a short conclusion.").lstrip('\n')
     except:
         summary = "Summary not available"
     return summary
