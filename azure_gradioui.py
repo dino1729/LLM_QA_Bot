@@ -40,6 +40,7 @@ num_output = 256
 max_chunk_overlap = 32
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
 
+#Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
     "api_type": "azure",
     "api_version": "2022-12-01",
@@ -58,26 +59,27 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 # Function to generate the trip plan
-
-
 def generate_trip_plan(city, days):
-    # prompt = f"Generate an itinerary for a trip to {city} for {days} days, making sure to cover all the popular tourist attractions."
-    prompt = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
-    completions = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=1024,
-        n=1,
-        stop=None,
-        temperature=0.5,
-    )
-    message = completions.choices[0].text
-    return f"Here is your trip plan for {city} for {days} day(s): {message}"
-
+    #Check if the days input is a number and throw an error if it is not
+    try:
+        days = int(days)
+        prompt = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
+        completions = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+        message = completions.choices[0].text
+        return f"Here is your trip plan for {city} for {days} day(s): {message}"
+    except:
+        return "Please enter a number for days."
 
 def craving_satisfier(city, food_craving):
     # If the food craving is input as "idk", generate a random food craving
-    if food_craving == "idk":
+    if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
         food_craving = openai.Completion.create(
             engine="text-davinci-003",
@@ -436,7 +438,7 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
                 craving_city_name = gr.Textbox(
                     placeholder="Enter the name of the city", label="City Name")
                 craving_cuisine = gr.Textbox(
-                    placeholder="What kind of food are you craving for?", label="Food")
+                    placeholder="What kind of food are you craving for? Enter idk if you don't know what you want to eat", label="Food")
                 craving_button = gr.Button("Cook").style(full_width=False)
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places")
