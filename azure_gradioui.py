@@ -1,14 +1,14 @@
 from calendar import c
 import json
 import os
-from shutil import copyfileobj
-from urllib.parse import parse_qs, urlparse
-
+import requests
 import gradio as gr
 import openai
 import PyPDF2
 import requests
-from bs4 import BeautifulSoup
+
+from shutil import copyfileobj
+from urllib.parse import parse_qs, urlparse
 from IPython.display import Markdown, display
 from langchain import OpenAI
 from langchain.agents import initialize_agent
@@ -23,6 +23,7 @@ from llama_index import (
     SimpleDirectoryReader,
 )
 from newspaper import Article
+from bs4 import BeautifulSoup
 from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -242,12 +243,22 @@ def download_ytvideo(url):
 def download_art(url):
 
     global example_queries, summary
-    # If there is a url in the input field, download the article
     if url:
         # Extract the article
         article = Article(url)
-        article.download()
-        article.parse()
+        try:
+            article.download()
+            article.parse()
+        except Exception as e:
+            print("Failed to download and parse article from URL: %s. Error: %s", url, str(e))
+            # Try an alternate method using requests and beautifulsoup
+            try:
+                req = requests.get(url)
+                soup = BeautifulSoup(req.content, 'html.parser')
+                article.text = soup.get_text()
+            except Exception as e:
+                print("Failed to download article using alternative method from URL: %s. Error: %s", url, str(e))
+                return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset.update(samples=example_queries), summary
         # Save the article to the UPLOAD_FOLDER
         with open(UPLOAD_FOLDER + "/article.txt", 'w') as f:
             f.write(article.text)
@@ -314,7 +325,7 @@ def example_generator():
 def summary_generator():
     global summary
     try:
-        summary = ask_query("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Analyze the entire input context and write a summary that accurately conveys all its key points. The summary should be a bulleted list written in a way that is engaging to the user.").lstrip('\n')
+        summary = ask_query("Analyze the entire input context and generate key takeaways in the form of a bulleted list written in a way that is engaging to the user.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
