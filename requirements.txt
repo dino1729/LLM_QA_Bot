@@ -62,7 +62,7 @@ pytorch-lightning-logging-comet
 pytube
 flask
 gpt_index
-llama-index==0.4.40 #Need to update this after llama-index 0.5.* is updated to handle AzureOpenAI service
+llama-index
 langchain
 langchain-utilities
 langchain-templates

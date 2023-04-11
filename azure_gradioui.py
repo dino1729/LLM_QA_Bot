@@ -2,7 +2,6 @@ from calendar import c
 from hmac import new
 import json
 import os
-from gpt_index import GPTListIndex
 import requests
 import gradio as gr
 import openai
@@ -25,6 +24,7 @@ from llama_index import (
     LLMPredictor,
     PromptHelper,
     SimpleDirectoryReader,
+    ServiceContext
 )
 from newspaper import Article
 from bs4 import BeautifulSoup
@@ -46,15 +46,18 @@ num_output = 2048
 # set maximum chunk overlap
 max_chunk_overlap = 32
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
-
 #Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
     "api_type": "azure",
     "api_version": "2022-12-01",
 })
 llm_predictor = LLMPredictor(llm=llm)
-
 embedding_llm = LangchainEmbedding(OpenAIEmbeddings(chunk_size=1))
+service_context = ServiceContext.from_defaults(
+    llm_predictor=llm_predictor,
+    embed_model=embedding_llm,
+    prompt_helper=prompt_helper
+)
 
 UPLOAD_FOLDER = './data'  # set the upload folder path
 example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], [
@@ -146,7 +149,8 @@ def savetodisk(files):
 def build_index():
 
     documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
-    index = GPTSimpleVectorIndex(documents, embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    #index = GPTSimpleVectorIndex(documents, embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex.from_documents(documents, service_context=service_context)
     index.save_to_disk(UPLOAD_FOLDER + "/index.json")
 
 
@@ -291,7 +295,8 @@ def ask(question, history):
     s.append(question)
     inp = ' '.join(s)
 
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question)
     answer = response.response
 
@@ -301,14 +306,17 @@ def ask(question, history):
 
 def ask_query(question):
 
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question)
     answer = response.response
 
     return answer
 
 def ask_fromfullcontext(question):
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    
+    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, response_mode="tree_summarize")
     answer = response.response
     
