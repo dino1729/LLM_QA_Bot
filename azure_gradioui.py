@@ -1,12 +1,15 @@
 from calendar import c
+from hmac import new
 import json
 import os
+from gpt_index import GPTListIndex
 import requests
 import gradio as gr
 import openai
 import PyPDF2
 import requests
 import re
+import ast
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -37,9 +40,9 @@ openai.api_version = "2022-12-01"
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 # max LLM token input size
-max_input_size = 1024
+max_input_size = 4096
 # set number of output tokens
-num_output = 512
+num_output = 2048
 # set maximum chunk overlap
 max_chunk_overlap = 32
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
@@ -186,10 +189,10 @@ def upload_file(files):
     clearnonfiles(files)
     # Build index
     build_index()
-    # Generate example queries
-    example_queries = example_generator()
     # Generate summary
     summary = summary_generator()
+    # Generate example queries
+    example_queries = example_generator()
 
     return "Files uploaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
 
@@ -222,10 +225,10 @@ def download_ytvideo(url):
             clearnonarticles()
             # Build index
             build_index()
-            # Generate example queries
-            example_queries = example_generator()
             # Generate summary
             summary = summary_generator()
+            # Generate example queries
+            example_queries = example_generator()
             return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
         # If the video does not have transcripts, download the video and post-process it locally
         else:
@@ -236,10 +239,11 @@ def download_ytvideo(url):
             clearnonvideos()
             # Build index
             build_index()
+             # Generate summary
+            summary = summary_generator()
             # Generate example queries
             example_queries = example_generator()
-            # Generate summary
-            summary = summary_generator()
+
             return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
     else:
         return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
@@ -271,10 +275,10 @@ def download_art(url):
         clearnonarticles()
         # Build index
         build_index()
-        # Generate example queries
-        example_queries = example_generator()
         # Generate summary
         summary = summary_generator()
+        # Generate example queries
+        example_queries = example_generator()
 
         return "Article downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
     else:
@@ -287,8 +291,7 @@ def ask(question, history):
     s.append(question)
     inp = ' '.join(s)
 
-    index = GPTSimpleVectorIndex.load_from_disk(
-        UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     response = index.query(question)
     answer = response.response
 
@@ -296,31 +299,34 @@ def ask(question, history):
 
     return history, history
 
-
 def ask_query(question):
-    index = GPTSimpleVectorIndex.load_from_disk(
-        UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     response = index.query(question)
     answer = response.response
 
     return answer
 
+def ask_fromfullcontext(question):
+    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
+    response = index.query(question, response_mode="tree_summarize")
+    answer = response.response
+    
+    return answer
 
 def cleartext(query, output):
     # Function to clear text
     return ["", ""]
 
-
 def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
 
-
 def example_generator():
     global example_queries, example_qs
     try:
-        example_qs = [[str(item)] for item in eval(ask_query(
-            "You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate top 5 relevant questions that would enable the user to get key ideas from the input context. Output must be must in the form of python list of 5 strings, 1 string for each question.").replace('\n', ''))]
+        llmresponse = ask_fromfullcontext("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Avoid including any irrelevant information like sponsorships or advertisements.")
+        example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
         example_qs = example_queries
@@ -330,7 +336,7 @@ def example_generator():
 def summary_generator():
     global summary
     try:
-        summary = ask_query("Analyze the entire input context and generate key takeaways in the form of a bulleted list written in a way that is engaging to the user.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 8 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
@@ -362,95 +368,68 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
     with gr.Row():
         with gr.Column(scale=1, min_width=250):
             with gr.Box():
-                files = gr.File(
-                    label="Upload the files to be analyzed", file_count="multiple")
+                files = gr.File(label="Upload the files to be analyzed", file_count="multiple")
                 with gr.Row():
                     upload_button = gr.Button("Upload").style(full_width=False)
                     upload_output = gr.Textbox(label="Upload Status")
             with gr.Tab(label="Video Analyzer"):
-                yturl = gr.Textbox(
-                    placeholder="Input must be a URL", label="Enter Youtube URL")
+                yturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Youtube URL")
                 with gr.Row():
-                    download_button = gr.Button(
-                        "Download").style(full_width=False)
+                    download_button = gr.Button("Download").style(full_width=False)
                     download_output = gr.Textbox(label="Video download Status")
             with gr.Tab(label="Article Analyzer"):
-                arturl = gr.Textbox(
-                    placeholder="Input must be a URL", label="Enter Article URL")
+                arturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Article URL")
                 with gr.Row():
-                    adownload_button = gr.Button(
-                        "Download").style(full_width=False)
-                    adownload_output = gr.Textbox(
-                        label="Article download Status")
+                    adownload_button = gr.Button("Download").style(full_width=False)
+                    adownload_output = gr.Textbox(label="Article download Status")
         with gr.Column(scale=2, min_width=650):
             with gr.Box():
-                summary_output = gr.Textbox(
-                    placeholder="Summary will be generated here", label="Key takeaways")
-                chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot").style(
-                    color_map=["blue", "grey"])
+                summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
+                chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot").style(color_map=["blue", "grey"])
                 state = gr.State([])
                 with gr.Row():
-                    query = gr.Textbox(
-                        show_label=False, placeholder="Enter text and press enter").style(container=False)
+                    query = gr.Textbox(show_label=False, placeholder="Enter text and press enter").style(container=False)
                     submit_button = gr.Button("Ask").style(full_width=False)
-                    clearquery_button = gr.Button(
-                        "Clear").style(full_width=False)
-                examples = gr.Dataset(samples=example_queries, components=[
-                                      query], type="index")
-                submit_button.click(
-                    ask, inputs=[query, state], outputs=[chatbot, state])
-                query.submit(ask, inputs=[query, state],
-                             outputs=[chatbot, state])
+                    clearquery_button = gr.Button("Clear").style(full_width=False)
+                examples = gr.Dataset(samples=example_queries, components=[query], type="index")
+                submit_button.click(ask, inputs=[query, state], outputs=[chatbot, state])
+                query.submit(ask, inputs=[query, state], outputs=[chatbot, state])
             clearchat_button = gr.Button("Clear Chat")
     with gr.Row():
         with gr.Tab(label="Trip Generator"):
             with gr.Row():
-                city_name = gr.Textbox(
-                    placeholder="Enter the name of the city", label="City Name")
-                number_of_days = gr.Textbox(
-                    placeholder="Enter the number of days", label="Number of Days")
+                city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
+                number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
                 city_button = gr.Button("Plan").style(full_width=False)
             with gr.Row():
                 city_output = gr.Textbox(label="Trip Plan")
                 clear_trip_button = gr.Button("Clear").style(full_width=False)
         with gr.Tab(label="Cravings Generator"):
             with gr.Row():
-                craving_city_name = gr.Textbox(
-                    placeholder="Enter the name of the city", label="City Name")
-                craving_cuisine = gr.Textbox(
-                    placeholder="What kind of food are you craving for? Enter idk if you don't know what you want to eat", label="Food")
+                craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
+                craving_cuisine = gr.Textbox(placeholder="What kind of food are you craving for? Enter idk if you don't know what you want to eat", label="Food")
                 craving_button = gr.Button("Cook").style(full_width=False)
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places")
-                clear_craving_button = gr.Button(
-                    "Clear").style(full_width=False)
+                clear_craving_button = gr.Button("Clear").style(full_width=False)
 
     # Upload button for uploading files
-    upload_button.click(upload_file, inputs=[files], outputs=[
-                        upload_output, examples, summary_output], show_progress=True)
+    upload_button.click(upload_file, inputs=[files], outputs=[upload_output, examples, summary_output], show_progress=True)
     # Download button for downloading youtube video
-    download_button.click(download_ytvideo, inputs=[yturl], outputs=[
-                          download_output, examples, summary_output], show_progress=True)
+    download_button.click(download_ytvideo, inputs=[yturl], outputs=[download_output, examples, summary_output], show_progress=True)
     # Download button for downloading article
-    adownload_button.click(download_art, inputs=[arturl], outputs=[
-                           adownload_output, examples, summary_output], show_progress=True)
+    adownload_button.click(download_art, inputs=[arturl], outputs=[adownload_output, examples, summary_output], show_progress=True)
     # City Planner button
-    city_button.click(generate_trip_plan, inputs=[
-                      city_name, number_of_days], outputs=[city_output], show_progress=True)
+    city_button.click(generate_trip_plan, inputs=[city_name, number_of_days], outputs=[city_output], show_progress=True)
     # Cravings button
-    craving_button.click(craving_satisfier, inputs=[
-                         craving_city_name, craving_cuisine], outputs=[craving_output], show_progress=True)
+    craving_button.click(craving_satisfier, inputs=[craving_city_name, craving_cuisine], outputs=[craving_output], show_progress=True)
 
     # Load example queries
     examples.click(load_example, inputs=[examples], outputs=[query])
 
-    clearquery_button.click(
-        cleartext, inputs=[query, query], outputs=[query, query])
-    clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[
-                            city_name, number_of_days, city_output])
-    clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[
-                               craving_city_name, craving_cuisine, craving_output])
-
+    clearquery_button.click(cleartext, inputs=[query, query], outputs=[query, query])
+    clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
+    clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
     # live = True
 
 if __name__ == '__main__':
