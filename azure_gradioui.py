@@ -1,3 +1,4 @@
+from calendar import c
 import json
 import os
 from shutil import copyfileobj
@@ -24,6 +25,7 @@ from llama_index import (
 from newspaper import Article
 from PIL import Image
 from pytube import YouTube
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Get API key from environment variable
 os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
@@ -112,62 +114,6 @@ def craving_satisfier(city, food_craving):
     message = message[1:]
     return f'Here are 3 restaurants in {city} that serve {food_craving}! Bon Appetit!! {message}'
 
-
-def pdftotext(file_name):
-    """
-    Function to extract text from .pdf format files
-    """
-    text = []
-    # Open the PDF file in read-binary mode
-    with open(file_name, 'rb') as file:
-        # Create a PDF object
-        pdf = PyPDF2.PdfReader(file)
-        # Get the number of pages in the PDF document
-        num_pages = len(pdf.pages)
-        # Iterate over every page
-        for page in range(num_pages):
-            # Extract the text from the page
-            result = pdf.pages[page].extract_text()
-            text.append(result)
-    text = "\n".join(text)
-    return text
-
-
-def preprocesstext(text):
-    """
-    Function to preprocess text
-    """
-    # Split the string into lines
-    lines = text.splitlines()
-    # Use a list comprehension to filter out empty lines
-    lines = [line for line in lines if line.strip()]
-    # Join the modified lines back into a single string
-    text = '\n'.join(lines)
-    return text
-
-
-def processfiles(files):
-    """
-    Function to extract text from documents
-    """
-    textlist = []
-    # Iterate over provided files
-    for file in files:
-        # Get file name
-        file_name = file.name
-        # Get extention of file name
-        ext = file_name.split(".")[-1].lower()
-        text = ""
-        # Process document based on extention
-        if ext == "pdf":
-            text = pdftotext(file_name)
-        # Preprocess text
-        text = preprocesstext(text)
-        # Append the text to final result
-        textlist.append(text)
-    return textlist
-
-
 def fileformatvaliditycheck(files):
     # Function to check validity of file formats
     for file in files:
@@ -177,13 +123,6 @@ def fileformatvaliditycheck(files):
         if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg"]:
             return False
     return True
-
-
-def createdocumentlist(files):
-    documents = []
-    for file in files:
-        documents.append(Document(file))
-    return documents
 
 
 def savetodisk(files):
@@ -256,21 +195,46 @@ def upload_file(files):
 def download_ytvideo(url):
 
     global example_queries, summary
-    # If there is a url in the input field, download the video
     if url:
-        yt = YouTube(url)
-        yt.streams.filter(progressive=True, file_extension="mp4").order_by(
-            "resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
-        # Clear files from UPLOAD_FOLDER
-        clearnonvideos()
-        # Build index
-        build_index()
-        # Generate example queries
-        example_queries = example_generator()
-        # Generate summary
-        summary = summary_generator()
-
-        return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+        # Extract the video id from the url
+        video_id = url.split("=")[1]
+        try:
+            # Download the transcript using youtube_transcript_api
+            transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
+        except Exception as e:
+            # Handle the case where the video does not have transcripts
+            print("Error occurred while downloading transcripts:", str(e))
+            transcript_list = []
+        # Check if the video has already generated transcripts
+        if transcript_list:
+            # Join all the transcript text into a single string
+            transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
+            # Save the transcript to a file in UPLOAD_FOLDER
+            with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
+                f.write(transcript_text)
+            # Clear files from UPLOAD_FOLDER
+            clearnonarticles()
+            # Build index
+            build_index()
+            # Generate example queries
+            example_queries = example_generator()
+            # Generate summary
+            summary = summary_generator()
+            return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+        # If the video does not have transcripts, download the video and post-process it locally
+        else:
+            yt = YouTube(url)
+            # Download the video and post-process it if there are no captions
+            yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
+            # Clear files from UPLOAD_FOLDER
+            clearnonvideos()
+            # Build index
+            build_index()
+            # Generate example queries
+            example_queries = example_generator()
+            # Generate summary
+            summary = summary_generator()
+            return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
     else:
         return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
 
@@ -340,8 +304,9 @@ def example_generator():
     global example_queries, example_qs
     try:
         example_qs = [[str(item)] for item in eval(ask_query(
-            "Generate the top 5 relevant questions from the input context. The questions should be general and applicable to a variety of topics and sources. Output must be must in the form of python list of 5 strings, 1 string for each question.").replace('\n', ''))]
-    except:
+            "You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate top 5 relevant questions that would enable the user to get key ideas from the input context. Output must be must in the form of python list of 5 strings, 1 string for each question.").replace('\n', ''))]
+    except Exception as e:
+        print("Error occurred while generating examples:", str(e))
         example_qs = example_queries
     return example_qs
 
@@ -349,9 +314,9 @@ def example_generator():
 def summary_generator():
     global summary
     try:
-        # summary = ask_query("Generate a short summary from the input context. The summary should include all the key points discussed").replace('\n', '')
-        summary = ask_query("Write a summary of input context that accurately conveys all its main point while retaining important contextual information. The summary should be a bulleted list written in a clear and concise manner, avoiding direct copying of phrases or sentences from the original text. Please remember that your audience is someone who may not have seen the context. The format of the summary should be informative and engaging with atleast 5 key points and a short conclusion.").lstrip('\n')
-    except:
+        summary = ask_query("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Analyze the entire input context and write a summary that accurately conveys all its key points. The summary should be a bulleted list written in a way that is engaging to the user.").lstrip('\n')
+    except Exception as e:
+        print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
     return summary
 
