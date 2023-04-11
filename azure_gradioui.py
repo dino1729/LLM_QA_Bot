@@ -6,6 +6,7 @@ import gradio as gr
 import openai
 import PyPDF2
 import requests
+import re
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -198,7 +199,11 @@ def download_ytvideo(url):
     global example_queries, summary
     if url:
         # Extract the video id from the url
-        video_id = url.split("=")[1]
+        match = re.search(r"youtu\.be\/(.+)", url)
+        if match:
+            video_id = match.group(1)
+        else:
+            video_id = url.split("=")[1]
         try:
             # Download the transcript using youtube_transcript_api
             transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
