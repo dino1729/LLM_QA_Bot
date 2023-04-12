@@ -20,6 +20,7 @@ from langchain.llms import AzureOpenAI
 from llama_index import (
     Document,
     GPTSimpleVectorIndex,
+    GPTListIndex,
     LangchainEmbedding,
     LLMPredictor,
     PromptHelper,
@@ -45,7 +46,11 @@ max_input_size = 4096
 num_output = 2048
 # set maximum chunk overlap
 max_chunk_overlap = 32
-prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
+# set chunk size limit
+chunk_size_limit = 2048
+# set prompt helper
+prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap, chunk_size_limit=chunk_size_limit)
+
 #Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
     "api_type": "azure",
@@ -60,8 +65,7 @@ service_context = ServiceContext.from_defaults(
 )
 
 UPLOAD_FOLDER = './data'  # set the upload folder path
-example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], [
-    "List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
+example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
 example_qs = []
 
 # If the UPLOAD_FOLDER path does not exist, create it
@@ -104,8 +108,7 @@ def craving_satisfier(city, food_craving):
         food_craving = food_craving[2:]
         print(f"Don't worry, yo! I think you are craving for {food_craving}!")
     else:
-        print(
-            f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
+        print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
 
     prompt = f"I'm looking for 3 restaurants in {city} that serves {food_craving}. Just give me a list of 3 restaurants with short address."
     completions = openai.Completion.create(
@@ -149,8 +152,8 @@ def savetodisk(files):
 def build_index():
 
     documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
-    #index = GPTSimpleVectorIndex(documents, embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     index = GPTSimpleVectorIndex.from_documents(documents, service_context=service_context)
+    #index = GPTListIndex.from_documents(documents, service_context=service_context)
     index.save_to_disk(UPLOAD_FOLDER + "/index.json")
 
 
@@ -295,9 +298,9 @@ def ask(question, history):
     s.append(question)
     inp = ' '.join(s)
 
-    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
-    response = index.query(question)
+    #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    response = index.query(question, mode="embedding")
     answer = response.response
 
     history.append((question, answer))
@@ -306,17 +309,17 @@ def ask(question, history):
 
 def ask_query(question):
 
-    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
-    response = index.query(question)
+    #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    response = index.query(question, mode="embedding")
     answer = response.response
 
     return answer
 
 def ask_fromfullcontext(question):
     
-    #index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", embed_model=embedding_llm, llm_predictor=llm_predictor, prompt_helper=prompt_helper)
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, response_mode="tree_summarize")
     answer = response.response
     
@@ -344,7 +347,7 @@ def example_generator():
 def summary_generator():
     global summary
     try:
-        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 8 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 6 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
