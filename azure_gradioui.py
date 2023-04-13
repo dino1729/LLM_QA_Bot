@@ -135,7 +135,6 @@ def fileformatvaliditycheck(files):
             return False
     return True
 
-
 def savetodisk(files):
     # Save the files to the UPLOAD_FOLDER
     for file in files:
@@ -147,7 +146,6 @@ def savetodisk(files):
             # Save the file to the UPLOAD_FOLDER
             with open(UPLOAD_FOLDER + "/" + file_name, 'wb') as f1:
                 copyfileobj(f, f1)
-
 
 def build_index():
 
@@ -177,7 +175,6 @@ def clearnonarticles():
         if file not in ["article.txt"]:
             os.remove(UPLOAD_FOLDER + "/" + file)
 
-
 def upload_file(files):
 
     global example_queries, summary
@@ -202,7 +199,6 @@ def upload_file(files):
     example_queries = example_generator()
 
     return "Files uploaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
-
 
 def download_ytvideo(url):
 
@@ -255,7 +251,6 @@ def download_ytvideo(url):
     else:
         return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
 
-
 def download_art(url):
 
     global example_queries, summary
@@ -291,7 +286,6 @@ def download_art(url):
     else:
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
 
-
 def ask(question, history):
     history = history or []
     s = list(sum(history, ()))
@@ -300,7 +294,7 @@ def ask(question, history):
 
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
-    response = index.query(question, mode="embedding")
+    response = index.query(question, similarity_top_k=3, mode="embedding")
     answer = response.response
 
     history.append((question, answer))
@@ -311,7 +305,7 @@ def ask_query(question):
 
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
-    response = index.query(question, mode="embedding")
+    response = index.query(question, similarity_top_k=3, mode="embedding")
     answer = response.response
 
     return answer
@@ -325,14 +319,6 @@ def ask_fromfullcontext(question):
     
     return answer
 
-def cleartext(query, output):
-    # Function to clear text
-    return ["", ""]
-
-def clearhistory(field1, field2, field3):
-    # Function to clear history
-    return ["", "", ""]
-
 def example_generator():
     global example_queries, example_qs
     try:
@@ -343,27 +329,31 @@ def example_generator():
         example_qs = example_queries
     return example_qs
 
-
 def summary_generator():
     global summary
     try:
-        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 6 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 7 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
     return summary
-
 
 def update_examples():
     global example_queries
     example_queries = example_generator()
     return gr.Dataset.update(samples=example_queries)
 
-
 def load_example(example_id):
     global example_queries
     return example_queries[example_id][0]
 
+def cleartext(query, output):
+    # Function to clear text
+    return ["", ""]
+
+def clearhistory(field1, field2, field3):
+    # Function to clear history
+    return ["", "", ""]
 
 with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
     gr.Markdown(
