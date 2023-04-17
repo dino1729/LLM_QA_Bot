@@ -429,6 +429,7 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
     examples.click(load_example, inputs=[examples], outputs=[query])
 
     clearquery_button.click(cleartext, inputs=[query, query], outputs=[query, query])
+    clearchat_button.click(cleartext, inputs=[query,chatbot], outputs=[query,chatbot])
     clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
     clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
     # live = True
