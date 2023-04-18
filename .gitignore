@@ -1,5 +1,6 @@
 .python-version
 .DS_Store
 data/
+iosdata/
 nohup.out
 __pycache__/
