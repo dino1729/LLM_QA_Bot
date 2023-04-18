@@ -10,6 +10,7 @@ import re
 import ast
 import argparse
 import logging
+import dotenv
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -35,10 +36,10 @@ from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 
 # Get API key from environment variable
+dotenv.load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
-os.environ["OPENAI_API_BASE"] = os.environ.get("AZUREOPENAIENDPOINT")
-openai.api_type = "azure"
-openai.api_version = "2022-12-01"
+openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
+openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 # max LLM token input size
@@ -54,8 +55,8 @@ prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap, chun
 
 #Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
-    "api_type": "azure",
-    "api_version": "2022-12-01",
+    "api_type": os.environ.get("AZUREOPENAIAPITYPE"),
+    "api_version": os.environ.get("AZUREOPENAIAPIVERSION"),
 })
 llm_predictor = LLMPredictor(llm=llm)
 embedding_llm = LangchainEmbedding(OpenAIEmbeddings(chunk_size=1))
