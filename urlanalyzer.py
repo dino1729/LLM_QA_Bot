@@ -9,6 +9,7 @@ import requests
 import re
 import ast
 import argparse
+import logging
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -88,9 +89,14 @@ def clearnonarticles():
         if file not in ["article.txt"]:
             os.remove(UPLOAD_FOLDER + "/" + file)
 
+def clearnonvideos():
+    # Ensure the UPLOAD_FOLDER contains only the video downloaded
+    for file in os.listdir(UPLOAD_FOLDER):
+        if file not in ["video.mp4"]:
+            os.remove(UPLOAD_FOLDER + "/" + file)
+
 def download_ytvideo(url):
 
-    global summary
     if url:
         # Extract the video id from the url
         match = re.search(r"youtu\.be\/(.+)", url)
@@ -104,26 +110,30 @@ def download_ytvideo(url):
         except Exception as e:
             # Handle the case where the video does not have transcripts
             print("Error occurred while downloading transcripts:", str(e))
-        transcript_list = []
-        # Join all the transcript text into a single string
-        transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
-        # Save the transcript to a file in UPLOAD_FOLDER
-        with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
-            f.write(transcript_text)
-        # Clear files from UPLOAD_FOLDER
-        clearnonarticles()
-        # Build index
-        build_index()
-        # Generate summary
-        summary = summary_generator()
-        return summary
+            transcript_list = []
+        # Check if the video has already generated transcripts
+        if transcript_list:
+            # Join all the transcript text into a single string
+            transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
+            # Save the transcript to a file in UPLOAD_FOLDER
+            with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
+                f.write(transcript_text)
+            # Clear files from UPLOAD_FOLDER
+            clearnonarticles()
+            # Build index
+            build_index()
+            # Generate summary
+            summary = summary_generator()
+            # Generate example queries
+            return summary
         # If the video does not have transcripts, download the video and post-process it locally
+        else:
+            return "Youtube video doesn't have transcripts"
     else:
         return "Please enter a valid Youtube URL"
 
-def download_art(url):
 
-    global summary
+def download_art(url):
     if url:
         # Extract the article
         article = Article(url)
@@ -155,7 +165,6 @@ def download_art(url):
         return "Please enter a valid URL"
 
 def ask_fromfullcontext(question):
-    
     index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, response_mode="tree_summarize")
@@ -164,7 +173,6 @@ def ask_fromfullcontext(question):
     return answer
 
 def summary_generator():
-    global summary
     try:
         summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 8 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
     except Exception as e:
@@ -173,10 +181,13 @@ def summary_generator():
     return summary
 
 if __name__ == "__main__":
+    logger = logging.getLogger()
+    logger.level = logging.WARN
     parser = argparse.ArgumentParser(description="Process a URL to generate a summary.")
     parser.add_argument("url", help="The URL of the article or YouTube video.")
     args = parser.parse_args()
 
+    summary = ""
     url = args.url.strip()
     if "youtube.com/watch" in url or "youtu.be/" in url:
         summary = download_ytvideo(url)
