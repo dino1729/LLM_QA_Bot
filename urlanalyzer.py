@@ -3,7 +3,6 @@ from hmac import new
 import json
 import os
 import requests
-import gradio as gr
 import openai
 import PyPDF2
 import requests
