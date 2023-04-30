@@ -42,6 +42,7 @@ openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
 openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
+LLM_DEPLOYMENT_NAME = "text-davinci-003"
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens
@@ -54,7 +55,7 @@ chunk_size_limit = 2048
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap, chunk_size_limit=chunk_size_limit)
 
 #Update your deployment name accordingly
-llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
+llm = AzureOpenAI(deployment_name=LLM_DEPLOYMENT_NAME, model_kwargs={
     "api_type": os.environ.get("AZUREOPENAIAPITYPE"),
     "api_version": os.environ.get("AZUREOPENAIAPIVERSION"),
 })
