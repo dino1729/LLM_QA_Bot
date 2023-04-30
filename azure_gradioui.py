@@ -9,6 +9,9 @@ import PyPDF2
 import requests
 import re
 import ast
+import dotenv
+from datetime import datetime
+import logging
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -32,14 +35,23 @@ from bs4 import BeautifulSoup
 from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
+import supabase
+
+logger = logging.getLogger()
+logger.level = logging.WARN
 
 # Get API key from environment variable
+dotenv.load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
-os.environ["OPENAI_API_BASE"] = os.environ.get("AZUREOPENAIENDPOINT")
-openai.api_type = "azure"
-openai.api_version = "2022-12-01"
+openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
+openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
+LLM_DEPLOYMENT_NAME = "text-davinci-003"
+#Supabase API key
+SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens
@@ -52,9 +64,9 @@ chunk_size_limit = 2048
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap, chunk_size_limit=chunk_size_limit)
 
 #Update your deployment name accordingly
-llm = AzureOpenAI(deployment_name="text-davinci-003", model_kwargs={
-    "api_type": "azure",
-    "api_version": "2022-12-01",
+llm = AzureOpenAI(deployment_name=LLM_DEPLOYMENT_NAME, model_kwargs={
+    "api_type": os.environ.get("AZUREOPENAIAPITYPE"),
+    "api_version": os.environ.get("AZUREOPENAIAPIVERSION"),
 })
 llm_predictor = LLMPredictor(llm=llm)
 embedding_llm = LangchainEmbedding(OpenAIEmbeddings(chunk_size=1))
@@ -136,16 +148,19 @@ def fileformatvaliditycheck(files):
     return True
 
 def savetodisk(files):
+    filenames = []
     # Save the files to the UPLOAD_FOLDER
     for file in files:
         # Extract the file name
         filename_with_path = file.name
         file_name = file.name.split("/")[-1]
+        filenames.append(file_name)
         # Open the file in read-binary mode
         with open(filename_with_path, 'rb') as f:
             # Save the file to the UPLOAD_FOLDER
             with open(UPLOAD_FOLDER + "/" + file_name, 'wb') as f1:
                 copyfileobj(f, f1)
+    return filenames
 
 def build_index():
 
@@ -154,6 +169,25 @@ def build_index():
     #index = GPTListIndex.from_documents(documents, service_context=service_context)
     index.save_to_disk(UPLOAD_FOLDER + "/index.json")
 
+def upload_data_to_supabase(index_data, title, url):
+    # Insert the data for each document into the Supabase table
+    supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
+    for doc_id, doc_data in index_data["docstore"]["docs"].items():
+        content_title = title
+        content_url = url
+        content_date = datetime.today().strftime('%Y-%m-%d')
+        content_text = doc_data['text']
+        content_length = len(content_text)
+        embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
+
+        result = supabase_client.table('mp').insert({
+            'content_title': content_title,
+            'content_url': content_url,
+            'content_date': content_date,
+            'content': content_text,
+            'content_length': content_length,
+            'embedding': embedding
+        }).execute()
 
 def clearnonfiles(files):
     # Ensure the UPLOAD_FOLDER contains only the files uploaded
@@ -188,11 +222,14 @@ def upload_file(files):
         return "Please upload documents in pdf/txt/docx/png/jpg/jpeg format only.", gr.Dataset.update(samples=example_queries), summary
 
     # Save files to UPLOAD_FOLDER
-    savetodisk(files)
+    uploaded_filenames = savetodisk(files)
     # Clear files from UPLOAD_FOLDER
     clearnonfiles(files)
     # Build index
     build_index()
+    # Upload data to Supabase
+    index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+    upload_data_to_supabase(index_data, title=uploaded_filenames[0], url="Local")
     # Generate summary
     summary = summary_generator()
     # Generate example queries
@@ -211,6 +248,13 @@ def download_ytvideo(url):
         else:
             video_id = url.split("=")[1]
         try:
+            # Use pytube to get the video title
+            yt = YouTube(url)
+            video_title = yt.title
+        except Exception as e:
+            print("Error occurred while getting video title:", str(e))
+            video_title = video_id
+        try:
             # Download the transcript using youtube_transcript_api
             transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
         except Exception as e:
@@ -228,6 +272,9 @@ def download_ytvideo(url):
             clearnonarticles()
             # Build index
             build_index()
+            # Upload data to Supabase
+            index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+            upload_data_to_supabase(index_data, title=video_title, url=url)
             # Generate summary
             summary = summary_generator()
             # Generate example queries
@@ -235,13 +282,15 @@ def download_ytvideo(url):
             return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
         # If the video does not have transcripts, download the video and post-process it locally
         else:
-            yt = YouTube(url)
             # Download the video and post-process it if there are no captions
             yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
             # Clear files from UPLOAD_FOLDER
             clearnonvideos()
             # Build index
             build_index()
+            # Upload data to Supabase
+            index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+            upload_data_to_supabase(index_data, title=video_title, url=url)
              # Generate summary
             summary = summary_generator()
             # Generate example queries
@@ -277,6 +326,9 @@ def download_art(url):
         clearnonarticles()
         # Build index
         build_index()
+        # Upload data to Supabase
+        index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+        upload_data_to_supabase(index_data, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
         # Generate example queries
