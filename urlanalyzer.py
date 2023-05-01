@@ -88,7 +88,7 @@ def build_index():
 def upload_data_to_supabase(index_data, title, url):
     # Insert the data for each document into the Supabase table
     supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
-    for doc_id, doc_data in index_data["docstore"]["docs"].items():
+    for doc_id, doc_data in index_data["docstore"]["__data__"]["docs"].items():
         content_title = title
         content_url = url
         content_date = datetime.today().strftime('%Y-%m-%d')
