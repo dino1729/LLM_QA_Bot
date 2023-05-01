@@ -67,3 +67,4 @@ langchain
 langchain-utilities
 langchain-templates
 youtube_transcript_api
+supabase
