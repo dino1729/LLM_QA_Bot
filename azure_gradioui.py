@@ -36,6 +36,7 @@ from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 import supabase
+import tiktoken
 
 logger = logging.getLogger()
 logger.level = logging.WARN
@@ -79,6 +80,7 @@ service_context = ServiceContext.from_defaults(
 UPLOAD_FOLDER = './data'  # set the upload folder path
 example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
 example_qs = []
+summary = "No Summary available yet"
 
 # If the UPLOAD_FOLDER path does not exist, create it
 if not os.path.exists(UPLOAD_FOLDER):
@@ -178,14 +180,17 @@ def upload_data_to_supabase(index_data, title, url):
         content_date = datetime.today().strftime('%Y-%m-%d')
         content_text = doc_data['text']
         content_length = len(content_text)
+        content_tokens = len(tiktoken.get_encoding("cl100k_base").encode(content_text))
+        cleaned_content_text = re.sub(r'\W+|\s+', ' ', content_text)
         embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
 
         result = supabase_client.table('mp').insert({
             'content_title': content_title,
             'content_url': content_url,
             'content_date': content_date,
-            'content': content_text,
+            'content': cleaned_content_text,
             'content_length': content_length,
+            'content_tokens': content_tokens,
             'embedding': embedding
         }).execute()
 
@@ -195,13 +200,11 @@ def clearnonfiles(files):
         if file not in [file.name.split("/")[-1] for file in files]:
             os.remove(UPLOAD_FOLDER + "/" + file)
 
-
 def clearnonvideos():
     # Ensure the UPLOAD_FOLDER contains only the video downloaded
     for file in os.listdir(UPLOAD_FOLDER):
         if file not in ["video.mp4"]:
             os.remove(UPLOAD_FOLDER + "/" + file)
-
 
 def clearnonarticles():
     # Ensure the UPLOAD_FOLDER contains only the article downloaded
@@ -238,65 +241,68 @@ def upload_file(files):
     return "Files uploaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
 
 def download_ytvideo(url):
-
     global example_queries, summary
     if url:
-        # Extract the video id from the url
-        match = re.search(r"youtu\.be\/(.+)", url)
-        if match:
-            video_id = match.group(1)
-        else:
-            video_id = url.split("=")[1]
-        try:
-            # Use pytube to get the video title
-            yt = YouTube(url)
-            video_title = yt.title
-        except Exception as e:
-            print("Error occurred while getting video title:", str(e))
-            video_title = video_id
-        try:
-            # Download the transcript using youtube_transcript_api
-            transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
-        except Exception as e:
-            # Handle the case where the video does not have transcripts
-            print("Error occurred while downloading transcripts:", str(e))
-            transcript_list = []
-        # Check if the video has already generated transcripts
-        if transcript_list:
-            # Join all the transcript text into a single string
-            transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
-            # Save the transcript to a file in UPLOAD_FOLDER
-            with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
-                f.write(transcript_text)
-            # Clear files from UPLOAD_FOLDER
-            clearnonarticles()
-            # Build index
-            build_index()
-            # Upload data to Supabase
-            index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
-            upload_data_to_supabase(index_data, title=video_title, url=url)
-            # Generate summary
-            summary = summary_generator()
-            # Generate example queries
-            example_queries = example_generator()
-            return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
-        # If the video does not have transcripts, download the video and post-process it locally
-        else:
-            # Download the video and post-process it if there are no captions
-            yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
-            # Clear files from UPLOAD_FOLDER
-            clearnonvideos()
-            # Build index
-            build_index()
-            # Upload data to Supabase
-            index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
-            upload_data_to_supabase(index_data, title=video_title, url=url)
-             # Generate summary
-            summary = summary_generator()
-            # Generate example queries
-            example_queries = example_generator()
+        # Check if the URL belongs to YouTube
+        if "youtube.com" in url or "youtu.be" in url:
+            # Extract the video id from the url
+            match = re.search(r"youtu\.be\/(.+)", url)
+            if match:
+                video_id = match.group(1)
+            else:
+                video_id = url.split("=")[1]
+            try:
+                # Use pytube to get the video title
+                yt = YouTube(url)
+                video_title = yt.title
+            except Exception as e:
+                print("Error occurred while getting video title:", str(e))
+                video_title = video_id
+            try:
+                # Download the transcript using youtube_transcript_api
+                transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
+            except Exception as e:
+                # Handle the case where the video does not have transcripts
+                print("Error occurred while downloading transcripts:", str(e))
+                transcript_list = []
+            # Check if the video has already generated transcripts
+            if transcript_list:
+                # Join all the transcript text into a single string
+                transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
+                # Save the transcript to a file in UPLOAD_FOLDER
+                with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
+                    f.write(transcript_text)
+                # Clear files from UPLOAD_FOLDER
+                clearnonarticles()
+                # Build index
+                build_index()
+                # Upload data to Supabase
+                index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+                upload_data_to_supabase(index_data, title=video_title, url=url)
+                # Generate summary
+                summary = summary_generator()
+                # Generate example queries
+                example_queries = example_generator()
+                return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+            # If the video does not have transcripts, download the video and post-process it locally
+            else:
+                # Download the video and post-process it if there are no captions
+                yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
+                # Clear files from UPLOAD_FOLDER
+                clearnonvideos()
+                # Build index
+                build_index()
+                # Upload data to Supabase
+                index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+                upload_data_to_supabase(index_data, title=video_title, url=url)
+                 # Generate summary
+                summary = summary_generator()
+                # Generate example queries
+                example_queries = example_generator()
 
-            return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+        else:
+            return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
     else:
         return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
 
@@ -426,7 +432,7 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
                     upload_button = gr.Button("Upload").style(full_width=False)
                     upload_output = gr.Textbox(label="Upload Status")
             with gr.Tab(label="Video Analyzer"):
-                yturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Youtube URL")
+                yturl = gr.Textbox(placeholder="Input must be a Youtube URL", label="Enter Youtube URL")
                 with gr.Row():
                     download_button = gr.Button("Download").style(full_width=False)
                     download_output = gr.Textbox(label="Video download Status")

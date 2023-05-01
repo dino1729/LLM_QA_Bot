@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS mp (
   content_date TEXT,
   content TEXT,
   content_length BIGINT,
+  content_tokens BIGINT,
   embedding VECTOR(1536)
 );
 
@@ -25,6 +26,7 @@ RETURNS TABLE (
   content_date TEXT,
   content TEXT,
   content_length BIGINT,
+  content_tokens BIGINT,
   similarity FLOAT
 ) LANGUAGE plpgsql AS $$
 BEGIN
@@ -35,6 +37,7 @@ BEGIN
     mp.content_date,
     mp.content,
     mp.content_length,
+    mp.content_tokens,
     1 - (mp.embedding <=> query_embedding) AS similarity
   FROM mp
   WHERE 1 - (mp.embedding <=> query_embedding) > similarity_threshold
