@@ -11,6 +11,7 @@ import ast
 import argparse
 import logging
 import dotenv
+from datetime import datetime
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -34,6 +35,8 @@ from bs4 import BeautifulSoup
 from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
+import supabase
+import tiktoken
 
 # Get API key from environment variable
 dotenv.load_dotenv()
@@ -43,6 +46,9 @@ openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 LLM_DEPLOYMENT_NAME = "text-davinci-003"
+#Supabase API key
+SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens
@@ -79,6 +85,29 @@ def build_index():
     #index = GPTListIndex.from_documents(documents, service_context=service_context)
     index.save_to_disk(UPLOAD_FOLDER + "/index.json")
 
+def upload_data_to_supabase(index_data, title, url):
+    # Insert the data for each document into the Supabase table
+    supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
+    for doc_id, doc_data in index_data["docstore"]["docs"].items():
+        content_title = title
+        content_url = url
+        content_date = datetime.today().strftime('%Y-%m-%d')
+        content_text = doc_data['text']
+        content_length = len(content_text)
+        content_tokens = len(tiktoken.get_encoding("cl100k_base").encode(content_text))
+        cleaned_content_text = re.sub(r'\W+|\s+', ' ', content_text)
+        embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
+
+        result = supabase_client.table('mp').insert({
+            'content_title': content_title,
+            'content_url': content_url,
+            'content_date': content_date,
+            'content': cleaned_content_text,
+            'content_length': content_length,
+            'content_tokens': content_tokens,
+            'embedding': embedding
+        }).execute()
+
 def clearnonfiles(files):
     # Ensure the UPLOAD_FOLDER contains only the files uploaded
     for file in os.listdir(UPLOAD_FOLDER):
@@ -107,6 +136,13 @@ def download_ytvideo(url):
         else:
             video_id = url.split("=")[1]
         try:
+            # Use pytube to get the video title
+            yt = YouTube(url)
+            video_title = yt.title
+        except Exception as e:
+            print("Error occurred while getting video title:", str(e))
+            video_title = video_id
+        try:
             # Download the transcript using youtube_transcript_api
             transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
         except Exception as e:
@@ -124,6 +160,9 @@ def download_ytvideo(url):
             clearnonarticles()
             # Build index
             build_index()
+            # Upload data to Supabase
+            index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+            upload_data_to_supabase(index_data, title=video_title, url=url)
             # Generate summary
             summary = summary_generator()
             # Generate example queries
@@ -133,7 +172,6 @@ def download_ytvideo(url):
             return "Youtube video doesn't have transcripts"
     else:
         return "Please enter a valid Youtube URL"
-
 
 def download_art(url):
     if url:
@@ -159,6 +197,9 @@ def download_art(url):
         clearnonarticles()
         # Build index
         build_index()
+        # Upload data to Supabase
+        index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+        upload_data_to_supabase(index_data, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
 
