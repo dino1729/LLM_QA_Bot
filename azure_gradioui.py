@@ -56,13 +56,13 @@ SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens
-num_output = 2048
+num_output = 1024
 # set maximum chunk overlap
-max_chunk_overlap = 32
+max_chunk_overlap = 16
 # set chunk size limit
-chunk_size_limit = 2048
+chunk_size_limit = 256
 # set prompt helper
-prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap, chunk_size_limit=chunk_size_limit)
+prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
 
 #Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name=LLM_DEPLOYMENT_NAME, model_kwargs={
@@ -74,7 +74,8 @@ embedding_llm = LangchainEmbedding(OpenAIEmbeddings(chunk_size=1))
 service_context = ServiceContext.from_defaults(
     llm_predictor=llm_predictor,
     embed_model=embedding_llm,
-    prompt_helper=prompt_helper
+    prompt_helper=prompt_helper,
+    chunk_size_limit=chunk_size_limit
 )
 
 UPLOAD_FOLDER = './data'  # set the upload folder path
