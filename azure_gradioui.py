@@ -12,6 +12,7 @@ import ast
 import dotenv
 from datetime import datetime
 import logging
+import shutil
 
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
@@ -58,7 +59,7 @@ max_input_size = 4096
 # set number of output tokens
 num_output = 1024
 # set maximum chunk overlap
-max_chunk_overlap = 16
+max_chunk_overlap = 24
 # set chunk size limit
 chunk_size_limit = 256
 # set prompt helper
@@ -78,7 +79,8 @@ service_context = ServiceContext.from_defaults(
     chunk_size_limit=chunk_size_limit
 )
 
-UPLOAD_FOLDER = './data'  # set the upload folder path
+#UPLOAD_FOLDER = './data'  # set the upload folder path
+UPLOAD_FOLDER = os.path.join(".", "data")
 example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
 example_qs = []
 summary = "No Summary available yet"
@@ -151,18 +153,19 @@ def fileformatvaliditycheck(files):
     return True
 
 def savetodisk(files):
+    
     filenames = []
     # Save the files to the UPLOAD_FOLDER
     for file in files:
         # Extract the file name
         filename_with_path = file.name
-        file_name = file.name.split("/")[-1]
+        file_name = os.path.basename(filename_with_path)
         filenames.append(file_name)
         # Open the file in read-binary mode
         with open(filename_with_path, 'rb') as f:
             # Save the file to the UPLOAD_FOLDER
-            with open(UPLOAD_FOLDER + "/" + file_name, 'wb') as f1:
-                copyfileobj(f, f1)
+            with open(os.path.join(UPLOAD_FOLDER, file_name), 'wb') as f1:
+                shutil.copyfileobj(f, f1)
     return filenames
 
 def build_index():
@@ -170,19 +173,20 @@ def build_index():
     documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
     index = GPTSimpleVectorIndex.from_documents(documents, service_context=service_context)
     #index = GPTListIndex.from_documents(documents, service_context=service_context)
-    index.save_to_disk(UPLOAD_FOLDER + "/index.json")
+    index.save_to_disk(os.path.join(UPLOAD_FOLDER, "index.json"))
 
 def upload_data_to_supabase(index_data, title, url):
+    
     # Insert the data for each document into the Supabase table
     supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
     for doc_id, doc_data in index_data["docstore"]["__data__"]["docs"].items():
         content_title = title
         content_url = url
-        content_date = datetime.today().strftime('%Y-%m-%d')
+        content_date = datetime.today().strftime('%B %d, %Y')
         content_text = doc_data['text']
         content_length = len(content_text)
         content_tokens = len(tiktoken.get_encoding("cl100k_base").encode(content_text))
-        cleaned_content_text = re.sub(r'\W+|\s+', ' ', content_text)
+        cleaned_content_text = re.sub(r'[^\w0-9./:^,&%@"!()?\\p{Sc}\'’“”]+|\s+', ' ', content_text, flags=re.UNICODE)
         embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
 
         result = supabase_client.table('mp').insert({
@@ -195,26 +199,14 @@ def upload_data_to_supabase(index_data, title, url):
             'embedding': embedding
         }).execute()
 
-def clearnonfiles(files):
-    # Ensure the UPLOAD_FOLDER contains only the files uploaded
+def clearallfiles():
+    # Ensure the UPLOAD_FOLDER is empty
     for file in os.listdir(UPLOAD_FOLDER):
-        if file not in [file.name.split("/")[-1] for file in files]:
-            os.remove(UPLOAD_FOLDER + "/" + file)
-
-def clearnonvideos():
-    # Ensure the UPLOAD_FOLDER contains only the video downloaded
-    for file in os.listdir(UPLOAD_FOLDER):
-        if file not in ["video.mp4"]:
-            os.remove(UPLOAD_FOLDER + "/" + file)
-
-def clearnonarticles():
-    # Ensure the UPLOAD_FOLDER contains only the article downloaded
-    for file in os.listdir(UPLOAD_FOLDER):
-        if file not in ["article.txt"]:
-            os.remove(UPLOAD_FOLDER + "/" + file)
+        os.remove(os.path.join(UPLOAD_FOLDER, file))
 
 def upload_file(files):
 
+    clearallfiles()
     global example_queries, summary
     # Basic checks
     if not files:
@@ -227,12 +219,10 @@ def upload_file(files):
 
     # Save files to UPLOAD_FOLDER
     uploaded_filenames = savetodisk(files)
-    # Clear files from UPLOAD_FOLDER
-    clearnonfiles(files)
     # Build index
     build_index()
     # Upload data to Supabase
-    index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+    index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
     upload_data_to_supabase(index_data, title=uploaded_filenames[0], url="Local")
     # Generate summary
     summary = summary_generator()
@@ -242,6 +232,8 @@ def upload_file(files):
     return "Files uploaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
 
 def download_ytvideo(url):
+
+    clearallfiles()
     global example_queries, summary
     if url:
         # Check if the URL belongs to YouTube
@@ -261,7 +253,8 @@ def download_ytvideo(url):
                 video_title = video_id
             try:
                 # Download the transcript using youtube_transcript_api
-                transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
+                #transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
+                transcript_list = YouTubeTranscriptApi.get_transcripts([video_id],languages=['en-IN', 'en'])
             except Exception as e:
                 # Handle the case where the video does not have transcripts
                 print("Error occurred while downloading transcripts:", str(e))
@@ -271,14 +264,12 @@ def download_ytvideo(url):
                 # Join all the transcript text into a single string
                 transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
                 # Save the transcript to a file in UPLOAD_FOLDER
-                with open(os.path.join(UPLOAD_FOLDER, "article.txt"), "w") as f:
+                with open(os.path.join(UPLOAD_FOLDER, "transcript.txt"), "w") as f:
                     f.write(transcript_text)
-                # Clear files from UPLOAD_FOLDER
-                clearnonarticles()
                 # Build index
                 build_index()
                 # Upload data to Supabase
-                index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+                index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
                 upload_data_to_supabase(index_data, title=video_title, url=url)
                 # Generate summary
                 summary = summary_generator()
@@ -288,13 +279,14 @@ def download_ytvideo(url):
             # If the video does not have transcripts, download the video and post-process it locally
             else:
                 # Download the video and post-process it if there are no captions
+                yt = YouTube(url)
                 yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
                 # Clear files from UPLOAD_FOLDER
-                clearnonvideos()
+                #clearnonvideos()
                 # Build index
                 build_index()
                 # Upload data to Supabase
-                index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+                index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
                 upload_data_to_supabase(index_data, title=video_title, url=url)
                  # Generate summary
                 summary = summary_generator()
@@ -309,6 +301,7 @@ def download_ytvideo(url):
 
 def download_art(url):
 
+    clearallfiles()
     global example_queries, summary
     if url:
         # Extract the article
@@ -316,25 +309,26 @@ def download_art(url):
         try:
             article.download()
             article.parse()
+            #Check if the article text has atleast 75 words
+            if len(article.text.split()) < 75:
+                raise Exception("Article is too short. Probably the article is behind a paywall.")
         except Exception as e:
-            print("Failed to download and parse article from URL: %s. Error: %s", url, str(e))
+            print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
             # Try an alternate method using requests and beautifulsoup
             try:
                 req = requests.get(url)
                 soup = BeautifulSoup(req.content, 'html.parser')
                 article.text = soup.get_text()
             except Exception as e:
-                print("Failed to download article using alternative method from URL: %s. Error: %s", url, str(e))
+                print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
                 return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset.update(samples=example_queries), summary
         # Save the article to the UPLOAD_FOLDER
-        with open(UPLOAD_FOLDER + "/article.txt", 'w') as f:
+        with open(os.path.join(UPLOAD_FOLDER, "article.txt"), 'w') as f:
             f.write(article.text)
-        # Clear files from UPLOAD_FOLDER
-        clearnonarticles()
         # Build index
         build_index()
         # Upload data to Supabase
-        index_data = json.load(open(UPLOAD_FOLDER + "/index.json"))
+        index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
         upload_data_to_supabase(index_data, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
@@ -346,12 +340,13 @@ def download_art(url):
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
 
 def ask(question, history):
+    
     history = history or []
     s = list(sum(history, ()))
     s.append(question)
     inp = ' '.join(s)
 
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    index = GPTSimpleVectorIndex.load_from_disk(os.path.join(UPLOAD_FOLDER, "index.json"), service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, similarity_top_k=3, mode="embedding")
     answer = response.response
@@ -362,7 +357,7 @@ def ask(question, history):
 
 def ask_query(question):
 
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    index = GPTSimpleVectorIndex.load_from_disk(os.path.join(UPLOAD_FOLDER, "index.json"), service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, similarity_top_k=3, mode="embedding")
     answer = response.response
@@ -371,7 +366,7 @@ def ask_query(question):
 
 def ask_fromfullcontext(question):
     
-    index = GPTSimpleVectorIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
+    index = GPTSimpleVectorIndex.load_from_disk(os.path.join(UPLOAD_FOLDER, "index.json"), service_context=service_context)
     #index = GPTListIndex.load_from_disk(UPLOAD_FOLDER + "/index.json", service_context=service_context)
     response = index.query(question, response_mode="tree_summarize")
     answer = response.response
@@ -379,6 +374,7 @@ def ask_fromfullcontext(question):
     return answer
 
 def example_generator():
+    
     global example_queries, example_qs
     try:
         llmresponse = ask_fromfullcontext("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Avoid including any irrelevant information like sponsorships or advertisements.")
@@ -389,20 +385,23 @@ def example_generator():
     return example_qs
 
 def summary_generator():
+    
     global summary
     try:
-        summary = ask_fromfullcontext("Summarize the input context with the most unique and helpful points, into a numbered list of atleast 7 key points and takeaways. Write a catchy headline for the summary. Use your own words and do not copy from the context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information into a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. Try to use your own words, and avoid copying word-for-word from the provided context. Also, avoid including any irrelevant information, such as sponsorships or advertisements.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
     return summary
 
 def update_examples():
+    
     global example_queries
     example_queries = example_generator()
     return gr.Dataset.update(samples=example_queries)
 
 def load_example(example_id):
+    
     global example_queries
     return example_queries[example_id][0]
 
