@@ -211,7 +211,7 @@ def ask_fromfullcontext(question):
 
 def summary_generator():
     try:
-        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information, using no less than 10 sentences. Use your own words and avoid copying word-for-word from the provided context. Avoid including any irrelevant information like sponsorships or advertisements.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information, using no less than 10 sentences. Use your own words and avoid copying word-for-word from the provided context. Do not include any irrelevant information such as discounts, promotions, sponsorships or advertisements in your summary and stick to the core message of the content.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
