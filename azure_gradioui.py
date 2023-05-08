@@ -377,7 +377,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Avoid including any irrelevant information like sponsorships or advertisements.")
+        llmresponse = ask_fromfullcontext("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes.")
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
@@ -388,7 +388,7 @@ def summary_generator():
     
     global summary
     try:
-        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information into a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. Try to use your own words, and avoid copying word-for-word from the provided context. Also, avoid including any irrelevant information, such as sponsorships or advertisements.").lstrip('\n')
+        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information into a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. Try to use your own words, and avoid copying word-for-word from the provided context. Do not include any irrelevant information such as discounts, promotions, sponsorships or advertisements in your summary and stick to the core message of the content.").lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"
