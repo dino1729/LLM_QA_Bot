@@ -281,22 +281,21 @@ def download_ytvideo(url, memorize):
             # If the video does not have transcripts, download the video and post-process it locally
             else:
                 # Download the video and post-process it if there are no captions
-                yt = YouTube(url)
-                yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
+                #yt = YouTube(url)
+                #yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
                 # Clear files from UPLOAD_FOLDER
                 #clearnonvideos()
                 # Build index
-                build_index()
-                # Upload data to Supabase if the memorize checkbox is checked
-                if memorize:
-                    index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-                    upload_data_to_supabase(index_data, title=video_title, url=url)
+                #build_index()
+                # Upload data to Supabase
+                #index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
+                #upload_data_to_supabase(index_data, title=video_title, url=url)
                  # Generate summary
-                summary = summary_generator()
+                #summary = summary_generator()
                 # Generate example queries
-                example_queries = example_generator()
+                #example_queries = example_generator()
 
-                return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                return "Youtube transcripts do not exist for this video!", gr.Dataset.update(samples=example_queries), summary
         else:
             return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
     else:

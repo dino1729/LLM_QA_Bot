@@ -1,0 +1,49 @@
+#for i in $(cat requirements.txt); do pip install $i; done
+# For testing
+pytest==7.2.1
+pytest-dotenv==0.5.2
+
+# third-party (libraries)
+rake_nltk==1.0.6
+ipython==8.10.0
+
+# linting stubs
+types-requests==2.28.11.8
+types-setuptools==67.1.0.0
+
+# linting
+black==22.12.0
+isort==5.11.4
+mypy==0.991
+flake8==6.0.0
+flake8-docstrings==1.6.0
+pylint==2.15.10
+
+pyparsing
+newspaper3k
+requests
+selenium
+beautifulsoup4
+PyPDF2
+tiktoken
+gradio==3.18.0
+IPython
+wget
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+scipy
+tqdm
+nltk
+gensim
+spacy
+pytube
+flask
+gpt_index
+llama-index==0.5.27
+langchain
+youtube_transcript_api
+supabase
+docx2txt
