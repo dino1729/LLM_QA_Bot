@@ -26,7 +26,7 @@ selenium
 beautifulsoup4
 PyPDF2
 tiktoken
-gradio==3.18.0
+gradio==3.38.0
 IPython
 wget
 numpy
