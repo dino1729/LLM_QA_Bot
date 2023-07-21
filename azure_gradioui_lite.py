@@ -287,9 +287,10 @@ def download_ytvideo(url, memorize):
                 #clearnonvideos()
                 # Build index
                 #build_index()
-                # Upload data to Supabase
-                #index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-                #upload_data_to_supabase(index_data, title=video_title, url=url)
+                # Upload data to Supabase if the memorize checkbox is checked
+                #if memorize:
+                    #index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
+                    #upload_data_to_supabase(index_data, title=video_title, url=url)
                  # Generate summary
                 #summary = summary_generator()
                 # Generate example queries
@@ -434,48 +435,48 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
             with gr.Box():
                 files = gr.File(label="Upload the files to be analyzed", file_count="multiple")
                 with gr.Row():
-                    upload_button = gr.Button("Upload").style(full_width=False)
+                    upload_button = gr.Button(value="Upload", scale=0)
                     upload_output = gr.Textbox(label="Upload Status")
             with gr.Tab(label="Video Analyzer"):
                 yturl = gr.Textbox(placeholder="Input must be a Youtube URL", label="Enter Youtube URL")
                 with gr.Row():
-                    download_button = gr.Button("Download").style(full_width=False)
+                    download_button = gr.Button(value="Download", scale=0)
                     download_output = gr.Textbox(label="Video download Status")
             with gr.Tab(label="Article Analyzer"):
                 arturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Article URL")
                 with gr.Row():
-                    adownload_button = gr.Button("Download").style(full_width=False)
+                    adownload_button = gr.Button(value="Download", scale=0)
                     adownload_output = gr.Textbox(label="Article download Status")
         with gr.Column(scale=2, min_width=650):
             with gr.Box():
                 summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
-                chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot").style(color_map=["blue", "grey"])
+                chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot")
                 state = gr.State([])
                 with gr.Row():
-                    query = gr.Textbox(show_label=False, placeholder="Enter text and press enter").style(container=False)
-                    submit_button = gr.Button("Ask").style(full_width=False)
-                    clearquery_button = gr.Button("Clear").style(full_width=False)
+                    query = gr.Textbox(show_label=False, placeholder="Enter text and press enter")
+                    submit_button = gr.Button(value="Ask", scale=0)
+                    clearquery_button = gr.Button(value="Clear", scale=0)
                 examples = gr.Dataset(samples=example_queries, components=[query], type="index")
                 submit_button.click(ask, inputs=[query, state], outputs=[chatbot, state])
                 query.submit(ask, inputs=[query, state], outputs=[chatbot, state])
-            clearchat_button = gr.Button("Clear Chat")
+            clearchat_button = gr.Button(value="Clear Chat", scale=0)
     with gr.Row():
         with gr.Tab(label="Trip Generator"):
             with gr.Row():
                 city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
                 number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
-                city_button = gr.Button("Plan").style(full_width=False)
+                city_button = gr.Button(value="Plan", scale=0)
             with gr.Row():
                 city_output = gr.Textbox(label="Trip Plan")
-                clear_trip_button = gr.Button("Clear").style(full_width=False)
+                clear_trip_button = gr.Button(value="Clear", scale=0)
         with gr.Tab(label="Cravings Generator"):
             with gr.Row():
                 craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
                 craving_cuisine = gr.Textbox(placeholder="What kind of food are you craving for? Enter idk if you don't know what you want to eat", label="Food")
-                craving_button = gr.Button("Cook").style(full_width=False)
+                craving_button = gr.Button(value="Cook", scale=0)
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places")
-                clear_craving_button = gr.Button("Clear").style(full_width=False)
+                clear_craving_button = gr.Button(value="Clear", scale=0)
 
     # Upload button for uploading files
     upload_button.click(upload_file, inputs=[files, memorize], outputs=[upload_output, examples, summary_output], show_progress=True)
