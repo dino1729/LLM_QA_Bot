@@ -1,5 +1,3 @@
-from calendar import c
-from hmac import new
 import json
 import os
 import requests
@@ -11,8 +9,12 @@ import ast
 import argparse
 import logging
 import dotenv
-from datetime import datetime
+import supabase
+import tiktoken
 
+from datetime import datetime
+from calendar import c
+from hmac import new
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
 from IPython.display import Markdown, display
@@ -35,8 +37,6 @@ from bs4 import BeautifulSoup
 from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
-import supabase
-import tiktoken
 
 # Get API key from environment variable
 dotenv.load_dotenv()
@@ -116,7 +116,7 @@ def clearallfiles():
     for file in os.listdir(UPLOAD_FOLDER):
         os.remove(os.path.join(UPLOAD_FOLDER, file))
 
-def download_ytvideo(url):
+def download_ytvideo(url, memorize):
 
     clearallfiles()
     if url:
@@ -150,9 +150,10 @@ def download_ytvideo(url):
                 f.write(transcript_text)
             # Build index
             build_index()
-            # Upload data to Supabase
-            index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-            upload_data_to_supabase(index_data, title=video_title, url=url)
+            # Upload data to Supabase if memorize is True
+            if memorize:
+                index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
+                upload_data_to_supabase(index_data, title=video_title, url=url)
             # Generate summary
             summary = summary_generator()
             # Generate example queries
@@ -163,7 +164,7 @@ def download_ytvideo(url):
     else:
         return "Please enter a valid Youtube URL"
 
-def download_art(url):
+def download_art(url, memorize):
     
     clearallfiles()
     if url:
@@ -190,9 +191,10 @@ def download_art(url):
             f.write(article.text)
         # Build index
         build_index()
-        # Upload data to Supabase
-        index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-        upload_data_to_supabase(index_data, title=article.title, url=url)
+        # Upload data to Supabase if memorize is True
+        if memorize:
+            index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
+            upload_data_to_supabase(index_data, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
 
@@ -225,11 +227,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     summary = ""
+    memorize = False
     url = args.url.strip()
     if "youtube.com/watch" in url or "youtu.be/" in url:
-        summary = download_ytvideo(url)
+        summary = download_ytvideo(url, memorize)
     elif "http" in url:
-        summary = download_art(url)
+        summary = download_art(url, memorize)
     else:
         summary = "Invalid URL. Please enter a valid article or YouTube video URL.", "Summary not available"
 
