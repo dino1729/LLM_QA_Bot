@@ -65,6 +65,9 @@ chunk_size_limit = 256
 # set prompt helper
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
 
+# Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
+lite_mode = False
+
 #Update your deployment name accordingly
 llm = AzureOpenAI(deployment_name=LLM_DEPLOYMENT_NAME, model_kwargs={
     "api_type": os.environ.get("AZUREOPENAIAPITYPE"),
@@ -280,23 +283,26 @@ def download_ytvideo(url, memorize):
                 return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
             # If the video does not have transcripts, download the video and post-process it locally
             else:
-                # Download the video and post-process it if there are no captions
-                yt = YouTube(url)
-                yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
-                # Clear files from UPLOAD_FOLDER
-                #clearnonvideos()
-                # Build index
-                build_index()
-                # Upload data to Supabase if the memorize checkbox is checked
-                if memorize:
-                    index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-                    upload_data_to_supabase(index_data, title=video_title, url=url)
-                 # Generate summary
-                summary = summary_generator()
-                # Generate example queries
-                example_queries = example_generator()
+                if not lite_mode:
+                    # Download the video and post-process it if there are no captions
+                    yt = YouTube(url)
+                    yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(UPLOAD_FOLDER, filename="video.mp4")
+                    # Clear files from UPLOAD_FOLDER
+                    #clearnonvideos()
+                    # Build index
+                    build_index()
+                    # Upload data to Supabase if the memorize checkbox is checked
+                    if memorize:
+                        index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
+                        upload_data_to_supabase(index_data, title=video_title, url=url)
+                    # Generate summary
+                    summary = summary_generator()
+                    # Generate example queries
+                    example_queries = example_generator()
 
-                return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                    return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                elif lite_mode:
+                    return "Youtube transcripts do not exist for this video!", gr.Dataset.update(samples=example_queries), summary
         else:
             return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
     else:
