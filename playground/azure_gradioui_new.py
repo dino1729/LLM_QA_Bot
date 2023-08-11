@@ -1,5 +1,6 @@
 import json
 import os
+from pickle import LIST
 from matplotlib.sankey import UP
 import requests
 import gradio as gr
@@ -13,6 +14,7 @@ import logging
 import shutil
 import supabase
 import tiktoken
+import sys
 
 from datetime import datetime
 from calendar import c
@@ -20,32 +22,37 @@ from hmac import new
 from shutil import copyfileobj
 from urllib.parse import parse_qs, urlparse
 from IPython.display import Markdown, display
-from langchain import OpenAI
-from langchain.agents import initialize_agent
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.llms import AzureOpenAI
-from llama_index import (
-    VectorStoreIndex,
-    LangchainEmbedding,
-    LLMPredictor,
-    PromptHelper,
-    SimpleDirectoryReader,
-    ServiceContext,
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
-)
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.indices.postprocessor import SimilarityPostprocessor
 from newspaper import Article
 from bs4 import BeautifulSoup
 from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 
-logger = logging.getLogger()
-logger.level = logging.WARN
+from langchain import OpenAI
+from langchain.agents import initialize_agent
+from langchain.embeddings import OpenAIEmbeddings
+from llama_index.llms import AzureOpenAI
+from llama_index import (
+    VectorStoreIndex,
+    ListIndex,
+    LangchainEmbedding,
+    PromptHelper,
+    Prompt,
+    SimpleDirectoryReader,
+    ServiceContext,
+    StorageContext,
+    load_index_from_storage,
+    get_response_synthesizer,
+    set_global_service_context,
+)
+from llama_index.retrievers import VectorIndexRetriever
+from llama_index.query_engine import RetrieverQueryEngine
+from llama_index.indices.postprocessor import SimilarityPostprocessor
+from llama_index.text_splitter import SentenceSplitter
+from llama_index.node_parser import SimpleNodeParser
+
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 # Get API key from environment variable
 dotenv.load_dotenv()
@@ -55,47 +62,111 @@ openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
 LLM_DEPLOYMENT_NAME = "text-davinci-003"
+EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 
 # max LLM token input size
 max_input_size = 4096
-# set number of output tokens
 num_output = 1024
-# set maximum chunk overlap
-max_chunk_overlap_ratio = 0.12
-# set chunk size limit
+max_chunk_overlap_ratio = 0.1
 chunk_size_limit = 256
-# set prompt helper
+context_window = 4096
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-
+text_splitter = SentenceSplitter(
+  separator=" ",
+  chunk_size=512,
+  chunk_overlap=20,
+  backup_separators=["\n"],
+  paragraph_separator="\n\n\n"
+)
+node_parser = SimpleNodeParser(text_splitter=text_splitter)
 # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
 lite_mode = False
 
-#Update your deployment name accordingly
-llm = AzureOpenAI(deployment_name=LLM_DEPLOYMENT_NAME, model_kwargs={
-    "api_type": os.environ.get("AZUREOPENAIAPITYPE"),
-    "api_version": os.environ.get("AZUREOPENAIAPIVERSION"),
-})
-llm_predictor = LLMPredictor(llm=llm)
-embedding_llm = LangchainEmbedding(OpenAIEmbeddings(chunk_size=1))
+llm = AzureOpenAI(
+    engine=LLM_DEPLOYMENT_NAME, 
+    model=LLM_DEPLOYMENT_NAME,
+    openai_api_key=openai.api_key,
+    openai_api_base=openai.api_base,
+    openai_api_type=openai.api_type,
+    openai_api_version=openai.api_version,
+    temperature=0.5,
+    max_tokens=1024,
+)
+embedding_llm = LangchainEmbedding(
+    OpenAIEmbeddings(
+        model=EMBEDDINGS_DEPLOYMENT_NAME,
+        deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+        openai_api_key=openai.api_key,
+        openai_api_base=openai.api_base,
+        openai_api_type=openai.api_type,
+        openai_api_version=openai.api_version,
+        chunk_size=32,
+        max_retries=3,
+    ),
+    embed_batch_size=1,
+)
 service_context = ServiceContext.from_defaults(
-    llm_predictor=llm_predictor,
+    llm=llm,
     embed_model=embedding_llm,
     prompt_helper=prompt_helper,
-    chunk_size_limit=chunk_size_limit
+    chunk_size_limit=chunk_size_limit,
+    context_window=context_window,
+    node_parser=node_parser,
 )
+set_global_service_context(service_context)
 
 #UPLOAD_FOLDER = './data'  # set the upload folder path
 UPLOAD_FOLDER = os.path.join(".", "data")
+LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
+VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
+
 example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
 example_qs = []
 summary = "No Summary available yet"
 
+sum_template = (
+    "You are a world-class text summarizer. We have provided context information below. \n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Based on the information provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+    "---------------------\n"
+    "{query_str}"
+)
+summary_template = Prompt(sum_template)
+ques_template = (
+    "You are a world-class personal assistant. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Based on the information provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+    "---------------------\n"
+    "{query_str}"
+)
+qa_template = Prompt(ques_template)
+
+eg_template = (
+    "You are a helpful assistant that is helping the user to gain more knowledge about the input context. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Based on the information provided, your task is to generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes.\n"
+    "---------------------\n"
+    "{query_str}"
+)
+example_template = Prompt(eg_template)
+    
+
 # If the UPLOAD_FOLDER path does not exist, create it
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(LIST_FOLDER ):
+    os.makedirs(LIST_FOLDER)
+if not os.path.exists(VECTOR_FOLDER ):
+    os.makedirs(VECTOR_FOLDER)
 
 # Function to generate the trip plan
 def generate_trip_plan(city, days):
@@ -179,9 +250,13 @@ def savetodisk(files):
 def build_index():
 
     documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
-    index = VectorStoreIndex.from_documents(documents, service_context=service_context)
-    index.set_index_id("vector_index")
-    index.storage_context.persist(persist_dir=UPLOAD_FOLDER)
+    questionindex = VectorStoreIndex.from_documents(documents)
+    questionindex.set_index_id("vector_index")
+    questionindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
+    
+    summaryindex = ListIndex.from_documents(documents)
+    summaryindex.set_index_id("list_index")
+    summaryindex.storage_context.persist(persist_dir=LIST_FOLDER)
 
 def upload_data_to_supabase(index_data, title, url):
     
@@ -209,8 +284,10 @@ def upload_data_to_supabase(index_data, title, url):
 
 def clearallfiles():
     # Ensure the UPLOAD_FOLDER is empty
-    for file in os.listdir(UPLOAD_FOLDER):
-        os.remove(os.path.join(UPLOAD_FOLDER, file))
+    for root, dirs, files in os.walk(UPLOAD_FOLDER):
+        for file in files:
+            file_path = os.path.join(root, file)
+            os.remove(file_path)
 
 def upload_file(files, memorize):
 
@@ -361,21 +438,24 @@ def ask(question, history):
     s.append(question)
     inp = ' '.join(s)
 
-    storage_context = StorageContext.from_defaults(persist_dir=UPLOAD_FOLDER)
+    # Rebuild the storage context
+    storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     index = load_index_from_storage(storage_context, index_id="vector_index")
-    # # configure retriever
-    # retriever = VectorIndexRetriever(index=index, similarity_top_k=2)
+    # configure retriever
+    retriever = VectorIndexRetriever(
+        index=index,
+        similarity_top_k=5,
+    )
     # # configure response synthesizer
-    # response_synthesizer = get_response_synthesizer()
+    response_synthesizer = get_response_synthesizer(text_qa_template=qa_template)
     # # assemble query engine
-    # query_engine = RetrieverQueryEngine(
-    #     retriever=retriever,
-    #     response_synthesizer=response_synthesizer,
-    #     node_postprocessors=[
-    #         SimilarityPostprocessor(similarity_cutoff=0.7)
-    #     ]
-    # )
-    query_engine = index.as_query_engine()
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=response_synthesizer,
+        node_postprocessors=[
+            SimilarityPostprocessor(similarity_cutoff=0.7)
+        ],
+        )
     response = query_engine.query(question)
     answer = response.response
 
@@ -385,38 +465,39 @@ def ask(question, history):
 
 def ask_query(question):
 
-    storage_context = StorageContext.from_defaults(persist_dir=UPLOAD_FOLDER)
+    storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     index = load_index_from_storage(storage_context, index_id="vector_index")
-    # # configure retriever
-    # retriever = VectorIndexRetriever(index=index, similarity_top_k=2)
+    # configure retriever
+    retriever = VectorIndexRetriever(
+        index=index,
+        similarity_top_k=5,
+    )
     # # configure response synthesizer
-    # response_synthesizer = get_response_synthesizer()
+    response_synthesizer = get_response_synthesizer(text_qa_template=qa_template)
     # # assemble query engine
-    # query_engine = RetrieverQueryEngine(
-    #     retriever=retriever,
-    #     response_synthesizer=response_synthesizer,
-    #     node_postprocessors=[
-    #         SimilarityPostprocessor(similarity_cutoff=0.7)
-    #     ]
-    # )
-    query_engine = index.as_query_engine()
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=response_synthesizer,
+        node_postprocessors=[
+            SimilarityPostprocessor(similarity_cutoff=0.7)
+        ],
+        )
     response = query_engine.query(question)
+    answer = response.response
     answer = response.response
 
     return answer
 
-def ask_fromfullcontext(question):
+def ask_fromfullcontext(question, summary_template):
     
-    storage_context = StorageContext.from_defaults(persist_dir=UPLOAD_FOLDER)
-    index = load_index_from_storage(storage_context, index_id="vector_index")
-    # # configure retriever
-    # retriever = VectorIndexRetriever(index=index, similarity_top_k=2)
-    # # configure response synthesizer
-    # response_synthesizer = get_response_synthesizer(response_mode="tree_summarize")
-    # # assemble query engine
-    # query_engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=response_synthesizer)
-    query_engine = index.as_query_engine(response_mode="tree_summarize")
+    storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
+    index = load_index_from_storage(storage_context, index_id="list_index")
+    # ListIndexRetriever
+    retriever = index.as_retriever(retriever_mode='default')
+    # tree summarize
+    query_engine = RetrieverQueryEngine.from_args(retriever, response_mode='tree_summarize', text_qa_template=summary_template)
     response = query_engine.query(question)
+
     answer = response.response
     
     return answer
@@ -425,7 +506,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("You are a helpful assistant that is helping the user to gain more knowledge about the input context. Generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes.")
+        llmresponse = ask_fromfullcontext("Generate example queries for the input context in the format mentioned.", example_template).lstrip('\n')
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
@@ -436,7 +517,7 @@ def summary_generator():
     
     global summary
     try:
-        summary = ask_fromfullcontext("Summarize the input context while preserving the main points and information into a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. Try to use your own words, and avoid copying word-for-word from the provided context. Do not include any irrelevant information such as discounts, promotions, sponsorships or advertisements in your summary and stick to the core message of the content.").lstrip('\n')
+        summary = ask_fromfullcontext("Generate a summary of the input context. Be as verbose as possible.", summary_template).lstrip('\n')
     except Exception as e:
         print("Error occurred while generating summary:", str(e))
         summary = "Summary not available"

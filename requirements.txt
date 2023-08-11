@@ -62,10 +62,11 @@ pytorch-lightning-logging-comet
 pytube
 flask
 gpt_index
-llama-index==0.5.27
+llama-index==0.7.23
 langchain
 langchain-utilities
 langchain-templates
 youtube_transcript_api
 supabase
 docx2txt
+pypdf
