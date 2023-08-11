@@ -51,7 +51,7 @@ EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 max_input_size = 4096
 num_output = 1024
 max_chunk_overlap_ratio = 0.12
-chunk_size_limit = 256
+chunk_size = 512
 context_window = 4096
 
 UPLOAD_FOLDER = os.path.join('./data')
@@ -102,7 +102,7 @@ service_context = ServiceContext.from_defaults(
     llm=llm,
     embed_model=embedding_llm,
     prompt_helper=prompt_helper,
-    chunk_size_limit=chunk_size_limit,
+    chunk_size=chunk_size,
     context_window=context_window,
     node_parser=node_parser,
 )

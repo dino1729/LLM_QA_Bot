@@ -71,7 +71,7 @@ SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 max_input_size = 4096
 num_output = 1024
 max_chunk_overlap_ratio = 0.1
-chunk_size_limit = 256
+chunk_size = 512
 context_window = 4096
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 text_splitter = SentenceSplitter(
@@ -112,7 +112,7 @@ service_context = ServiceContext.from_defaults(
     llm=llm,
     embed_model=embedding_llm,
     prompt_helper=prompt_helper,
-    chunk_size_limit=chunk_size_limit,
+    chunk_size=chunk_size,
     context_window=context_window,
     node_parser=node_parser,
 )
