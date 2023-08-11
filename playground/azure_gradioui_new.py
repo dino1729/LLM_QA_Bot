@@ -153,7 +153,7 @@ eg_template = (
     "---------------------\n"
     "{context_str}"
     "\n---------------------\n"
-    "Based on the information provided, your task is to generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes.\n"
+    "Based on the information provided, your task is to generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Be sure to double check your answer to see if it is in the format requested\n"
     "---------------------\n"
     "{query_str}"
 )
@@ -258,19 +258,19 @@ def build_index():
     summaryindex.set_index_id("list_index")
     summaryindex.storage_context.persist(persist_dir=LIST_FOLDER)
 
-def upload_data_to_supabase(index_data, title, url):
+def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
     # Insert the data for each document into the Supabase table
     supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
-    for doc_id, doc_data in index_data["docstore"]["__data__"]["docs"].items():
+    for doc_id, doc_data in metadata_index["docstore/data"].items():
         content_title = title
         content_url = url
         content_date = datetime.today().strftime('%B %d, %Y')
-        content_text = doc_data['text']
+        content_text = doc_data["__data__"]["text"]
         content_length = len(content_text)
         content_tokens = len(tiktoken.get_encoding("cl100k_base").encode(content_text))
         cleaned_content_text = re.sub(r'[^\w0-9./:^,&%@"!()?\\p{Sc}\'’“”]+|\s+', ' ', content_text, flags=re.UNICODE)
-        embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
+        embedding = embedding_index["embedding_dict"][doc_id]
 
         result = supabase_client.table('mp').insert({
             'content_title': content_title,
@@ -308,8 +308,9 @@ def upload_file(files, memorize):
     build_index()
     # Upload data to Supabase if the memorize checkbox is checked
     if memorize:
-        index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-        upload_data_to_supabase(index_data, title=uploaded_filenames[0], url="Local")
+        metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+        upload_data_to_supabase(metadata_index, embedding_index, title=uploaded_filenames[0], url="Local")
     # Generate summary
     summary = summary_generator()
     # Generate example queries
@@ -356,8 +357,9 @@ def download_ytvideo(url, memorize):
                 build_index()
                 # Upload data to Supabase if the memorize checkbox is checked
                 if memorize:
-                    index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-                    upload_data_to_supabase(index_data, title=video_title, url=url)
+                    metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+                    embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+                    upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
                 # Generate summary
                 summary = summary_generator()
                 # Generate example queries
@@ -375,8 +377,9 @@ def download_ytvideo(url, memorize):
                     build_index()
                     # Upload data to Supabase if the memorize checkbox is checked
                     if memorize:
-                        index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-                        upload_data_to_supabase(index_data, title=video_title, url=url)
+                        metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+                        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+                        upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
                     # Generate summary
                     summary = summary_generator()
                     # Generate example queries
@@ -420,8 +423,9 @@ def download_art(url, memorize):
         build_index()
         # Upload data to Supabase if the memorize checkbox is checked
         if memorize:
-            index_data = json.load(open(os.path.join(UPLOAD_FOLDER, "index.json")))
-            upload_data_to_supabase(index_data, title=article.title, url=url)
+            metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+            upload_data_to_supabase(metadata_index, embedding_index, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
         # Generate example queries
@@ -506,7 +510,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("Generate example queries for the input context in the format mentioned.", example_template).lstrip('\n')
+        llmresponse = ask_fromfullcontext("Generate 5 questions exactly in the format mentioned", example_template).lstrip('\n')
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
