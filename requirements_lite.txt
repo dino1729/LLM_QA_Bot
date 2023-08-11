@@ -42,7 +42,7 @@ spacy
 pytube
 flask
 gpt_index
-llama-index==0.7.23
+llama-index
 langchain
 youtube_transcript_api
 supabase
