@@ -12,6 +12,7 @@ AZUREOPENAIAPIKEY
 AZUREOPENAIAPIENDPOINT
 AZUREOPENAIAPITYPE
 AZUREOPENAIAPIVERSION
+AZURECHATAPIVERSION
 PUBLIC_SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ```
@@ -20,5 +21,5 @@ Instruction set up Docker container:
 
 ```bash
 docker build -t llmqabot .
-docker run -p 7860:7860 --name llmqabot llmqabot
+docker run --restart always -p 7860:7860 --name llmqabot llmqabot
 ```
