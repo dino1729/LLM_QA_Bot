@@ -1,6 +1,7 @@
+from calendar import c
 import json
 import os
-import datetime
+from datetime import datetime
 from turtle import up
 from sympy import content
 import tiktoken
@@ -37,6 +38,7 @@ from llama_index.storage import StorageContext
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
 from llama_index.retrievers import VectorIndexRetriever
+from torch import embedding
 
 # Set OpenAI API key
 dotenv.load_dotenv()
@@ -50,7 +52,7 @@ EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 
 max_input_size = 4096
 num_output = 1024
-max_chunk_overlap_ratio = 0.12
+max_chunk_overlap_ratio = 0.10
 chunk_size_limit = 256
 context_window = 4096
 
@@ -65,7 +67,7 @@ if not os.path.exists(VECTOR_FOLDER ):
 
 text_splitter = SentenceSplitter(
   separator=" ",
-  chunk_size=512,
+  chunk_size=256,
   chunk_overlap=20,
   backup_separators=["\n"],
   paragraph_separator="\n\n\n"
@@ -141,61 +143,61 @@ ques_template = (
 )
 qa_template = Prompt(ques_template)
 
-documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
+# documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
 
-listindex = ListIndex.from_documents(documents)
-listindex.set_index_id("list_index")
-listindex.storage_context.persist(persist_dir=LIST_FOLDER)
+# listindex = ListIndex.from_documents(documents)
+# listindex.set_index_id("list_index")
+# listindex.storage_context.persist(persist_dir=LIST_FOLDER)
 
-vectorindex = VectorStoreIndex.from_documents(documents)
-vectorindex.set_index_id("vector_index")
-vectorindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
+# vectorindex = VectorStoreIndex.from_documents(documents)
+# vectorindex.set_index_id("vector_index")
+# vectorindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
 
 
-# Rebuild the list index from storage
-storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
-index = load_index_from_storage(storage_context, index_id="list_index")
-retriever = index.as_retriever(retriever_mode='default')
-query_engine1 = RetrieverQueryEngine.from_args(retriever, response_mode='tree_summarize', text_qa_template=summary_template)
-response = query_engine1.query("Generate a summary of the input context. Be as verbose as possible")
-print(response)
+# # Rebuild the list index from storage
+# storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
+# index = load_index_from_storage(storage_context, index_id="list_index")
+# retriever = index.as_retriever(retriever_mode='default')
+# query_engine1 = RetrieverQueryEngine.from_args(retriever, response_mode='tree_summarize', text_qa_template=summary_template)
+# response = query_engine1.query("Generate a summary of the input context. Be as verbose as possible")
+# print(response)
 
-# Rebuild the vector index from storage
-storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
-index = load_index_from_storage(storage_context, index_id="vector_index")
-# configure retriever
-retriever = VectorIndexRetriever(
-    index=index,
-    similarity_top_k=5,
-)
-# # configure response synthesizer
-response_synthesizer = get_response_synthesizer(text_qa_template=qa_template)
-# # assemble query engine
-query_engine = RetrieverQueryEngine(
-    retriever=retriever,
-    response_synthesizer=response_synthesizer,
-    node_postprocessors=[
-        SimilarityPostprocessor(similarity_cutoff=0.7)
-    ],
-    )
-response = query_engine.query("Tell me something interesting about the input context")
-print(response)
+# # Rebuild the vector index from storage
+# storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
+# index = load_index_from_storage(storage_context, index_id="vector_index")
+# # configure retriever
+# retriever = VectorIndexRetriever(
+#     index=index,
+#     similarity_top_k=5,
+# )
+# # # configure response synthesizer
+# response_synthesizer = get_response_synthesizer(text_qa_template=qa_template)
+# # # assemble query engine
+# query_engine = RetrieverQueryEngine(
+#     retriever=retriever,
+#     response_synthesizer=response_synthesizer,
+#     node_postprocessors=[
+#         SimilarityPostprocessor(similarity_cutoff=0.7)
+#     ],
+#     )
+# response = query_engine.query("Tell me something interesting about the input context")
+# print(response)
 
 
 # Test metadata extraction
-def upload_data_to_supabase(index_data, title, url):
+def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
     # Insert the data for each document into the Supabase table
     # supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
-    for doc_id, doc_data in index_data["docstore"]["__data__"]["docs"].items():
+    for doc_id, doc_data in metadata_index["docstore/data"].items():
         content_title = title
         content_url = url
         content_date = datetime.today().strftime('%B %d, %Y')
-        content_text = doc_data['text']
+        content_text = doc_data["__data__"]["text"]
         content_length = len(content_text)
         content_tokens = len(tiktoken.get_encoding("cl100k_base").encode(content_text))
         cleaned_content_text = re.sub(r'[^\w0-9./:^,&%@"!()?\\p{Sc}\'’“”]+|\s+', ' ', content_text, flags=re.UNICODE)
-        embedding = index_data["vector_store"]["__data__"]["simple_vector_store_data_dict"]["embedding_dict"][doc_id]
+        embedding = embedding_index["embedding_dict"][doc_id]
 
         # result = supabase_client.table('mp').insert({
         #     'content_title': content_title,
@@ -206,9 +208,18 @@ def upload_data_to_supabase(index_data, title, url):
         #     'content_tokens': content_tokens,
         #     'embedding': embedding
         # }).execute()
+        print("\nContent Title: ", content_title)
+        print("\nContent URL: ", content_url)
+        print("\nContent Date: ", content_date)
+        print("\nContent Text: ", cleaned_content_text)
+        print("\nContent Length: ", content_length)
+        print("\nContent Tokens: ", content_tokens)
+        #print("\nEmbedding: ", embedding)
 
-    return content_title, content_url, content_date, content_text, content_length, content_tokens, cleaned_content_text, embedding
+    return content_title, content_url, content_date, content_length, content_tokens, cleaned_content_text, embedding
 
 # Test upload data to Supabase
-index_data = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-upload_data_to_supabase(index_data, "Test Title", "Test URL")
+metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+#print(index_data)
+upload_data_to_supabase(metadata_index, embedding_index, "Test Title", "Test URL")
