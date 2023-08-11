@@ -1,4 +1,5 @@
 import json
+from math import e
 import os
 from pickle import LIST
 from matplotlib.sankey import UP
@@ -58,14 +59,25 @@ logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 dotenv.load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
 openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
-openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+
 openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
 openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
-LLM_DEPLOYMENT_NAME = "text-davinci-003"
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+
+# Check for if the user wants gpt-3p5-turbo-16k or text-davinci-003 api for LLM
+LLM_NAME = "gpt-3p5-turbo-16k"
+
+if LLM_NAME == "text-davinci-003":
+    LLM_DEPLOYMENT_NAME = "text-davinci-003"
+    LLM_MODEL_NAME = "text-davinci-003"
+    openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+elif LLM_NAME == "gpt-3p5-turbo-16k":
+    LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
+    LLM_MODEL_NAME = "gpt-35-turbo-16k"
+    openai.api_version = os.environ.get("AZURECHATAPIVERSION")
 
 # max LLM token input size
 max_input_size = 4096
@@ -87,7 +99,7 @@ lite_mode = False
 
 llm = AzureOpenAI(
     engine=LLM_DEPLOYMENT_NAME, 
-    model=LLM_DEPLOYMENT_NAME,
+    model=LLM_MODEL_NAME,
     openai_api_key=openai.api_key,
     openai_api_base=openai.api_base,
     openai_api_type=openai.api_type,
@@ -559,6 +571,8 @@ with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
     )
     with gr.Row():
         memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
+    with gr.Row():
+        LLM_NAME = gr.Dropdown(label="Choose your LLM", choices=["gpt-3p5-turbo-16k", "text-davinci-003"])
     with gr.Row():
         with gr.Column(scale=1, min_width=250):
             with gr.Box():
