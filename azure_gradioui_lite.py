@@ -1,12 +1,8 @@
 import json
-from math import e
 import os
-from pickle import LIST
-from matplotlib.sankey import UP
 import requests
 import gradio as gr
 import openai
-import PyPDF2
 import requests
 import re
 import ast
@@ -19,18 +15,11 @@ import sys
 
 from datetime import datetime
 from calendar import c
-from hmac import new
-from shutil import copyfileobj
-from urllib.parse import parse_qs, urlparse
-from IPython.display import Markdown, display
 from newspaper import Article
 from bs4 import BeautifulSoup
-from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from langchain import OpenAI
-from langchain.agents import initialize_agent
 from langchain.embeddings import OpenAIEmbeddings
 from llama_index.llms import AzureOpenAI
 from llama_index import (

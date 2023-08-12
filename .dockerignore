@@ -6,3 +6,4 @@ nohup.out
 __pycache__/
 .venv
 .vscode
+playground/
