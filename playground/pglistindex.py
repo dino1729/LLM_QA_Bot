@@ -1,6 +1,5 @@
-from llama_index import ServiceContext, LLMPredictor, OpenAIEmbedding, PromptHelper, SimpleDirectoryReader, ListIndex, LangchainEmbedding
-from llama_index.text_splitter import TokenTextSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index import ServiceContext, PromptHelper, SimpleDirectoryReader, ListIndex, LangchainEmbedding
+
 import os
 import openai
 import dotenv
