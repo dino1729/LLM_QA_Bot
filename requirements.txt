@@ -62,7 +62,7 @@ pytorch-lightning-logging-comet
 pytube
 flask
 gpt_index
-llama-index==0.7.23
+llama-index==0.7.24.post1
 langchain
 langchain-utilities
 langchain-templates
