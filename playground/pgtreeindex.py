@@ -6,16 +6,12 @@ import openai
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.llms import AzureOpenAI
 from llama_index import (
-    VectorStoreIndex,
     TreeIndex,
     LangchainEmbedding,
     LLMPredictor,
     PromptHelper,
     SimpleDirectoryReader,
     ServiceContext,
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
 )
 # Get API key from environment variable
 dotenv.load_dotenv()

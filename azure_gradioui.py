@@ -34,8 +34,6 @@ from llama_index import (
     set_global_service_context,
 )
 from llama_index.retrievers import VectorIndexRetriever
-from llama_index.indices.list import ListIndexLLMRetriever
-from llama_index.response_synthesizers import TreeSummarize
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
 from llama_index.text_splitter import SentenceSplitter

@@ -1,35 +1,20 @@
 import json
 import os
-from pickle import LIST
-from matplotlib.sankey import UP
 import requests
-import gradio as gr
 import openai
-import PyPDF2
 import requests
 import re
-import ast
 import dotenv
 import logging
-import shutil
 import supabase
 import tiktoken
 import sys
 import argparse
 from datetime import datetime
-from calendar import c
-from hmac import new
-from shutil import copyfileobj
-from urllib.parse import parse_qs, urlparse
-from IPython.display import Markdown, display
 from newspaper import Article
 from bs4 import BeautifulSoup
-from PIL import Image
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
-
-from langchain import OpenAI
-from langchain.agents import initialize_agent
 from langchain.embeddings import OpenAIEmbeddings
 from llama_index.llms import AzureOpenAI
 from llama_index import (
@@ -42,143 +27,12 @@ from llama_index import (
     ServiceContext,
     StorageContext,
     load_index_from_storage,
-    get_response_synthesizer,
     set_global_service_context,
+    get_response_synthesizer,
 )
-from llama_index.retrievers import VectorIndexRetriever
 from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.indices.postprocessor import SimilarityPostprocessor
 from llama_index.text_splitter import SentenceSplitter
 from llama_index.node_parser import SimpleNodeParser
-
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-
-# Get API key from environment variable
-dotenv.load_dotenv()
-os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
-openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
-openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
-openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
-openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
-LLM_DEPLOYMENT_NAME = "text-davinci-003"
-EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
-#Supabase API key
-SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
-
-# Check for if the user wants gpt-3p5-turbo-16k or text-davinci-003 api for LLM
-LLM_NAME = "gpt-3p5-turbo-16k"
-
-if LLM_NAME == "text-davinci-003":
-    LLM_DEPLOYMENT_NAME = "text-davinci-003"
-    LLM_MODEL_NAME = "text-davinci-003"
-    openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
-elif LLM_NAME == "gpt-3p5-turbo-16k":
-    LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
-    LLM_MODEL_NAME = "gpt-35-turbo-16k"
-    openai.api_version = os.environ.get("AZURECHATAPIVERSION")
-
-# max LLM token input size
-max_input_size = 4096
-num_output = 1024
-max_chunk_overlap_ratio = 0.1
-chunk_size = 512
-context_window = 4096
-prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-text_splitter = SentenceSplitter(
-  separator=" ",
-  chunk_size=512,
-  chunk_overlap=20,
-  backup_separators=["\n"],
-  paragraph_separator="\n\n\n"
-)
-node_parser = SimpleNodeParser(text_splitter=text_splitter)
-# Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
-lite_mode = True
-
-llm = AzureOpenAI(
-    engine=LLM_DEPLOYMENT_NAME, 
-    model=LLM_MODEL_NAME,
-    openai_api_key=openai.api_key,
-    openai_api_base=openai.api_base,
-    openai_api_type=openai.api_type,
-    openai_api_version=openai.api_version,
-    temperature=0.5,
-    max_tokens=1024,
-)
-embedding_llm = LangchainEmbedding(
-    OpenAIEmbeddings(
-        model=EMBEDDINGS_DEPLOYMENT_NAME,
-        deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-        openai_api_key=openai.api_key,
-        openai_api_base=openai.api_base,
-        openai_api_type=openai.api_type,
-        openai_api_version=openai.api_version,
-        chunk_size=32,
-        max_retries=3,
-    ),
-    embed_batch_size=1,
-)
-service_context = ServiceContext.from_defaults(
-    llm=llm,
-    embed_model=embedding_llm,
-    prompt_helper=prompt_helper,
-    chunk_size=chunk_size,
-    context_window=context_window,
-    node_parser=node_parser,
-)
-set_global_service_context(service_context)
-
-#UPLOAD_FOLDER = './data'  # set the upload folder path
-UPLOAD_FOLDER = os.path.join(".", "data")
-LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
-VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
-
-example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
-example_qs = []
-summary = "No Summary available yet"
-
-sum_template = (
-    "You are a world-class text summarizer. We have provided context information below. \n"
-    "---------------------\n"
-    "{context_str}"
-    "\n---------------------\n"
-    "Based on the information provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
-    "---------------------\n"
-    "{query_str}"
-)
-summary_template = Prompt(sum_template)
-ques_template = (
-    "You are a world-class personal assistant. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
-    "---------------------\n"
-    "{context_str}"
-    "\n---------------------\n"
-    "Based on the information provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
-    "---------------------\n"
-    "{query_str}"
-)
-qa_template = Prompt(ques_template)
-
-eg_template = (
-    "You are a helpful assistant that is helping the user to gain more knowledge about the input context. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
-    "---------------------\n"
-    "{context_str}"
-    "\n---------------------\n"
-    "Based on the information provided, your task is to generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Be sure to double check your answer to see if it is in the format requested\n"
-    "---------------------\n"
-    "{query_str}"
-)
-example_template = Prompt(eg_template)
-    
-
-# If the UPLOAD_FOLDER path does not exist, create it
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-if not os.path.exists(LIST_FOLDER ):
-    os.makedirs(LIST_FOLDER)
-if not os.path.exists(VECTOR_FOLDER ):
-    os.makedirs(VECTOR_FOLDER)
 
 def build_index():
 
@@ -310,14 +164,24 @@ def download_art(url, memorize):
     else:
         return "Please enter a valid URL"
 
-def ask_fromfullcontext(question, summary_template):
+def ask_fromfullcontext(question, fullcontext_template):
     
     storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
-    index = load_index_from_storage(storage_context, index_id="list_index")
+    list_index = load_index_from_storage(storage_context, index_id="list_index")
     # ListIndexRetriever
-    retriever = index.as_retriever(retriever_mode='default')
-    # tree summarize
-    query_engine = RetrieverQueryEngine.from_args(retriever, response_mode='tree_summarize', text_qa_template=summary_template)
+    retriever = list_index.as_retriever(
+        retriever_mode="default",
+    )
+    # configure response synthesizer
+    response_synthesizer = get_response_synthesizer(
+        response_mode="tree_summarize",
+        text_qa_template=fullcontext_template,
+    )
+    # assemble query engine
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=response_synthesizer,
+    )
     response = query_engine.query(question)
 
     answer = response.response
@@ -335,14 +199,118 @@ def summary_generator():
     return summary
 
 if __name__ == "__main__":
-    logger = logging.getLogger()
-    logger.level = logging.WARN
+    
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
+    # Get API key from environment variable
+    dotenv.load_dotenv()
+    os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
+    openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
+    openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+    openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
+    openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
+    LLM_DEPLOYMENT_NAME = "text-davinci-003"
+    EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
+    #Supabase API key
+    SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+
+    # Check if user set the davinci model flag
+    davincimodel_flag = False
+    if davincimodel_flag:
+        LLM_DEPLOYMENT_NAME = "text-davinci-003"
+        LLM_MODEL_NAME = "text-davinci-003"
+        openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+    else:
+        LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
+        LLM_MODEL_NAME = "gpt-35-turbo-16k"
+        openai.api_version = os.environ.get("AZURECHATAPIVERSION")
+
+    # max LLM token input size
+    max_input_size = 4096
+    num_output = 1024
+    max_chunk_overlap_ratio = 0.1
+    chunk_size = 512
+    context_window = 4096
+    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
+    text_splitter = SentenceSplitter(
+    separator=" ",
+    chunk_size=chunk_size,
+    chunk_overlap=20,
+    backup_separators=["\n"],
+    paragraph_separator="\n\n\n"
+    )
+    node_parser = SimpleNodeParser(text_splitter=text_splitter)
+    # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
+    lite_mode = True
+
+    llm = AzureOpenAI(
+        engine=LLM_DEPLOYMENT_NAME, 
+        model=LLM_MODEL_NAME,
+        openai_api_key=openai.api_key,
+        openai_api_base=openai.api_base,
+        openai_api_type=openai.api_type,
+        openai_api_version=openai.api_version,
+        temperature=0.5,
+        max_tokens=1024,
+    )
+    embedding_llm = LangchainEmbedding(
+        OpenAIEmbeddings(
+            model=EMBEDDINGS_DEPLOYMENT_NAME,
+            deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+            openai_api_key=openai.api_key,
+            openai_api_base=openai.api_base,
+            openai_api_type=openai.api_type,
+            openai_api_version=openai.api_version,
+            chunk_size=32,
+            max_retries=3,
+        ),
+        embed_batch_size=1,
+    )
+    service_context = ServiceContext.from_defaults(
+        llm=llm,
+        embed_model=embedding_llm,
+        prompt_helper=prompt_helper,
+        chunk_size=chunk_size,
+        context_window=context_window,
+        node_parser=node_parser,
+    )
+    set_global_service_context(service_context)
+
+    #UPLOAD_FOLDER = './data'  # set the upload folder path
+    UPLOAD_FOLDER = os.path.join(".", "iosdata")
+    LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
+    VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
+
+    sum_template = (
+        "You are a world-class text summarizer. We have provided context information below. \n"
+        "---------------------\n"
+        "{context_str}"
+        "\n---------------------\n"
+        "Based on the information provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+        "---------------------\n"
+        "Using both the context information and also using your own knowledge, "
+        "answer the question: {query_str}\n"
+        "If the context isn't helpful, you can also answer the question on your own.\n"
+    )
+    summary_template = Prompt(sum_template)
+
+    # If the UPLOAD_FOLDER path does not exist, create it
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+    if not os.path.exists(LIST_FOLDER ):
+        os.makedirs(LIST_FOLDER)
+    # if not os.path.exists(VECTOR_FOLDER ):
+    #     os.makedirs(VECTOR_FOLDER)
+    
     parser = argparse.ArgumentParser(description="Process a URL to generate a summary.")
     parser.add_argument("url", help="The URL of the article or YouTube video.")
     args = parser.parse_args()
 
     summary = ""
     memorize = False
+
     url = args.url.strip()
     if "youtube.com/watch" in url or "youtu.be/" in url:
         summary = download_ytvideo(url, memorize)

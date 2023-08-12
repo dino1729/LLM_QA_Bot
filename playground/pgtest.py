@@ -1,18 +1,15 @@
 import json
 import os
 import datetime
-from turtle import up
-from sympy import content
+
 import tiktoken
 import re
 import logging
-from re import U
 import sys
 from llama_index import (
     VectorStoreIndex,
     ListIndex,
     LangchainEmbedding,
-    LLMPredictor,
     PromptHelper,
     SimpleDirectoryReader,
     ServiceContext,
@@ -23,16 +20,14 @@ from llama_index import (
 )
 from langchain.embeddings import OpenAIEmbeddings
 import dotenv
-from matplotlib.sankey import UP
+
 import openai
 from llama_index.llms import AzureOpenAI
 from llama_index import set_global_service_context
-from llama_index.text_splitter import TokenTextSplitter
+
 from llama_index.text_splitter import SentenceSplitter
 from llama_index.node_parser import SimpleNodeParser
-from llama_index.storage.docstore import SimpleDocumentStore
-from llama_index.storage.index_store import SimpleIndexStore
-from llama_index.vector_stores import SimpleVectorStore
+
 from llama_index.storage import StorageContext
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
