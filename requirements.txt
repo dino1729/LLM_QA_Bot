@@ -28,7 +28,7 @@ beautifulsoup4
 ffmpeg-python
 PyPDF2
 tiktoken
-gradio==3.38.0
+gradio==3.40.0
 IPython
 pydub
 torch

@@ -1,5 +1,6 @@
 import json
 import os
+
 import requests
 import gradio as gr
 import openai
@@ -12,7 +13,8 @@ import shutil
 import supabase
 import tiktoken
 import sys
-
+import cohere
+import google.generativeai as palm
 from datetime import datetime
 from newspaper import Article
 from bs4 import BeautifulSoup
@@ -301,6 +303,217 @@ def download_art(url, memorize):
     else:
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
 
+def generate_chat(model_name, conversation, temperature, max_tokens):
+    if model_name == "COHERE":
+        co = cohere.Client(cohere_api_key)
+        response = co.generate(
+            model='command-nightly',
+            prompt=str(conversation).replace("'", '"'),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.generations[0].text
+    elif model_name == "PALM":
+        palm.configure(api_key=google_palm_api_key)
+        response = palm.chat(
+            model="models/chat-bison-001",
+            messages=str(conversation).replace("'", '"'),
+            temperature=temperature,
+        )
+        return response.last
+    elif model_name == "OPENAI":
+        openai.api_type = "azure"
+        openai.api_base = os.getenv("AZURE_API_BASE")
+        openai.api_version = os.getenv("AZURE_CHATAPI_VERSION")
+        openai.api_key = azure_api_key
+        response = openai.ChatCompletion.create(
+            engine="gpt-3p5-turbo-16k",
+            messages=conversation,
+            **OPENAI_COMPLETION_OPTIONS,
+        )
+        return response['choices'][0]['message']['content']
+    else:
+        return "Invalid model name"
+
+def text_extractor(url):
+
+    if url:
+        # Extract the article
+        article = Article(url)
+        try:
+            article.download()
+            article.parse()
+            #Check if the article text has atleast 75 words
+            if len(article.text.split()) < 75:
+                raise Exception("Article is too short. Probably the article is behind a paywall.")
+        except Exception as e:
+            print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
+            # Try an alternate method using requests and beautifulsoup
+            try:
+                req = requests.get(url)
+                soup = BeautifulSoup(req.content, 'html.parser')
+                article.text = soup.get_text()
+            except Exception as e:
+                print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
+        return article.text
+    else:
+        return None
+
+def saveextractedtext_to_file(text, filename):
+
+    # Save the output to the article.txt file
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    with open(file_path, 'w') as file:
+        file.write(text)
+
+    return f"Text saved to {file_path}"
+
+def get_bing_results(query, num=10):
+
+    clearallfiles()
+    # Construct a request
+    mkt = 'en-US'
+    params = { 'q': query, 'mkt': mkt, 'count': num, 'responseFilter': ['Webpages','News'] }
+    headers = { 'Ocp-Apim-Subscription-Key': bing_api_key }
+    response = requests.get(bing_endpoint, headers=headers, params=params)
+    response_data = response.json()  # Parse the JSON response
+
+    # Extract snippets and append them into a single text variable
+    all_snippets = [result['snippet'] for result in response_data['webPages']['value']]
+    combined_snippets = '\n'.join(all_snippets)
+    
+    # Format the results as a string
+    output = f"Here is the context from Bing for the query: '{query}':\n"
+    output += combined_snippets
+
+    # Save the output to a file
+    saveextractedtext_to_file(output, "bing_results.txt")
+    # Query the results using llama-index
+    answer = str(simple_query("./data", query)).strip()
+
+    return answer
+
+def get_bing_news_results(query, num=5):
+
+    clearallfiles()
+    # Construct a request
+    mkt = 'en-US'
+    params = { 'q': query, 'mkt': mkt, 'freshness': 'Day', 'count': num }
+    headers = { 'Ocp-Apim-Subscription-Key': bing_api_key }
+    response = requests.get(bing_news_endpoint, headers=headers, params=params)
+    response_data = response.json()  # Parse the JSON response
+    #pprint(response_data)
+
+    # Extract text from the urls and append them into a single text variable
+    all_urls = [result['url'] for result in response_data['value']]
+    all_snippets = [text_extractor(url) for url in all_urls]
+
+    # Combine snippets with titles and article names
+    combined_output = ""
+    for i, (snippet, result) in enumerate(zip(all_snippets, response_data['value'])):
+        title = f"Article {i + 1}: {result['name']}"
+        if len(snippet.split()) >= 75:  # Check if article has at least 75 words
+            combined_output += f"\n{title}\n{snippet}\n"
+
+    # Format the results as a string
+    output = f"Here's scraped text from top {num} articles for: '{query}':\n"
+    output += combined_output
+
+    # Save the output to a file
+    saveextractedtext_to_file(output, "bing_results.txt")
+    # Summarize the bing search response
+    bingsummary = str(summarize("./data")).strip()
+
+    return bingsummary
+
+def summarize(data_folder):
+    
+    # Initialize a document
+    documents = SimpleDirectoryReader(data_folder).load_data()
+    #index = VectorStoreIndex.from_documents(documents)
+    list_index = ListIndex.from_documents(documents)
+    # ListIndexRetriever
+    retriever = list_index.as_retriever(
+        retriever_mode='default',
+    )
+    # configure response synthesizer
+    response_synthesizer = get_response_synthesizer(
+        response_mode="tree_summarize",
+        text_qa_template=summary_template,
+    )
+    # assemble query engine
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=response_synthesizer,
+    )
+    response = query_engine.query("Generate a summary of the input context. Be as verbose as possible, while keeping the summary concise and to the point.")
+
+    return response
+
+def simple_query(data_folder, query):
+    
+    # Initialize a document
+    documents = SimpleDirectoryReader(data_folder).load_data()
+    #index = VectorStoreIndex.from_documents(documents)
+    vector_index = VectorStoreIndex.from_documents(documents)
+    # configure retriever
+    retriever = VectorIndexRetriever(
+        index=vector_index,
+        similarity_top_k=6,
+    )
+    # # configure response synthesizer
+    response_synthesizer = get_response_synthesizer(
+        text_qa_template=qa_template,
+    )
+    # # assemble query engine
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=response_synthesizer,
+        node_postprocessors=[
+            SimilarityPostprocessor(similarity_cutoff=0.7)
+        ],
+    )
+    response = query_engine.query(query)
+
+    return response
+
+def internet_connected_chatbot(query, conversation, model_name, max_tokens, temperature):
+    
+    conversation = system_prompt.copy()
+
+    try:
+        # Set the initial conversation to the default system prompt
+        conversation = system_prompt.copy()
+        new_message = {"role": "user", "content": query}
+        conversation.append(new_message)
+
+        try:
+            if any(keyword in query.lower() for keyword in keywords):
+                # If the query contains any of the keywords, perform a Bing search
+                if "news" in query.lower():
+                    assistant_reply = get_bing_news_results(query)
+                    new_assistant_message = {"role": "assistant", "content": assistant_reply}
+                    conversation.append(new_assistant_message)
+                else:
+                    assistant_reply = get_bing_results(query)
+                    new_assistant_message = {"role": "assistant", "content": assistant_reply}
+                    conversation.append(new_assistant_message)
+            else:
+                # Generate a response using the selected model
+                assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
+                new_assistant_message = {"role": "assistant", "content": assistant_reply}
+                conversation.append(new_assistant_message)
+        except Exception as e:
+            print("Model error:", str(e))
+            print("Resetting conversation...")
+            conversation = system_prompt.copy()
+
+    except Exception as e:
+        print("Error occurred while generating response:", str(e))
+        conversation = system_prompt.copy()
+
+    return assistant_reply
+
 def ask(question, history):
     
     history = history or []
@@ -432,28 +645,52 @@ if __name__ == '__main__':
 
     # Get API key from environment variable
     dotenv.load_dotenv()
-    os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
-    openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
-    openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
-    openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
+    cohere_api_key = os.environ["COHERE_API_KEY"]
+    google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
+    azure_api_key = os.environ["AZURE_API_KEY"]
+    os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
+    openai.api_type = "azure"
+    openai.api_base = os.environ.get("AZURE_API_BASE")
+    openai.api_key = os.environ.get("AZURE_API_KEY")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
     #Supabase API key
     SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+
+    bing_api_key = os.getenv("BING_API_KEY")
+    bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
+    bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 
     # Check if user set the davinci model flag
     davincimodel_flag = False
     if davincimodel_flag:
         LLM_DEPLOYMENT_NAME = "text-davinci-003"
         LLM_MODEL_NAME = "text-davinci-003"
-        openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+        openai.api_version = os.environ.get("AZURE_API_VERSION")
         print("Using text-davinci-003 model.")
     else:
         LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = os.environ.get("AZURECHATAPIVERSION")
+        openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
         print("Using gpt-3p5-turbo-16k model.")
 
+    OPENAI_COMPLETION_OPTIONS = {
+        "temperature": 0.5,
+        "max_tokens": 420,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0
+    }
+    system_prompt = [{
+        "role": "system",
+        "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
+    }]
+
+    temperature = 0.5
+    max_tokens = 420
+    model_name = "PALM"
+    # Define a list of keywords that trigger Bing search
+    keywords = ["latest", "current", "recent", "update", "best", "top", "news", "weather", "summary", "previous"]
     # max LLM token input size
     max_input_size = 4096
     num_output = 1024
@@ -462,10 +699,10 @@ if __name__ == '__main__':
     context_window = 4096
     prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
     text_splitter = SentenceSplitter(
-    separator=" ",
-    chunk_size=chunk_size,
-    chunk_overlap=20,
-    paragraph_separator="\n\n\n"
+        separator=" ",
+        chunk_size=chunk_size,
+        chunk_overlap=20,
+        paragraph_separator="\n\n\n"
     )
     node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
@@ -519,23 +756,20 @@ if __name__ == '__main__':
         "---------------------\n"
         "{context_str}"
         "\n---------------------\n"
-        "Based on the information provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+        "Based on the context provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
         "---------------------\n"
         "Using both the context information and also using your own knowledge, "
         "answer the question: {query_str}\n"
-        "If the context isn't helpful, you can also answer the question on your own.\n"
     )
     summary_template = Prompt(sum_template)
     eg_template = (
-        "You are a helpful assistant that is helping the user to gain more knowledge about the input context. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
+        "You are a world-class question generator. We have provided context information below. Here is the context:\n"
         "---------------------\n"
         "{context_str}"
         "\n---------------------\n"
-        "Based on the information provided, your task is to generate atleast 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes. Be sure to double check your answer to see if it is in the format requested\n"
+        "Based on the context provided, your task is to generate 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes\n"
         "---------------------\n"
-        "Using both the context information and also using your own knowledge, "
-        "answer the question: {query_str}\n"
-        "If the context isn't helpful, you can also answer the question on your own.\n"
+        "{query_str}\n"
     )
     example_template = Prompt(eg_template)
     ques_template = (
@@ -543,11 +777,10 @@ if __name__ == '__main__':
         "---------------------\n"
         "{context_str}\n"
         "\n---------------------\n"
-        "Based on the information provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+        "Based on the context provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
         "---------------------\n"
         "Using both the context information and also using your own knowledge, "
         "answer the question: {query_str}\n"
-        "If the context isn't helpful, you can also answer the question on your own.\n"
     )
     qa_template = Prompt(ques_template)
 
@@ -577,8 +810,6 @@ if __name__ == '__main__':
         )
         with gr.Row():
             memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
-        # with gr.Row():
-        #     davincimodel_flag = gr.Checkbox(label="Use text-davinci-003 model")
         with gr.Row():
             with gr.Column(scale=1, min_width=250):
                 with gr.Box():
@@ -610,6 +841,17 @@ if __name__ == '__main__':
                     query.submit(ask, inputs=[query, state], outputs=[chatbot, state])
                 clearchat_button = gr.Button(value="Clear Chat", scale=0)
         with gr.Row():
+            with gr.Tab(label="AI Assistant"):
+                gr.ChatInterface(
+                    internet_connected_chatbot,
+                    additional_inputs=[
+                        gr.Dropdown(label="Model", choices=["COHERE", "PALM", "OPENAI"]),
+                        gr.Slider(10, 210, value=105, label = "Max Tokens"),
+                        gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
+                    ],
+                    retry_btn=None,
+                    undo_btn=None,
+                )
             with gr.Tab(label="Trip Generator"):
                 with gr.Row():
                     city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
