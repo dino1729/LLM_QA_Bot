@@ -481,32 +481,26 @@ def simple_query(data_folder, query):
 
     return response
 
-def internet_connected_chatbot(query, conversation, model_name, max_tokens, temperature):
+def internet_connected_chatbot(query, history, model_name, max_tokens, temperature):
     
-    conversation = system_prompt.copy()
-
     try:
         # Set the initial conversation to the default system prompt
         conversation = system_prompt.copy()
-        new_message = {"role": "user", "content": query}
-        conversation.append(new_message)
+        for human, assistant in history:
+            conversation.append({"role": "user", "content": human})
+            conversation.append({"role": "assistant", "content": assistant})
+        conversation.append({"role": "user", "content": query})
 
         try:
             if any(keyword in query.lower() for keyword in keywords):
                 # If the query contains any of the keywords, perform a Bing search
                 if "news" in query.lower():
                     assistant_reply = get_bing_news_results(query)
-                    new_assistant_message = {"role": "assistant", "content": assistant_reply}
-                    conversation.append(new_assistant_message)
                 else:
                     assistant_reply = get_bing_results(query)
-                    new_assistant_message = {"role": "assistant", "content": assistant_reply}
-                    conversation.append(new_assistant_message)
             else:
                 # Generate a response using the selected model
                 assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
-                new_assistant_message = {"role": "assistant", "content": assistant_reply}
-                conversation.append(new_assistant_message)
         except Exception as e:
             print("Model error:", str(e))
             print("Resetting conversation...")
@@ -682,7 +676,7 @@ if __name__ == '__main__':
         "role": "system",
         "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
     }]
-
+    conversation = system_prompt.copy()
     temperature = 0.5
     max_tokens = 420
     model_name = "PALM"
@@ -843,9 +837,11 @@ if __name__ == '__main__':
                     internet_connected_chatbot,
                     additional_inputs=[
                         gr.Dropdown(label="Model", choices=["COHERE", "PALM", "OPENAI"]),
-                        gr.Slider(10, 210, value=105, label = "Max Tokens"),
+                        gr.Slider(10, 210, value=105, label = "Max Output Tokens"),
                         gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                     ],
+                    examples=[["Generate latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"]],
+                    title="AI Assistant",
                     retry_btn=None,
                     undo_btn=None,
                 )
