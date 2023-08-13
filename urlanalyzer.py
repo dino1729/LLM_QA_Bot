@@ -205,12 +205,10 @@ if __name__ == "__main__":
 
     # Get API key from environment variable
     dotenv.load_dotenv()
-    os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")
-    openai.api_type = os.environ.get("AZUREOPENAIAPITYPE")
-    openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
-    openai.api_base = os.environ.get("AZUREOPENAIENDPOINT")
-    openai.api_key = os.environ.get("AZUREOPENAIAPIKEY")
-    LLM_DEPLOYMENT_NAME = "text-davinci-003"
+    os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
+    openai.api_type = "azure"
+    openai.api_base = os.environ.get("AZURE_API_BASE")
+    openai.api_key = os.environ.get("AZURE_API_KEY")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
     #Supabase API key
     SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -288,11 +286,10 @@ if __name__ == "__main__":
         "---------------------\n"
         "{context_str}"
         "\n---------------------\n"
-        "Based on the information provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+        "Based on the context provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
         "---------------------\n"
         "Using both the context information and also using your own knowledge, "
         "answer the question: {query_str}\n"
-        "If the context isn't helpful, you can also answer the question on your own.\n"
     )
     summary_template = Prompt(sum_template)
 
