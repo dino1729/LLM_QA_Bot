@@ -329,7 +329,11 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         response = openai.ChatCompletion.create(
             engine="gpt-3p5-turbo-16k",
             messages=conversation,
-            **OPENAI_COMPLETION_OPTIONS,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0
         )
         return response['choices'][0]['message']['content']
     else:
@@ -674,13 +678,6 @@ if __name__ == '__main__':
         openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
         print("Using gpt-3p5-turbo-16k model.")
 
-    OPENAI_COMPLETION_OPTIONS = {
-        "temperature": 0.5,
-        "max_tokens": 420,
-        "top_p": 1,
-        "frequency_penalty": 0,
-        "presence_penalty": 0
-    }
     system_prompt = [{
         "role": "system",
         "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
