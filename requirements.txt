@@ -70,3 +70,5 @@ youtube_transcript_api
 supabase
 docx2txt
 pypdf
+cohere
+google.generativeai
