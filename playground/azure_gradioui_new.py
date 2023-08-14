@@ -393,7 +393,7 @@ def get_bing_results(query, num=10):
     # Save the output to a file
     saveextractedtext_to_file(output, "bing_results.txt")
     # Query the results using llama-index
-    answer = str(simple_query("./data", query)).strip()
+    answer = str(simple_query(UPLOAD_FOLDER, query)).strip()
 
     return answer
 
@@ -426,7 +426,7 @@ def get_bing_news_results(query, num=5):
     # Save the output to a file
     saveextractedtext_to_file(output, "bing_results.txt")
     # Summarize the bing search response
-    bingsummary = str(summarize("./data")).strip()
+    bingsummary = str(summarize(UPLOAD_FOLDER)).strip()
 
     return bingsummary
 
