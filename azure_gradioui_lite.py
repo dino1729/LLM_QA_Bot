@@ -157,6 +157,13 @@ def clearallfiles():
             file_path = os.path.join(root, file)
             os.remove(file_path)
 
+def clearallfiles_bing():
+    # Ensure the UPLOAD_FOLDER is empty
+    for root, dirs, files in os.walk(BING_FOLDER):
+        for file in files:
+            file_path = os.path.join(root, file)
+            os.remove(file_path)
+
 def upload_file(files, memorize):
 
     clearallfiles()
@@ -366,7 +373,7 @@ def text_extractor(url):
 def saveextractedtext_to_file(text, filename):
 
     # Save the output to the article.txt file
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    file_path = os.path.join(BING_FOLDER, filename)
     with open(file_path, 'w') as file:
         file.write(text)
 
@@ -374,7 +381,7 @@ def saveextractedtext_to_file(text, filename):
 
 def get_bing_results(query, num=10):
 
-    clearallfiles()
+    clearallfiles_bing()
     # Construct a request
     mkt = 'en-US'
     params = { 'q': query, 'mkt': mkt, 'count': num, 'responseFilter': ['Webpages','News'] }
@@ -393,13 +400,13 @@ def get_bing_results(query, num=10):
     # Save the output to a file
     saveextractedtext_to_file(output, "bing_results.txt")
     # Query the results using llama-index
-    answer = str(simple_query(UPLOAD_FOLDER, query)).strip()
+    answer = str(simple_query(BING_FOLDER, query)).strip()
 
     return answer
 
 def get_bing_news_results(query, num=5):
 
-    clearallfiles()
+    clearallfiles_bing()
     # Construct a request
     mkt = 'en-US'
     params = { 'q': query, 'mkt': mkt, 'freshness': 'Day', 'count': num }
@@ -426,7 +433,7 @@ def get_bing_news_results(query, num=5):
     # Save the output to a file
     saveextractedtext_to_file(output, "bing_results.txt")
     # Summarize the bing search response
-    bingsummary = str(summarize(UPLOAD_FOLDER)).strip()
+    bingsummary = str(summarize(BING_FOLDER)).strip()
 
     return bingsummary
 
@@ -735,6 +742,7 @@ if __name__ == '__main__':
 
     #UPLOAD_FOLDER = './data'  # set the upload folder path
     UPLOAD_FOLDER = os.path.join(".", "data")
+    BING_FOLDER = os.path.join(".", "bing_data")
     LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
     VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
 
@@ -778,6 +786,8 @@ if __name__ == '__main__':
     # If the UPLOAD_FOLDER path does not exist, create it
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)
+    if not os.path.exists(BING_FOLDER):
+        os.makedirs(BING_FOLDER)
     if not os.path.exists(LIST_FOLDER ):
         os.makedirs(LIST_FOLDER)
     if not os.path.exists(VECTOR_FOLDER ):
