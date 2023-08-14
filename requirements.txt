@@ -61,7 +61,6 @@ pytorch-lightning-logging-neptune
 pytorch-lightning-logging-comet
 pytube
 flask
-gpt_index
 llama-index==0.7.24.post1
 langchain
 langchain-utilities
