@@ -219,11 +219,11 @@ if __name__ == "__main__":
     if davincimodel_flag:
         LLM_DEPLOYMENT_NAME = "text-davinci-003"
         LLM_MODEL_NAME = "text-davinci-003"
-        openai.api_version = os.environ.get("AZUREOPENAIAPIVERSION")
+        openai.api_version = os.environ.get("AZURE_API_VERSION")
     else:
         LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = os.environ.get("AZURECHATAPIVERSION")
+        openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
 
     # max LLM token input size
     max_input_size = 4096
