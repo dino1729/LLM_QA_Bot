@@ -1,5 +1,7 @@
 import json
 import os
+from matplotlib.pyplot import sca
+from numpy import var
 
 import requests
 import gradio as gr
@@ -522,9 +524,6 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
 def ask(question, history):
     
     history = history or []
-    s = list(filter(None, sum(history, ())))
-    s.append(question)
-    inp = ' '.join(s)
 
     # Rebuild the storage context
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
@@ -551,7 +550,7 @@ def ask(question, history):
 
     history.append((question, answer))
 
-    return history, history
+    return answer
 
 def ask_query(question):
 
@@ -793,7 +792,7 @@ if __name__ == '__main__':
     if not os.path.exists(VECTOR_FOLDER ):
         os.makedirs(VECTOR_FOLDER)
 
-    with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
+    with gr.Blocks(theme=gr.themes.Soft()) as llmapp:
         gr.Markdown(
             """
             <h1><center><b>LLM Bot</center></h1>
@@ -809,53 +808,45 @@ if __name__ == '__main__':
             </center>
             """
         )
-        with gr.Row():
-            memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
-        with gr.Row():
-            with gr.Column(scale=1, min_width=250):
-                with gr.Box():
-                    files = gr.File(label="Upload the files to be analyzed", file_count="multiple")
-                    with gr.Row():
-                        upload_button = gr.Button(value="Upload", scale=0)
-                        upload_output = gr.Textbox(label="Upload Status")
+        with gr.Tab(label="LLM APP"):
+            with gr.Row():
+                memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
+            with gr.Row():
                 with gr.Tab(label="Video Analyzer"):
                     yturl = gr.Textbox(placeholder="Input must be a Youtube URL", label="Enter Youtube URL")
                     with gr.Row():
-                        download_button = gr.Button(value="Download", scale=0)
                         download_output = gr.Textbox(label="Video download Status")
+                        download_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="Article Analyzer"):
                     arturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Article URL")
                     with gr.Row():
-                        adownload_button = gr.Button(value="Download", scale=0)
                         adownload_output = gr.Textbox(label="Article download Status")
-            with gr.Column(scale=2, min_width=650):
+                        adownload_button = gr.Button(value="Download", scale=0)
+                with gr.Tab(label="File Analyzer"):
+                    files = gr.File(label="Upload the files to be analyzed", file_count="multiple",scale=0)
+                    with gr.Row():
+                        upload_output = gr.Textbox(label="Upload Status")
+                        upload_button = gr.Button(value="Upload", scale=0)
+            with gr.Row():
                 with gr.Box():
                     summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
-                    chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot")
-                    state = gr.State([])
-                    with gr.Row():
-                        query = gr.Textbox(show_label=False, placeholder="Enter text and press enter")
-                        submit_button = gr.Button(value="Ask", scale=0)
-                        clearquery_button = gr.Button(value="Clear", scale=0)
+                    chatui = gr.ChatInterface(ask)
+                    query = chatui.textbox
                     examples = gr.Dataset(samples=example_queries, components=[query], type="index")
-                    submit_button.click(ask, inputs=[query, state], outputs=[chatbot, state])
-                    query.submit(ask, inputs=[query, state], outputs=[chatbot, state])
-                clearchat_button = gr.Button(value="Clear Chat", scale=0)
-        with gr.Row():
-            with gr.Tab(label="AI Assistant"):
-                gr.ChatInterface(
-                    internet_connected_chatbot,
-                    additional_inputs=[
-                        gr.Dropdown(label="Model", choices=["COHERE", "PALM", "OPENAI"]),
-                        gr.Slider(10, 210, value=105, label = "Max Output Tokens"),
-                        gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
-                    ],
-                    examples=[["Generate latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"]],
-                    title="AI Assistant",
-                    retry_btn=None,
-                    undo_btn=None,
-                )
-            with gr.Tab(label="Trip Generator"):
+        with gr.Tab(label="AI Assistant"):
+            gr.ChatInterface(
+                internet_connected_chatbot,
+                additional_inputs=[
+                    gr.Dropdown(label="Model", choices=["COHERE", "PALM", "OPENAI"]),
+                    gr.Slider(10, 210, value=105, label = "Max Output Tokens"),
+                    gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
+                ],
+                examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What is the latest GDP per capita of India?"]],
+                retry_btn=None,
+                undo_btn=None,
+            )
+        with gr.Tab(label="Fun"):
+            with gr.Tab(label="City Planner"):
                 with gr.Row():
                     city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
                     number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
@@ -886,8 +877,8 @@ if __name__ == '__main__':
         # Load example queries
         examples.click(load_example, inputs=[examples], outputs=[query])
 
-        clearquery_button.click(cleartext, inputs=[query, query], outputs=[query, query])
-        clearchat_button.click(cleartext, inputs=[query, chatbot], outputs=[query,chatbot])
+        #clearquery_button.click(cleartext, inputs=[query, query], outputs=[query, query])
+        #clearchat_button.click(cleartext, inputs=[query, chatbot], outputs=[query,chatbot])
         clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
         clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
         #live = True
