@@ -42,7 +42,7 @@ spacy
 pytube
 flask
 llama-index==0.7.24.post1
-langchain
+langchain==0.0.263
 youtube_transcript_api
 supabase
 docx2txt
