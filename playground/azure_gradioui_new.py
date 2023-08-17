@@ -35,6 +35,7 @@ from llama_index import (
     get_response_synthesizer,
     set_global_service_context,
 )
+from llama_index.indices.document_summary import DocumentSummaryIndex
 from llama_index.retrievers import VectorIndexRetriever
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
@@ -121,9 +122,15 @@ def build_index():
     questionindex = VectorStoreIndex.from_documents(documents)
     questionindex.set_index_id("vector_index")
     questionindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
-    
-    summaryindex = ListIndex.from_documents(documents)
-    summaryindex.set_index_id("list_index")
+
+    response_synthesizer = get_response_synthesizer(
+        response_mode="tree_summarize", use_async=True
+    )
+    summaryindex = DocumentSummaryIndex.from_documents(
+        documents, 
+        response_synthesizer=response_synthesizer
+    )
+    summaryindex.set_index_id("summary_index")
     summaryindex.storage_context.persist(persist_dir=LIST_FOLDER)
 
 def upload_data_to_supabase(metadata_index, embedding_index, title, url):
@@ -522,49 +529,23 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
 def ask(question, history):
     
     history = history or []
-    s = list(filter(None, sum(history, ())))
-    s.append(question)
-    inp = ' '.join(s)
+    answer = ask_query(question, qa_template)
 
-    # Rebuild the storage context
-    storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
-    vector_index = load_index_from_storage(storage_context, index_id="vector_index")
-    # configure retriever
-    retriever = VectorIndexRetriever(
-        index=vector_index,
-        similarity_top_k=6,
-    )
-    # # configure response synthesizer
-    response_synthesizer = get_response_synthesizer(
-        text_qa_template=qa_template,
-    )
-    # # assemble query engine
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer,
-        node_postprocessors=[
-            SimilarityPostprocessor(similarity_cutoff=0.7)
-        ],
-    )
-    response = query_engine.query(question)
-    answer = response.response
+    return answer
 
-    history.append((question, answer))
-
-    return history, history
-
-def ask_query(question):
+def ask_query(question, query_template):
 
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
     retriever = VectorIndexRetriever(
         index=vector_index,
-        similarity_top_k=6,
+        similarity_top_k=10,
     )
     # # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
-        text_qa_template=qa_template,
+        text_qa_template=query_template,
+        refine_template=qa_refine_template,
     )
     # # assemble query engine
     query_engine = RetrieverQueryEngine(
@@ -582,15 +563,14 @@ def ask_query(question):
 def ask_fromfullcontext(question, fullcontext_template):
     
     storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
-    list_index = load_index_from_storage(storage_context, index_id="list_index")
-    # ListIndexRetriever
-    retriever = list_index.as_retriever(
+    summary_index = load_index_from_storage(storage_context, index_id="summary_index")
+   # SummaryIndexRetriever
+    retriever = summary_index.as_retriever(
         retriever_mode="default",
     )
     # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
         response_mode="tree_summarize",
-        text_qa_template=fullcontext_template,
     )
     # assemble query engine
     query_engine = RetrieverQueryEngine(
@@ -607,7 +587,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("Generate 5 questions exactly in the format mentioned", example_template).lstrip('\n')
+        llmresponse = ask_query("Generate 5 questions exactly in the format mentioned", example_template).lstrip('\n')
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
@@ -643,253 +623,260 @@ def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
 
-if __name__ == '__main__':
 
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
-    # Get API key from environment variable
-    dotenv.load_dotenv()
-    cohere_api_key = os.environ["COHERE_API_KEY"]
-    google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
-    azure_api_key = os.environ["AZURE_API_KEY"]
-    os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
-    openai.api_type = "azure"
-    openai.api_base = os.environ.get("AZURE_API_BASE")
-    openai.api_key = os.environ.get("AZURE_API_KEY")
-    EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
-    #Supabase API key
-    SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+# Get API key from environment variable
+dotenv.load_dotenv()
+cohere_api_key = os.environ["COHERE_API_KEY"]
+google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
+azure_api_key = os.environ["AZURE_API_KEY"]
+os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
+openai.api_type = "azure"
+openai.api_base = os.environ.get("AZURE_API_BASE")
+openai.api_key = os.environ.get("AZURE_API_KEY")
+EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
+#Supabase API key
+SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 
-    bing_api_key = os.getenv("BING_API_KEY")
-    bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
-    bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
+bing_api_key = os.getenv("BING_API_KEY")
+bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
+bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 
-    # Check if user set the davinci model flag
-    davincimodel_flag = False
-    if davincimodel_flag:
-        LLM_DEPLOYMENT_NAME = "text-davinci-003"
-        LLM_MODEL_NAME = "text-davinci-003"
-        openai.api_version = os.environ.get("AZURE_API_VERSION")
-        print("Using text-davinci-003 model.")
-    else:
-        LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
-        LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
-        print("Using gpt-3p5-turbo-16k model.")
-
-    system_prompt = [{
-        "role": "system",
-        "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
-    }]
-    conversation = system_prompt.copy()
-    temperature = 0.5
-    max_tokens = 420
-    model_name = "PALM"
-    # Define a list of keywords that trigger Bing search
-    keywords = ["latest", "current", "recent", "update", "best", "top", "news", "weather", "summary", "previous"]
-    # max LLM token input size
+# Check if user set the davinci model flag
+davincimodel_flag = False
+if davincimodel_flag:
+    LLM_DEPLOYMENT_NAME = "text-davinci-003"
+    LLM_MODEL_NAME = "text-davinci-003"
+    openai.api_version = os.environ.get("AZURE_API_VERSION")
     max_input_size = 4096
-    num_output = 1024
-    max_chunk_overlap_ratio = 0.1
-    chunk_size = 512
     context_window = 4096
-    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-    text_splitter = SentenceSplitter(
-        separator=" ",
-        chunk_size=chunk_size,
-        chunk_overlap=20,
-        paragraph_separator="\n\n\n"
-    )
-    node_parser = SimpleNodeParser(text_splitter=text_splitter)
+    print("Using text-davinci-003 model.")
+else:
+    LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
+    LLM_MODEL_NAME = "gpt-35-turbo-16k"
+    openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
+    max_input_size = 16384
+    context_window = 16384
+    print("Using gpt-3p5-turbo-16k model.")
 
-    # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
-    lite_mode = False
+system_prompt = [{
+    "role": "system",
+    "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
+}]
+conversation = system_prompt.copy()
+temperature = 0.5
+max_tokens = 420
+model_name = "PALM"
+# Define a list of keywords that trigger Bing search
+keywords = ["latest", "current", "recent", "update", "best", "top", "news", "weather", "summary", "previous"]
+# max LLM token input size
+num_output = 1024
+max_chunk_overlap_ratio = 0.1
+chunk_size = 512
 
-    llm = AzureOpenAI(
-        engine=LLM_DEPLOYMENT_NAME, 
-        model=LLM_MODEL_NAME,
+prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
+text_splitter = SentenceSplitter(
+    separator=" ",
+    chunk_size=chunk_size,
+    chunk_overlap=20,
+    paragraph_separator="\n\n\n"
+)
+node_parser = SimpleNodeParser(text_splitter=text_splitter)
+
+# Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
+lite_mode = False
+
+llm = AzureOpenAI(
+    engine=LLM_DEPLOYMENT_NAME, 
+    model=LLM_MODEL_NAME,
+    openai_api_key=openai.api_key,
+    openai_api_base=openai.api_base,
+    openai_api_type=openai.api_type,
+    openai_api_version=openai.api_version,
+    temperature=0.5,
+    max_tokens=1024,
+)
+embedding_llm = LangchainEmbedding(
+    OpenAIEmbeddings(
+        model=EMBEDDINGS_DEPLOYMENT_NAME,
+        deployment=EMBEDDINGS_DEPLOYMENT_NAME,
         openai_api_key=openai.api_key,
         openai_api_base=openai.api_base,
         openai_api_type=openai.api_type,
         openai_api_version=openai.api_version,
-        temperature=0.5,
-        max_tokens=1024,
-    )
-    embedding_llm = LangchainEmbedding(
-        OpenAIEmbeddings(
-            model=EMBEDDINGS_DEPLOYMENT_NAME,
-            deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-            openai_api_key=openai.api_key,
-            openai_api_base=openai.api_base,
-            openai_api_type=openai.api_type,
-            openai_api_version=openai.api_version,
-            chunk_size=32,
-            max_retries=3,
-        ),
-        embed_batch_size=1,
-    )
-    service_context = ServiceContext.from_defaults(
-        llm=llm,
-        embed_model=embedding_llm,
-        prompt_helper=prompt_helper,
-        chunk_size=chunk_size,
-        context_window=context_window,
-        node_parser=node_parser,
-    )
-    set_global_service_context(service_context)
+        chunk_size=32,
+        max_retries=3,
+    ),
+    embed_batch_size=1,
+)
+service_context = ServiceContext.from_defaults(
+    llm=llm,
+    embed_model=embedding_llm,
+    prompt_helper=prompt_helper,
+    chunk_size=chunk_size,
+    context_window=context_window,
+    node_parser=node_parser,
+)
+set_global_service_context(service_context)
 
-    #UPLOAD_FOLDER = './data'  # set the upload folder path
-    UPLOAD_FOLDER = os.path.join(".", "data")
-    BING_FOLDER = os.path.join(".", "bing_data")
-    LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
-    VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
+#UPLOAD_FOLDER = './data'  # set the upload folder path
+UPLOAD_FOLDER = os.path.join(".", "data")
+BING_FOLDER = os.path.join(".", "bing_data")
+LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
+VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
 
-    example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
-    example_qs = []
-    summary = "No Summary available yet"
+example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
+example_qs = []
+summary = "No Summary available yet"
 
-    sum_template = (
-        "You are a world-class text summarizer. We have provided context information below. \n"
-        "---------------------\n"
-        "{context_str}"
-        "\n---------------------\n"
-        "Based on the context provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
-        "---------------------\n"
-        "Using both the context information and also using your own knowledge, "
-        "answer the question: {query_str}\n"
+sum_template = (
+    "You are a world-class text summarizer. We have provided context information below. \n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Based on the context provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+    "---------------------\n"
+    "Using both the context information and also using your own knowledge, "
+    "answer the question: {query_str}\n"
+)
+summary_template = Prompt(sum_template)
+eg_template = (
+    "You are a world-class question generator. We have provided context information below. Here is the context:\n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Based on the context provided, your task is to generate 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes\n"
+    "---------------------\n"
+    "{query_str}\n"
+)
+example_template = Prompt(eg_template)
+ques_template = (
+    "You are a world-class personal assistant. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
+    "---------------------\n"
+    "{context_str}\n"
+    "\n---------------------\n"
+    "Based on the context provided, your task is to answer the user's question to the best of your ability. Try to long answers to certain questions in the form of a bulleted list. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+    "---------------------\n"
+    "Using both the context information and also using your own knowledge, "
+    "answer the question: {query_str}\n"
+)
+qa_template = Prompt(ques_template)
+refine_template_str = (
+    "The original question is as follows: {query_str}\n"
+    "We have provided an existing answer: {existing_answer}\n"
+    "We have the opportunity to refine the existing answer "
+    "(only if needed) with some more context below.\n"
+    "------------\n"
+    "{context_msg}\n"
+    "------------\n"
+    "Using both the new context and your own knowledege, update or repeat the existing answer.\n"
+)
+qa_refine_template = Prompt(refine_template_str)
+
+# If the UPLOAD_FOLDER path does not exist, create it
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(BING_FOLDER):
+    os.makedirs(BING_FOLDER)
+if not os.path.exists(LIST_FOLDER ):
+    os.makedirs(LIST_FOLDER)
+if not os.path.exists(VECTOR_FOLDER ):
+    os.makedirs(VECTOR_FOLDER)
+
+# theme = gr.Theme.from_hub("gstaff/xkcd")
+theme = gr.themes.Soft()
+
+with gr.Blocks(theme=theme) as llmapp:
+    gr.Markdown(
+        """
+        <h1><center><b>LLM Bot</center></h1>
+        """
     )
-    summary_template = Prompt(sum_template)
-    eg_template = (
-        "You are a world-class question generator. We have provided context information below. Here is the context:\n"
-        "---------------------\n"
-        "{context_str}"
-        "\n---------------------\n"
-        "Based on the context provided, your task is to generate 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes\n"
-        "---------------------\n"
-        "{query_str}\n"
+    gr.Markdown(
+        """
+        <center>
+        <br>
+        This app uses the Transformer magic to answer all your questions! <br>
+        Check the "Memorize" box if you want to add the information to your memory palace! <br>
+        Using the default gpt-3p5-turbo-16k model! <br>
+        </center>
+        """
     )
-    example_template = Prompt(eg_template)
-    ques_template = (
-        "You are a world-class personal assistant. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
-        "---------------------\n"
-        "{context_str}\n"
-        "\n---------------------\n"
-        "Based on the context provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
-        "---------------------\n"
-        "Using both the context information and also using your own knowledge, "
-        "answer the question: {query_str}\n"
-    )
-    qa_template = Prompt(ques_template)
-
-    # If the UPLOAD_FOLDER path does not exist, create it
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-    if not os.path.exists(BING_FOLDER):
-        os.makedirs(BING_FOLDER)
-    if not os.path.exists(LIST_FOLDER ):
-        os.makedirs(LIST_FOLDER)
-    if not os.path.exists(VECTOR_FOLDER ):
-        os.makedirs(VECTOR_FOLDER)
-
-    with gr.Blocks(css="#chatbot .overflow-y-auto{height:500px}") as llmapp:
-        gr.Markdown(
-            """
-            <h1><center><b>LLM Bot</center></h1>
-            """
-        )
-        gr.Markdown(
-            """
-            <center>
-            <br>
-            This app uses the Transformer magic to answer all your questions! <br>
-            Check the "Memorize" box if you want to add the information to your memory palace! <br>
-            Using the default gpt-3p5-turbo-16k model! <br>
-            </center>
-            """
-        )
-        with gr.Row():
-            memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
-        with gr.Row():
-            with gr.Column(scale=1, min_width=250):
-                with gr.Box():
-                    files = gr.File(label="Upload the files to be analyzed", file_count="multiple")
-                    with gr.Row():
-                        upload_button = gr.Button(value="Upload", scale=0)
-                        upload_output = gr.Textbox(label="Upload Status")
+    with gr.Tab(label="LLM APP"):
+        with gr.Box():
+            with gr.Row():
+                memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
+            with gr.Row():
                 with gr.Tab(label="Video Analyzer"):
                     yturl = gr.Textbox(placeholder="Input must be a Youtube URL", label="Enter Youtube URL")
                     with gr.Row():
-                        download_button = gr.Button(value="Download", scale=0)
                         download_output = gr.Textbox(label="Video download Status")
+                        download_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="Article Analyzer"):
                     arturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Article URL")
                     with gr.Row():
-                        adownload_button = gr.Button(value="Download", scale=0)
                         adownload_output = gr.Textbox(label="Article download Status")
-            with gr.Column(scale=2, min_width=650):
+                        adownload_button = gr.Button(value="Download", scale=0)
+                with gr.Tab(label="File Analyzer"):
+                    files = gr.Files(label="Upload the files to be analyzed")
+                    with gr.Row():
+                        upload_output = gr.Textbox(label="Upload Status")
+                        upload_button = gr.Button(value="Upload", scale=0)
+            with gr.Row():
                 with gr.Box():
                     summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
-                    chatbot = gr.Chatbot(elem_id="chatbot", label="LLM Bot")
-                    state = gr.State([])
-                    with gr.Row():
-                        query = gr.Textbox(show_label=False, placeholder="Enter text and press enter")
-                        submit_button = gr.Button(value="Ask", scale=0)
-                        clearquery_button = gr.Button(value="Clear", scale=0)
-                    examples = gr.Dataset(samples=example_queries, components=[query], type="index")
-                    submit_button.click(ask, inputs=[query, state], outputs=[chatbot, state])
-                    query.submit(ask, inputs=[query, state], outputs=[chatbot, state])
-                clearchat_button = gr.Button(value="Clear Chat", scale=0)
-        with gr.Row():
-            with gr.Tab(label="AI Assistant"):
-                gr.ChatInterface(
-                    internet_connected_chatbot,
-                    additional_inputs=[
-                        gr.Dropdown(label="Model", choices=["COHERE", "PALM", "OPENAI"]),
-                        gr.Slider(10, 210, value=105, label = "Max Output Tokens"),
-                        gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
-                    ],
-                    examples=[["Generate latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"]],
-                    title="AI Assistant",
-                    retry_btn=None,
-                    undo_btn=None,
-                )
-            with gr.Tab(label="Trip Generator"):
-                with gr.Row():
-                    city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
-                    number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
-                    city_button = gr.Button(value="Plan", scale=0)
-                with gr.Row():
-                    city_output = gr.Textbox(label="Trip Plan")
-                    clear_trip_button = gr.Button(value="Clear", scale=0)
-            with gr.Tab(label="Cravings Generator"):
-                with gr.Row():
-                    craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
-                    craving_cuisine = gr.Textbox(placeholder="What kind of food are you craving for? Enter idk if you don't know what you want to eat", label="Food")
-                    craving_button = gr.Button(value="Cook", scale=0)
-                with gr.Row():
-                    craving_output = gr.Textbox(label="Food Places")
-                    clear_craving_button = gr.Button(value="Clear", scale=0)
+                    chatui = gr.ChatInterface(
+                        ask,
+                        submit_btn="Ask",
+                        retry_btn=None,
+                        undo_btn=None,
+                    )
+                    query = chatui.textbox
+                    examples = gr.Dataset(label="Questions", samples=example_queries, components=[query], type="index")
+    with gr.Tab(label="AI Assistant"):
+        gr.ChatInterface(
+            internet_connected_chatbot,
+            additional_inputs=[
+                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI"], value="PALM"),
+                gr.Slider(10, 840, value=420, label = "Max Output Tokens"),
+                gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
+            ],
+            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What is the latest GDP per capita of India?"]],
+            submit_btn="Ask",
+            retry_btn=None,
+            undo_btn=None,
+        )
+    with gr.Tab(label="Fun"):
+        with gr.Tab(label="City Planner"):
+            with gr.Row():
+                city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
+                number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
+                city_button = gr.Button(value="Plan", scale=0)
+            with gr.Row():
+                city_output = gr.Textbox(label="Trip Plan")
+                clear_trip_button = gr.Button(value="Clear", scale=0)
+        with gr.Tab(label="Cravings Generator"):
+            with gr.Row():
+                craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
+                craving_cuisine = gr.Textbox(placeholder="What are you craving for? Enter idk if you don't know what you want to eat", label="Food")
+                craving_button = gr.Button(value="Cook", scale=0)
+            with gr.Row():
+                craving_output = gr.Textbox(label="Food Places")
+                clear_craving_button = gr.Button(value="Clear", scale=0)
 
-        # Upload button for uploading files
-        upload_button.click(upload_file, inputs=[files, memorize], outputs=[upload_output, examples, summary_output], show_progress=True)
-        # Download button for downloading youtube video
-        download_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[download_output, examples, summary_output], show_progress=True)
-        # Download button for downloading article
-        adownload_button.click(download_art, inputs=[arturl, memorize], outputs=[adownload_output, examples, summary_output], show_progress=True)
-        # City Planner button
-        city_button.click(generate_trip_plan, inputs=[city_name, number_of_days], outputs=[city_output], show_progress=True)
-        # Cravings button
-        craving_button.click(craving_satisfier, inputs=[craving_city_name, craving_cuisine], outputs=[craving_output], show_progress=True)
 
-        # Load example queries
-        examples.click(load_example, inputs=[examples], outputs=[query])
+    upload_button.click(upload_file, inputs=[files, memorize], outputs=[upload_output, examples, summary_output], show_progress=True)
+    download_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[download_output, examples, summary_output], show_progress=True)
+    adownload_button.click(download_art, inputs=[arturl, memorize], outputs=[adownload_output, examples, summary_output], show_progress=True)
+    city_button.click(generate_trip_plan, inputs=[city_name, number_of_days], outputs=[city_output], show_progress=True)
+    craving_button.click(craving_satisfier, inputs=[craving_city_name, craving_cuisine], outputs=[craving_output], show_progress=True)
+    examples.click(load_example, inputs=[examples], outputs=[query])
+    clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
+    clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
+    live = True
 
-        clearquery_button.click(cleartext, inputs=[query, query], outputs=[query, query])
-        clearchat_button.click(cleartext, inputs=[query, chatbot], outputs=[query,chatbot])
-        clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
-        clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
-        #live = True
-
+if __name__ == '__main__':
     llmapp.launch(server_name='0.0.0.0', server_port=7860)

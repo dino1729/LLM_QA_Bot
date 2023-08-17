@@ -222,14 +222,12 @@ if __name__ == "__main__":
         openai.api_version = os.environ.get("AZURE_API_VERSION")
         max_input_size = 4096
         context_window = 4096
-       # print("Using text-davinci-003 model.")
     else:
         LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
         openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
         max_input_size = 16384
         context_window = 16384
-       # print("Using gpt-3p5-turbo-16k model.")
 
     # max LLM token input size
     num_output = 1024

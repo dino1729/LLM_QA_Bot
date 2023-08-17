@@ -522,31 +522,7 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
 def ask(question, history):
     
     history = history or []
-
-    # Rebuild the storage context
-    storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
-    vector_index = load_index_from_storage(storage_context, index_id="vector_index")
-    # configure retriever
-    retriever = VectorIndexRetriever(
-        index=vector_index,
-        similarity_top_k=6,
-    )
-    # # configure response synthesizer
-    response_synthesizer = get_response_synthesizer(
-        text_qa_template=qa_template,
-    )
-    # # assemble query engine
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer,
-        node_postprocessors=[
-            SimilarityPostprocessor(similarity_cutoff=0.7)
-        ],
-    )
-    response = query_engine.query(question)
-    answer = response.response
-
-    history.append((question, answer))
+    answer = ask_query(question)
 
     return answer
 
@@ -557,7 +533,7 @@ def ask_query(question):
     # configure retriever
     retriever = VectorIndexRetriever(
         index=vector_index,
-        similarity_top_k=6,
+        similarity_top_k=10,
     )
     # # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
@@ -775,7 +751,7 @@ ques_template = (
     "---------------------\n"
     "{context_str}\n"
     "\n---------------------\n"
-    "Based on the context provided, your task is to answer the user's question to the best of your ability. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
+    "Based on the context provided, your task is to answer the user's question to the best of your ability. Try to long answers to certain questions in the form of a bulleted list. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.\n"
     "---------------------\n"
     "Using both the context information and also using your own knowledge, "
     "answer the question: {query_str}\n"
@@ -827,7 +803,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         adownload_output = gr.Textbox(label="Article download Status")
                         adownload_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="File Analyzer"):
-                    files = gr.Files(label="Upload the files to be analyzed", size="sm")
+                    files = gr.Files(label="Upload the files to be analyzed")
                     with gr.Row():
                         upload_output = gr.Textbox(label="Upload Status")
                         upload_button = gr.Button(value="Upload", scale=0)
