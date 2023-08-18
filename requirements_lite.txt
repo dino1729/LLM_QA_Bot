@@ -49,3 +49,4 @@ docx2txt
 pypdf
 cohere
 google.generativeai
+pinecone-client

@@ -1,6 +1,6 @@
 import json
 import os
-
+import pinecone
 import requests
 import gradio as gr
 import openai
@@ -11,6 +11,7 @@ import dotenv
 import logging
 import shutil
 import supabase
+from sympy import use
 import tiktoken
 import sys
 import cohere
@@ -88,6 +89,60 @@ def craving_satisfier(city, food_craving):
     # Remove new line characters from the beginning of the string
     message = message[1:]
     return f'Here are 3 restaurants in {city} that serve {food_craving}! Bon Appetit!! {message}'
+
+def extract_context_frompinecone(query):
+    
+    holybook = "gita"
+    pinecone.init(api_key=pinecone_api_key, environment=pinecone_environment)
+    index = pinecone.Index(holybook)
+    # Get embeddings for the query
+    try:
+        response = openai.Embedding.create(
+            input=[query], 
+            engine=EMBEDDINGS_DEPLOYMENT_NAME,
+            )
+        embedding = response["data"][0]["embedding"]
+        # Find contex in pinecone
+        with open(f"./holybook/{holybook}.json", "r") as f:
+            data = json.loads(f.read())
+        res = index.query(vector=(embedding), top_k=8)
+        ids = [i["id"] for i in res["matches"]]
+        context = ""
+        for id in ids:
+            context = context + str(id) + ": " + data[str(id)] + "\n\n"
+    except Exception as e:
+        print("Error occurred while generating context:", str(e))
+        context = "Error occurred while extracting context from Pinecone. Answer the question without context."
+
+    return context
+
+def gita_answer(query, history, model_name, max_tokens, temperature):
+
+    systemprompt = [{
+        "role": "system",
+        "content": "You are not an AI Language model. You will be a Bhagwad Gita assistant to the user. Restrict yourself to the context of the question."
+    }]
+    try:
+        # Set the initial conversation to the default system prompt
+        conversation = systemprompt.copy()
+        for human, assistant in history:
+            conversation.append({"role": "user", "content": human})
+            conversation.append({"role": "assistant", "content": assistant})
+        context = extract_context_frompinecone(query)
+        userprompt = f"Here are some verses that could help answer my question:\n\n{context}\n\nMy question: {query}\n\nYour answer:\n\n"
+        conversation.append({"role": "user", "content": userprompt})
+        try:
+            # Generate a response using the selected model
+            assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
+        except Exception as e:
+            print("Model error:", str(e))
+            print("Resetting conversation...")
+            conversation = systemprompt.copy()
+    except Exception as e:
+        print("Error occurred while generating response:", str(e))
+        conversation = systemprompt.copy()
+
+    return assistant_reply
 
 def fileformatvaliditycheck(files):
     # Function to check validity of file formats
@@ -612,6 +667,10 @@ def cleartext(query, output):
     # Function to clear text
     return ["", ""]
 
+def clearfield(field):
+    # Function to clear text
+    return [""]
+
 def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
@@ -633,6 +692,9 @@ EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+#Pinecone API key
+pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+pinecone_environment = os.environ.get("PINECONE_ENVIRONMENT")
 
 bing_api_key = os.getenv("BING_API_KEY")
 bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
@@ -840,6 +902,25 @@ with gr.Blocks(theme=theme) as llmapp:
             with gr.Row():
                 city_output = gr.Textbox(label="Trip Plan")
                 clear_trip_button = gr.Button(value="Clear", scale=0)
+        with gr.Tab(label="Bhagawad Gita"):
+            gitachat = gr.ChatInterface(
+                gita_answer,
+                additional_inputs=[
+                    gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI"], value="OPENAI"),
+                    gr.Slider(10, 840, value=420, label = "Max Output Tokens"),
+                    gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
+                ],
+                examples=[["What is the meaning of life?"], ["What is the purpose of life?"], ["What is the meaning of death?"], ["What is the purpose of death?"], ["What is the meaning of existence?"], ["What is the purpose of existence?"], ["What is the meaning of the universe?"], ["What is the purpose of the universe?"], ["What is the meaning of the world?"], ["What is the purpose of the world?"]],
+                submit_btn="Ask",
+                retry_btn=None,
+                undo_btn=None,
+            )
+            gita_question = gitachat.textbox
+            # with gr.Row():
+            #     gitareferences = gr.Textbox(placeholder= "References will be generated here", label="References")
+            #     with gr.Column():
+            #         gitaviewreferences = gr.Button(value="View References", scale=0)
+            #         gitaclear_button = gr.Button(value="Clear", scale=0)
         with gr.Tab(label="Cravings Generator"):
             with gr.Row():
                 craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
@@ -858,7 +939,8 @@ with gr.Blocks(theme=theme) as llmapp:
     examples.click(load_example, inputs=[examples], outputs=[query])
     clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
     clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
-    live = True
+    #gitaviewreferences.click(extract_context_frompinecone, inputs=[gita_question], outputs=[gitareferences], show_progress=True)
+    #gitaclear_button.click(clearfield, inputs=[gitareferences], outputs=[gitareferences])
 
 if __name__ == '__main__':
     llmapp.launch(server_name='0.0.0.0', server_port=7860)
