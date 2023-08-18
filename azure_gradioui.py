@@ -11,7 +11,6 @@ import dotenv
 import logging
 import shutil
 import supabase
-from sympy import use
 import tiktoken
 import sys
 import cohere
