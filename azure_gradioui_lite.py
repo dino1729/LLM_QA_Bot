@@ -397,6 +397,36 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             presence_penalty=0
         )
         return response['choices'][0]['message']['content']
+    elif model_name == "LLAMA2":
+        openai.api_type = "open_ai"
+        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        response = openai.ChatCompletion.create(
+            model="llama2-7bchat-m",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response['choices'][0]['message']['content']
+    elif model_name == "GPT4ALL":
+        openai.api_type = "open_ai"
+        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        response = openai.ChatCompletion.create(
+            model="ggml-gpt4all-j",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response['choices'][0]['message']['content']
+    elif model_name == "WIZARDLM":
+        openai.api_type = "open_ai"
+        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        response = openai.ChatCompletion.create(
+            model="wizardlm-7b-8k-m",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response['choices'][0]['message']['content']
     else:
         return "Invalid model name"
 
@@ -674,7 +704,6 @@ def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
 
-
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
@@ -688,6 +717,8 @@ openai.api_type = "azure"
 openai.api_base = os.environ.get("AZURE_API_BASE")
 openai.api_key = os.environ.get("AZURE_API_KEY")
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
+# LocalAL API Base
+llama2_api_base = os.environ.get("LLAMA2_API_BASE")
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
@@ -883,7 +914,7 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI"], value="PALM"),
+                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "LLAMA2", "GPT4ALL", "WIZARDLM"], value="PALM"),
                 gr.Slider(10, 840, value=420, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],

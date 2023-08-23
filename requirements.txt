@@ -62,7 +62,7 @@ pytorch-lightning-logging-comet
 pytube
 flask
 llama-index==0.7.24.post1
-langchain
+langchain==0.0.263
 langchain-utilities
 langchain-templates
 youtube_transcript_api
