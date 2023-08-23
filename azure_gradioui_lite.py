@@ -46,6 +46,8 @@ def generate_trip_plan(city, days):
     try:
         days = int(days)
         prompt = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
+        openai.api_type = "azure"
+        openai.api_base = os.environ.get("AZURE_API_BASE")
         completions = openai.Completion.create(
             engine="text-davinci-003",
             prompt=prompt,
@@ -62,6 +64,8 @@ def craving_satisfier(city, food_craving):
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
+        openai.api_type = "azure"
+        openai.api_base = os.environ.get("AZURE_API_BASE")
         food_craving = openai.Completion.create(
             engine="text-davinci-003",
             prompt="Generate a random food craving",
@@ -76,13 +80,15 @@ def craving_satisfier(city, food_craving):
     else:
         print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
 
-    prompt = f"I'm looking for 3 restaurants in {city} that serves {food_craving}. Just give me a list of 3 restaurants with short address."
+    prompt = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Just give me a list of 6 restaurants with short address."
+    openai.api_type = "azure"
+    openai.api_base = os.environ.get("AZURE_API_BASE")
     completions = openai.Completion.create(
         engine="text-davinci-003",
         prompt=prompt,
-        max_tokens=128,
+        max_tokens=256,
         stop=None,
-        temperature=0.5,
+        temperature=0.8,
     )
     message = completions.choices[0].text
     # Remove new line characters from the beginning of the string
@@ -523,6 +529,8 @@ def get_bing_news_results(query, num=5):
 
 def summarize(data_folder):
     
+    # Set service context
+    set_global_service_context(service_context)
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -547,6 +555,8 @@ def summarize(data_folder):
 
 def simple_query(data_folder, query):
     
+    # Set service context
+    set_global_service_context(service_context)
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -612,6 +622,8 @@ def ask(question, history):
 
 def ask_query(question):
 
+    # Set service context
+    set_global_service_context(service_context)
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
@@ -638,6 +650,8 @@ def ask_query(question):
 
 def ask_fromfullcontext(question, fullcontext_template):
     
+    # Set service context
+    set_global_service_context(service_context)
     storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
     list_index = load_index_from_storage(storage_context, index_id="list_index")
     # ListIndexRetriever
