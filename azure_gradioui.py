@@ -46,8 +46,8 @@ def generate_trip_plan(city, days):
     try:
         days = int(days)
         prompt = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
-        openai.api_type = "azure"
-        openai.api_base = os.environ.get("AZURE_API_BASE")
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
         completions = openai.Completion.create(
             engine="text-davinci-003",
             prompt=prompt,
@@ -64,8 +64,8 @@ def craving_satisfier(city, food_craving):
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
-        openai.api_type = "azure"
-        openai.api_base = os.environ.get("AZURE_API_BASE")
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
         food_craving = openai.Completion.create(
             engine="text-davinci-003",
             prompt="Generate a random food craving",
@@ -81,8 +81,8 @@ def craving_satisfier(city, food_craving):
         print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
 
     prompt = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Just give me a list of 6 restaurants with short address."
-    openai.api_type = "azure"
-    openai.api_base = os.environ.get("AZURE_API_BASE")
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
     completions = openai.Completion.create(
         engine="text-davinci-003",
         prompt=prompt,
@@ -389,9 +389,9 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response.last
     elif model_name == "OPENAI":
-        openai.api_type = "azure"
-        openai.api_base = os.getenv("AZURE_API_BASE")
-        openai.api_version = os.getenv("AZURE_CHATAPI_VERSION")
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
+        openai.api_version = azure_chatapi_version
         openai.api_key = azure_api_key
         response = openai.ChatCompletion.create(
             engine="gpt-3p5-turbo-16k",
@@ -404,8 +404,8 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response['choices'][0]['message']['content']
     elif model_name == "LLAMA2":
-        openai.api_type = "open_ai"
-        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        openai.api_type = llama2_api_type
+        openai.api_base = llama2_api_base
         response = openai.ChatCompletion.create(
             model="llama2-7bchat-m",
             messages=conversation,
@@ -414,8 +414,8 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response['choices'][0]['message']['content']
     elif model_name == "GPT4ALL":
-        openai.api_type = "open_ai"
-        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        openai.api_type = llama2_api_type
+        openai.api_base = llama2_api_base
         response = openai.ChatCompletion.create(
             model="ggml-gpt4all-j",
             messages=conversation,
@@ -424,8 +424,8 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response['choices'][0]['message']['content']
     elif model_name == "WIZARDLM":
-        openai.api_type = "open_ai"
-        openai.api_base = os.getenv("LLAMA2_API_BASE")
+        openai.api_type = llama2_api_type
+        openai.api_base = llama2_api_base
         response = openai.ChatCompletion.create(
             model="wizardlm-7b-8k-m",
             messages=conversation,
@@ -726,12 +726,14 @@ dotenv.load_dotenv()
 cohere_api_key = os.environ["COHERE_API_KEY"]
 google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
 azure_api_key = os.environ["AZURE_API_KEY"]
-os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
-openai.api_type = "azure"
-openai.api_base = os.environ.get("AZURE_API_BASE")
-openai.api_key = os.environ.get("AZURE_API_KEY")
+azure_api_type = "azure"
+azure_api_base = os.environ.get("AZURE_API_BASE")
+azure_api_version = os.environ.get("AZURE_API_VERSION")
+azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
+
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 # LocalAL API Base
+llama2_api_type = "open_ai"
 llama2_api_base = os.environ.get("LLAMA2_API_BASE")
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -744,19 +746,24 @@ bing_api_key = os.getenv("BING_API_KEY")
 bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
 bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 
+os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
+openai.api_type = azure_api_type
+openai.api_base = azure_api_base
+openai.api_key = azure_api_key
+
 # Check if user set the davinci model flag
 davincimodel_flag = False
 if davincimodel_flag:
     LLM_DEPLOYMENT_NAME = "text-davinci-003"
     LLM_MODEL_NAME = "text-davinci-003"
-    openai.api_version = os.environ.get("AZURE_API_VERSION")
+    openai.api_version = azure_api_version
     max_input_size = 4096
     context_window = 4096
     print("Using text-davinci-003 model.")
 else:
     LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
     LLM_MODEL_NAME = "gpt-35-turbo-16k"
-    openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
+    openai.api_version = azure_chatapi_version
     max_input_size = 16384
     context_window = 16384
     print("Using gpt-3p5-turbo-16k model.")
@@ -791,10 +798,9 @@ lite_mode = False
 llm = AzureOpenAI(
     engine=LLM_DEPLOYMENT_NAME, 
     model=LLM_MODEL_NAME,
-    openai_api_key=openai.api_key,
-    openai_api_base=openai.api_base,
-    openai_api_type=openai.api_type,
-    openai_api_version=openai.api_version,
+    openai_api_key=azure_api_key,
+    openai_api_base=azure_api_base,
+    openai_api_type=azure_api_type,
     temperature=0.5,
     max_tokens=1024,
 )
@@ -802,10 +808,10 @@ embedding_llm = LangchainEmbedding(
     OpenAIEmbeddings(
         model=EMBEDDINGS_DEPLOYMENT_NAME,
         deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-        openai_api_key=openai.api_key,
-        openai_api_base=openai.api_base,
-        openai_api_type=openai.api_type,
-        openai_api_version=openai.api_version,
+        openai_api_key=azure_api_key,
+        openai_api_base=azure_api_base,
+        openai_api_type=azure_api_key,
+        openai_api_version=azure_api_version,
         chunk_size=32,
         max_retries=3,
     ),
