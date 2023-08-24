@@ -262,7 +262,7 @@ if __name__ == "__main__":
             deployment=EMBEDDINGS_DEPLOYMENT_NAME,
             openai_api_key=azure_api_key,
             openai_api_base=azure_api_base,
-            openai_api_type=azure_api_key,
+            openai_api_type=azure_api_type,
             openai_api_version=azure_api_version,
             chunk_size=32,
             max_retries=3,
