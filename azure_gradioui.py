@@ -746,7 +746,7 @@ bing_api_key = os.getenv("BING_API_KEY")
 bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
 bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 
-os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
+os.environ["OPENAI_API_KEY"] = azure_api_key
 openai.api_type = azure_api_type
 openai.api_base = azure_api_base
 openai.api_key = azure_api_key
