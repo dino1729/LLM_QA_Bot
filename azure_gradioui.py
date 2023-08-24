@@ -529,8 +529,9 @@ def get_bing_news_results(query, num=5):
 
 def summarize(data_folder):
     
-    # Set service context
-    set_global_service_context(service_context)
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -555,8 +556,9 @@ def summarize(data_folder):
 
 def simple_query(data_folder, query):
     
-    # Set service context
-    set_global_service_context(service_context)
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -622,8 +624,9 @@ def ask(question, history):
 
 def ask_query(question):
 
-    # Set service context
-    set_global_service_context(service_context)
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
@@ -650,8 +653,9 @@ def ask_query(question):
 
 def ask_fromfullcontext(question, fullcontext_template):
     
-    # Set service context
-    set_global_service_context(service_context)
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
     storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
     list_index = load_index_from_storage(storage_context, index_id="list_index")
     # ListIndexRetriever
