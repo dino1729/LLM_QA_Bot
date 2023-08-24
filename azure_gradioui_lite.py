@@ -407,7 +407,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         openai.api_type = llama2_api_type
         openai.api_base = llama2_api_base
         response = openai.ChatCompletion.create(
-            model="llama2-7bchat-m",
+            model="llama2-7bchat",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
