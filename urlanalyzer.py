@@ -5,10 +5,8 @@ import openai
 import requests
 import re
 import dotenv
-import logging
 import supabase
 import tiktoken
-import sys
 import argparse
 from datetime import datetime
 from newspaper import Article
@@ -205,27 +203,32 @@ if __name__ == "__main__":
 
     # Get API key from environment variable
     dotenv.load_dotenv()
-    os.environ["OPENAI_API_KEY"] = os.environ["AZURE_API_KEY"]
-    openai.api_type = "azure"
-    openai.api_base = os.environ.get("AZURE_API_BASE")
-    openai.api_key = os.environ.get("AZURE_API_KEY")
+    azure_api_key = os.environ["AZURE_API_KEY"]
+    azure_api_type = "azure"
+    azure_api_base = os.environ.get("AZURE_API_BASE")
+    azure_api_version = os.environ.get("AZURE_API_VERSION")
+    azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
     #Supabase API key
     SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 
+    os.environ["OPENAI_API_KEY"] = azure_api_key
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     # Check if user set the davinci model flag
     davincimodel_flag = False
     if davincimodel_flag:
         LLM_DEPLOYMENT_NAME = "text-davinci-003"
         LLM_MODEL_NAME = "text-davinci-003"
-        openai.api_version = os.environ.get("AZURE_API_VERSION")
+        openai.api_version = azure_api_version
         max_input_size = 4096
         context_window = 4096
     else:
         LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = os.environ.get("AZURE_CHATAPI_VERSION")
+        openai.api_version = azure_chatapi_version
         max_input_size = 16384
         context_window = 16384
 
@@ -235,11 +238,10 @@ if __name__ == "__main__":
     chunk_size = 512
     prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
     text_splitter = SentenceSplitter(
-    separator=" ",
-    chunk_size=chunk_size,
-    chunk_overlap=20,
-    backup_separators=["\n"],
-    paragraph_separator="\n\n\n"
+        separator=" ",
+        chunk_size=chunk_size,
+        chunk_overlap=20,
+        paragraph_separator="\n\n\n"
     )
     node_parser = SimpleNodeParser(text_splitter=text_splitter)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
@@ -248,10 +250,9 @@ if __name__ == "__main__":
     llm = AzureOpenAI(
         engine=LLM_DEPLOYMENT_NAME, 
         model=LLM_MODEL_NAME,
-        openai_api_key=openai.api_key,
-        openai_api_base=openai.api_base,
-        openai_api_type=openai.api_type,
-        openai_api_version=openai.api_version,
+        openai_api_key=azure_api_key,
+        openai_api_base=azure_api_base,
+        openai_api_type=azure_api_type,
         temperature=0.5,
         max_tokens=1024,
     )
@@ -259,10 +260,10 @@ if __name__ == "__main__":
         OpenAIEmbeddings(
             model=EMBEDDINGS_DEPLOYMENT_NAME,
             deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-            openai_api_key=openai.api_key,
-            openai_api_base=openai.api_base,
-            openai_api_type=openai.api_type,
-            openai_api_version=openai.api_version,
+            openai_api_key=azure_api_key,
+            openai_api_base=azure_api_base,
+            openai_api_type=azure_api_key,
+            openai_api_version=azure_api_version,
             chunk_size=32,
             max_retries=3,
         ),
