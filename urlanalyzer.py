@@ -17,20 +17,20 @@ from langchain.embeddings import OpenAIEmbeddings
 from llama_index.llms import AzureOpenAI
 from llama_index import (
     VectorStoreIndex,
-    ListIndex,
+    SummaryIndex,
     LangchainEmbedding,
     PromptHelper,
-    Prompt,
     SimpleDirectoryReader,
     ServiceContext,
     StorageContext,
     load_index_from_storage,
-    set_global_service_context,
     get_response_synthesizer,
+    set_global_service_context,
 )
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.text_splitter import SentenceSplitter
 from llama_index.node_parser import SimpleNodeParser
+from llama_index.prompts import PromptTemplate
 
 def build_index():
 
@@ -39,9 +39,9 @@ def build_index():
     questionindex.set_index_id("vector_index")
     questionindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
     
-    summaryindex = ListIndex.from_documents(documents)
-    summaryindex.set_index_id("list_index")
-    summaryindex.storage_context.persist(persist_dir=LIST_FOLDER)
+    summaryindex = SummaryIndex.from_documents(documents)
+    summaryindex.set_index_id("summary_index")
+    summaryindex.storage_context.persist(persist_dir=SUMMARY_FOLDER)
 
 def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
@@ -144,7 +144,7 @@ def download_art(url, memorize):
                 article.text = soup.get_text()
             except Exception as e:
                 print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
-                return "Failed to download and parse article. Please check the URL and try again.", summary
+                return summary
         # Save the article to the UPLOAD_FOLDER
         with open(os.path.join(UPLOAD_FOLDER, "article.txt"), 'w') as f:
             f.write(article.text)
@@ -164,16 +164,19 @@ def download_art(url, memorize):
 
 def ask_fromfullcontext(question, fullcontext_template):
     
-    storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
-    list_index = load_index_from_storage(storage_context, index_id="list_index")
-    # ListIndexRetriever
-    retriever = list_index.as_retriever(
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
+    summary_index = load_index_from_storage(storage_context, index_id="summary_index")
+    # SummaryIndexRetriever
+    retriever = summary_index.as_retriever(
         retriever_mode="default",
     )
     # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
         response_mode="tree_summarize",
-        text_qa_template=fullcontext_template,
+        summary_template=fullcontext_template,
     )
     # assemble query engine
     query_engine = RetrieverQueryEngine(
@@ -217,20 +220,21 @@ if __name__ == "__main__":
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
     openai.api_key = azure_api_key
-    # Check if user set the davinci model flag
-    davincimodel_flag = False
-    if davincimodel_flag:
-        LLM_DEPLOYMENT_NAME = "text-davinci-003"
-        LLM_MODEL_NAME = "text-davinci-003"
-        openai.api_version = azure_api_version
-        max_input_size = 4096
-        context_window = 4096
+
+   # Check if user set the davinci model flag
+    gpt4_flag = True
+    if gpt4_flag:
+        LLM_DEPLOYMENT_NAME = "gpt-4-32k"
+        LLM_MODEL_NAME = "gpt-4-32k"
+        openai.api_version = azure_chatapi_version
+        max_input_size = 96000
+        context_window = 32000
     else:
-        LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
+        LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
         openai.api_version = azure_chatapi_version
-        max_input_size = 16384
-        context_window = 16384
+        max_input_size = 48000
+        context_window = 16000
 
     # max LLM token input size
     num_output = 1024
@@ -241,7 +245,9 @@ if __name__ == "__main__":
         separator=" ",
         chunk_size=chunk_size,
         chunk_overlap=20,
-        paragraph_separator="\n\n\n"
+        paragraph_separator="\n\n\n",
+        secondary_chunking_regex="[^,.;。]+[,.;。]?",
+        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
     )
     node_parser = SimpleNodeParser(text_splitter=text_splitter)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
@@ -281,7 +287,7 @@ if __name__ == "__main__":
 
     #UPLOAD_FOLDER = './data'  # set the upload folder path
     UPLOAD_FOLDER = os.path.join(".", "iosdata")
-    LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
+    SUMMARY_FOLDER = os.path.join(UPLOAD_FOLDER, "summary_index")
     VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
 
     sum_template = (
@@ -294,13 +300,13 @@ if __name__ == "__main__":
         "Using both the context information and also using your own knowledge, "
         "answer the question: {query_str}\n"
     )
-    summary_template = Prompt(sum_template)
+    summary_template = PromptTemplate(sum_template)
 
     # If the UPLOAD_FOLDER path does not exist, create it
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)
-    if not os.path.exists(LIST_FOLDER ):
-        os.makedirs(LIST_FOLDER)
+    if not os.path.exists(SUMMARY_FOLDER):
+        os.makedirs(SUMMARY_FOLDER)
     # if not os.path.exists(VECTOR_FOLDER ):
     #     os.makedirs(VECTOR_FOLDER)
     

@@ -24,10 +24,9 @@ from langchain.embeddings import OpenAIEmbeddings
 from llama_index.llms import AzureOpenAI
 from llama_index import (
     VectorStoreIndex,
-    ListIndex,
+    SummaryIndex,
     LangchainEmbedding,
     PromptHelper,
-    Prompt,
     SimpleDirectoryReader,
     ServiceContext,
     StorageContext,
@@ -40,19 +39,27 @@ from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
 from llama_index.text_splitter import SentenceSplitter
 from llama_index.node_parser import SimpleNodeParser
+from llama_index.prompts import PromptTemplate
 
 def generate_trip_plan(city, days):
     #Check if the days input is a number and throw an error if it is not
     try:
         days = int(days)
-        prompt = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
+
+        tripsystem_prompt = [{
+            "role": "system",
+            "content": "You are a world class trip planner who is knowledgeable about all the tourist attractions in the world. You will serve the user by planning a trip for them and respecting all their preferences."
+        }]
+        conversation = tripsystem_prompt.copy()
+        user_message = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
+        conversation.append({"role": "user", "content": user_message})
+
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
-        completions = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
+        completions = openai.ChatCompletion.create(
+            engine="gpt-35-turbo-16k",
+            messages=conversation,
             max_tokens=1024,
-            stop=None,
             temperature=0.3,
         )
         message = completions.choices[0].text
@@ -66,11 +73,10 @@ def craving_satisfier(city, food_craving):
         # Generate a random food craving
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
-        food_craving = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt="Generate a random food craving",
+        food_craving = openai.ChatCompletion.create(
+            engine="gpt-35-turbo-16k",
+            messages="Generate a random food craving",
             max_tokens=32,
-            stop=None,
             temperature=0.2,
         )
         food_craving = food_craving.choices[0].text
@@ -80,12 +86,19 @@ def craving_satisfier(city, food_craving):
     else:
         print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
 
-    prompt = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Just give me a list of 6 restaurants with short address."
+    restaurantsystem_prompt = [{
+        "role": "system",
+        "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants and respecting all their preferences."
+    }]
+    conversation = restaurantsystem_prompt.copy()
+    user_message = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Just give me a list of 6 restaurants with short address."
+    conversation.append({"role": "user", "content": user_message})
+
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
-    completions = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
+    completions = openai.ChatCompletion.create(
+        engine="gpt-35-turbo-16k",
+        messages=conversation,
         max_tokens=256,
         stop=None,
         temperature=0.8,
@@ -182,9 +195,9 @@ def build_index():
     questionindex.set_index_id("vector_index")
     questionindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
     
-    summaryindex = ListIndex.from_documents(documents)
-    summaryindex.set_index_id("list_index")
-    summaryindex.storage_context.persist(persist_dir=LIST_FOLDER)
+    summaryindex = SummaryIndex.from_documents(documents)
+    summaryindex.set_index_id("summary_index")
+    summaryindex.storage_context.persist(persist_dir=SUMMARY_FOLDER)
 
 def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
@@ -535,9 +548,9 @@ def summarize(data_folder):
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
-    list_index = ListIndex.from_documents(documents)
-    # ListIndexRetriever
-    retriever = list_index.as_retriever(
+    summary_index = SummaryIndex.from_documents(documents)
+    # SummaryIndexRetriever
+    retriever = summary_index.as_retriever(
         retriever_mode='default',
     )
     # configure response synthesizer
@@ -656,16 +669,16 @@ def ask_fromfullcontext(question, fullcontext_template):
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
-    storage_context = StorageContext.from_defaults(persist_dir=LIST_FOLDER)
-    list_index = load_index_from_storage(storage_context, index_id="list_index")
-    # ListIndexRetriever
-    retriever = list_index.as_retriever(
+    storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
+    summary_index = load_index_from_storage(storage_context, index_id="summary_index")
+    # SummaryIndexRetriever
+    retriever = summary_index.as_retriever(
         retriever_mode="default",
     )
     # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
         response_mode="tree_summarize",
-        text_qa_template=fullcontext_template,
+        summary_template=fullcontext_template,
     )
     # assemble query engine
     query_engine = RetrieverQueryEngine(
@@ -722,7 +735,7 @@ def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 # Get API key from environment variable
@@ -756,20 +769,20 @@ openai.api_base = azure_api_base
 openai.api_key = azure_api_key
 
 # Check if user set the davinci model flag
-davincimodel_flag = False
-if davincimodel_flag:
-    LLM_DEPLOYMENT_NAME = "text-davinci-003"
-    LLM_MODEL_NAME = "text-davinci-003"
-    openai.api_version = azure_api_version
-    max_input_size = 4096
-    context_window = 4096
-    print("Using text-davinci-003 model.")
+gpt4_flag = True
+if gpt4_flag:
+    LLM_DEPLOYMENT_NAME = "gpt-4-32k"
+    LLM_MODEL_NAME = "gpt-4-32k"
+    openai.api_version = azure_chatapi_version
+    max_input_size = 96000
+    context_window = 32000
+    print("Using gpt4-32k model.")
 else:
-    LLM_DEPLOYMENT_NAME = "gpt-3p5-turbo-16k"
+    LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
     LLM_MODEL_NAME = "gpt-35-turbo-16k"
     openai.api_version = azure_chatapi_version
-    max_input_size = 16384
-    context_window = 16384
+    max_input_size = 48000
+    context_window = 16000
     print("Using gpt-3p5-turbo-16k model.")
 
 system_prompt = [{
@@ -785,14 +798,16 @@ keywords = ["latest", "current", "recent", "update", "best", "top", "news", "wea
 # max LLM token input size
 num_output = 1024
 max_chunk_overlap_ratio = 0.1
-chunk_size = 512
+chunk_size = 256
 
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 text_splitter = SentenceSplitter(
     separator=" ",
     chunk_size=chunk_size,
     chunk_overlap=20,
-    paragraph_separator="\n\n\n"
+    paragraph_separator="\n\n\n",
+    secondary_chunking_regex="[^,.;。]+[,.;。]?",
+    tokenizer=tiktoken.encoding_for_model("gpt-4").encode
 )
 node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
@@ -816,7 +831,7 @@ embedding_llm = LangchainEmbedding(
         openai_api_base=azure_api_base,
         openai_api_type=azure_api_type,
         openai_api_version=azure_api_version,
-        chunk_size=32,
+        chunk_size=16,
         max_retries=3,
     ),
     embed_batch_size=1,
@@ -834,7 +849,7 @@ set_global_service_context(service_context)
 #UPLOAD_FOLDER = './data'  # set the upload folder path
 UPLOAD_FOLDER = os.path.join(".", "data")
 BING_FOLDER = os.path.join(".", "bing_data")
-LIST_FOLDER = os.path.join(UPLOAD_FOLDER, "list_index")
+SUMMARY_FOLDER = os.path.join(UPLOAD_FOLDER, "summary_index")
 VECTOR_FOLDER = os.path.join(UPLOAD_FOLDER, "vector_index")
 
 example_queries = [["Generate key 5 point summary"], ["What are 5 main ideas of this article?"], ["What are the key lessons learned and insights in this video?"], ["List key insights and lessons learned from the paper"], ["What are the key takeaways from this article?"]]
@@ -851,7 +866,7 @@ sum_template = (
     "Using both the context information and also using your own knowledge, "
     "answer the question: {query_str}\n"
 )
-summary_template = Prompt(sum_template)
+summary_template = PromptTemplate(sum_template)
 eg_template = (
     "You are a world-class question generator. We have provided context information below. Here is the context:\n"
     "---------------------\n"
@@ -861,7 +876,7 @@ eg_template = (
     "---------------------\n"
     "{query_str}\n"
 )
-example_template = Prompt(eg_template)
+example_template = PromptTemplate(eg_template)
 ques_template = (
     "You are a world-class personal assistant. You will be provided snippets of information from the main context based on user's query. Here is the context:\n"
     "---------------------\n"
@@ -872,15 +887,15 @@ ques_template = (
     "Using both the context information and also using your own knowledge, "
     "answer the question: {query_str}\n"
 )
-qa_template = Prompt(ques_template)
+qa_template = PromptTemplate(ques_template)
 
 # If the UPLOAD_FOLDER path does not exist, create it
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 if not os.path.exists(BING_FOLDER):
     os.makedirs(BING_FOLDER)
-if not os.path.exists(LIST_FOLDER ):
-    os.makedirs(LIST_FOLDER)
+if not os.path.exists(SUMMARY_FOLDER ):
+    os.makedirs(SUMMARY_FOLDER)
 if not os.path.exists(VECTOR_FOLDER ):
     os.makedirs(VECTOR_FOLDER)
 
@@ -899,7 +914,7 @@ with gr.Blocks(theme=theme) as llmapp:
         <br>
         This app uses the Transformer magic to answer all your questions! <br>
         Check the "Memorize" box if you want to add the information to your memory palace! <br>
-        Using the default gpt-3p5-turbo-16k model! <br>
+        Using the default gpt-4-32k model! <br>
         </center>
         """
     )
