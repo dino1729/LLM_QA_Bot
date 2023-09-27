@@ -52,17 +52,18 @@ def generate_trip_plan(city, days):
         }]
         conversation = tripsystem_prompt.copy()
         user_message = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
-        conversation.append({"role": "user", "content": user_message})
+        conversation.append({"role": "user", "content": str(user_message)})
 
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
-        completions = openai.ChatCompletion.create(
-            engine="gpt-35-turbo-16k",
+        response = openai.ChatCompletion.create(
+            engine="gpt-4",
             messages=conversation,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=0.3,
         )
-        message = completions.choices[0].text
+        message = response['choices'][0]['message']['content']
+        conversation.append({"role": "assistant", "content": str(message)})
         return f"Here is your trip plan for {city} for {days} day(s): {message}"
     except:
         return "Please enter a number for days."
@@ -71,42 +72,47 @@ def craving_satisfier(city, food_craving):
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
+        foodsystem_prompt = [{
+            "role": "system",
+            "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. The user will ask you to generate a food craving and you must respond in one-word answer."
+        }]
+        conversation1 = foodsystem_prompt.copy()
+        user_message1 = f"I don't know what to eat and I want you to generate a food craving for me. Be as creative as possible"
+        conversation1.append({"role": "user", "content": str(user_message1)})
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
-        food_craving = openai.ChatCompletion.create(
-            engine="gpt-35-turbo-16k",
-            messages="Generate a random food craving",
+        response1 = openai.ChatCompletion.create(
+            engine="gpt-4",
+            messages=conversation1,
             max_tokens=32,
-            temperature=0.2,
+            temperature=0.1,
         )
-        food_craving = food_craving.choices[0].text
-        # Remove 2 new line characters from the beginning of the string
-        food_craving = food_craving[2:]
+        food_craving = response1['choices'][0]['message']['content']
+        conversation1.append({"role": "assistant", "content": str(food_craving)})
         print(f"Don't worry, yo! I think you are craving for {food_craving}!")
     else:
         print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
 
     restaurantsystem_prompt = [{
         "role": "system",
-        "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants and respecting all their preferences."
+        "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants."
     }]
-    conversation = restaurantsystem_prompt.copy()
-    user_message = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Just give me a list of 6 restaurants with short address."
-    conversation.append({"role": "user", "content": user_message})
+    conversation2 = restaurantsystem_prompt.copy()
+    user_message2 = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
+    conversation2.append({"role": "user", "content": str(user_message2)})
 
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
-    completions = openai.ChatCompletion.create(
-        engine="gpt-35-turbo-16k",
-        messages=conversation,
-        max_tokens=256,
-        stop=None,
-        temperature=0.8,
+    response2 = openai.ChatCompletion.create(
+        engine="gpt-4",
+        messages=conversation2,
+        max_tokens=1024,
+        temperature=0.4,
     )
-    message = completions.choices[0].text
-    # Remove new line characters from the beginning of the string
-    message = message[1:]
-    return f'Here are 3 restaurants in {city} that serve {food_craving}! Bon Appetit!! {message}'
+    message = response2['choices'][0]['message']['content']
+    conversation2.append({"role": "assistant", "content": str(message)})
+
+    return f'Here are 6 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
 
 def extract_context_frompinecone(query):
     
@@ -407,7 +413,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         openai.api_version = azure_chatapi_version
         openai.api_key = azure_api_key
         response = openai.ChatCompletion.create(
-            engine="gpt-3p5-turbo-16k",
+            engine="gpt-4",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -556,7 +562,7 @@ def summarize(data_folder):
     # configure response synthesizer
     response_synthesizer = get_response_synthesizer(
         response_mode="tree_summarize",
-        text_qa_template=summary_template,
+        summary_template=summary_template,
     )
     # assemble query engine
     query_engine = RetrieverQueryEngine(
@@ -976,7 +982,7 @@ with gr.Blocks(theme=theme) as llmapp:
                 gita_answer,
                 additional_inputs=[
                     gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI"], value="OPENAI"),
-                    gr.Slider(10, 840, value=420, label = "Max Output Tokens"),
+                    gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
                 examples=[["What is the meaning of life?"], ["What is the purpose of life?"], ["What is the meaning of death?"], ["What is the purpose of death?"], ["What is the meaning of existence?"], ["What is the purpose of existence?"], ["What is the meaning of the universe?"], ["What is the purpose of the universe?"], ["What is the meaning of the world?"], ["What is the purpose of the world?"]],
