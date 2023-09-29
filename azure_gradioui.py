@@ -51,7 +51,7 @@ def generate_trip_plan(city, days):
             "content": "You are a world class trip planner who is knowledgeable about all the tourist attractions in the world. You will serve the user by planning a trip for them and respecting all their preferences."
         }]
         conversation = tripsystem_prompt.copy()
-        user_message = f"List the popular tourist attractions in {city} including top rated restaurants that can be visited in {days} days. Be sure to arrage the places optimized for distance and time and output must contain a numbered list with a short, succinct description of each place."
+        user_message = f"Craft a thorough and detailed travel itinerary for {city}. This itinerary should encompass the city's most frequented tourist attractions, as well as its top-rated restaurants, all of which should be visitable within a timeframe of {days} days. The itinerary should be strategically organized to take into account the distance between each location and the time required to travel there, maximizing efficiency. Moreover, please include specific time windows for each location, arranged in ascending order, to facilitate effective planning. The final output should be a numbered list, where each item corresponds to a specific location. Accompany each location with a brief yet informative description to provide context and insight."
         conversation.append({"role": "user", "content": str(user_message)})
 
         openai.api_type = azure_api_type
@@ -957,7 +957,7 @@ with gr.Blocks(theme=theme) as llmapp:
                 number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
                 city_button = gr.Button(value="Plan", scale=0)
             with gr.Row():
-                city_output = gr.Textbox(label="Trip Plan")
+                city_output = gr.Textbox(label="Trip Plan", show_copy_button=True)
                 clear_trip_button = gr.Button(value="Clear", scale=0)
         with gr.Tab(label="Bhagawad Gita"):
             gitachat = gr.ChatInterface(
@@ -984,7 +984,7 @@ with gr.Blocks(theme=theme) as llmapp:
                 craving_cuisine = gr.Textbox(placeholder="What are you craving for? Enter idk if you don't know what you want to eat", label="Food")
                 craving_button = gr.Button(value="Cook", scale=0)
             with gr.Row():
-                craving_output = gr.Textbox(label="Food Places")
+                craving_output = gr.Textbox(label="Food Places", show_copy_button=True)
                 clear_craving_button = gr.Button(value="Clear", scale=0)
 
 
