@@ -422,31 +422,12 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             presence_penalty=0
         )
         return response['choices'][0]['message']['content']
-    elif model_name == "LLAMA2":
-        openai.api_type = llama2_api_type
-        openai.api_base = llama2_api_base
+    elif model_name == "WIZARDVICUNA7B":
+        openai.api_type = wizardvicuna7b_api_type
+        openai.api_key = wizardvicuna7b_api_key
+        openai.api_base = wizardvicuna7b_api_base
         response = openai.ChatCompletion.create(
-            model="llama2-7bchat",
-            messages=conversation,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response['choices'][0]['message']['content']
-    elif model_name == "GPT4ALL":
-        openai.api_type = llama2_api_type
-        openai.api_base = llama2_api_base
-        response = openai.ChatCompletion.create(
-            model="ggml-gpt4all-j",
-            messages=conversation,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response['choices'][0]['message']['content']
-    elif model_name == "WIZARDLM":
-        openai.api_type = llama2_api_type
-        openai.api_base = llama2_api_base
-        response = openai.ChatCompletion.create(
-            model="wizardlm-7b-8k-m",
+            model="wizardvicuna7b-uncensored-hf",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -756,8 +737,9 @@ azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
 
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 # LocalAL API Base
-llama2_api_type = "open_ai"
-llama2_api_base = os.environ.get("LLAMA2_API_BASE")
+wizardvicuna7b_api_type = "open_ai"
+wizardvicuna7b_api_key = os.environ.get("WIZARDVICUNA7B_API_KEY")
+wizardvicuna7b_api_base = os.environ.get("WIZARDVICUNA7B_API_BASE")
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
@@ -959,8 +941,8 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "LLAMA2", "GPT4ALL", "WIZARDLM"], value="PALM"),
-                gr.Slider(10, 840, value=420, label = "Max Output Tokens"),
+                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="PALM"),
+                gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
             examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What is the latest GDP per capita of India?"]],
@@ -981,7 +963,7 @@ with gr.Blocks(theme=theme) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI"], value="OPENAI"),
+                    gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="OPENAI"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
