@@ -423,9 +423,9 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response['choices'][0]['message']['content']
     elif model_name == "WIZARDVICUNA7B":
-        openai.api_type = wizardvicuna7b_api_type
-        openai.api_key = wizardvicuna7b_api_key
-        openai.api_base = wizardvicuna7b_api_base
+        openai.api_type = llama2_api_type
+        openai.api_key = llama2_api_key
+        openai.api_base = llama2_api_base
         response = openai.ChatCompletion.create(
             model="wizardvicuna7b-uncensored-hf",
             messages=conversation,
@@ -737,9 +737,9 @@ azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
 
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 # LocalAL API Base
-wizardvicuna7b_api_type = "open_ai"
-wizardvicuna7b_api_key = os.environ.get("WIZARDVICUNA7B_API_KEY")
-wizardvicuna7b_api_base = os.environ.get("WIZARDVICUNA7B_API_BASE")
+llama2_api_type = "open_ai"
+llama2_api_key = os.environ.get("LLAMA2_API_KEY")
+llama2_api_base = os.environ.get("LLAMA2_API_BASE")
 #Supabase API key
 SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
