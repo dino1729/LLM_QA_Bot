@@ -40,6 +40,8 @@ from llama_index.indices.postprocessor import SimilarityPostprocessor
 from llama_index.text_splitter import SentenceSplitter
 from llama_index.node_parser import SimpleNodeParser
 from llama_index.prompts import PromptTemplate
+from llama_index.agent import OpenAIAgent
+from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
 
 def generate_trip_plan(city, days):
     #Check if the days input is a number and throw an error if it is not
@@ -527,6 +529,21 @@ def get_bing_news_results(query, num=5):
 
     return bingsummary
 
+def get_weather_data(query):
+    
+    # Initialize OpenWeatherMapToolSpec
+    weather_tool = OpenWeatherMapToolSpec(
+        key=openweather_api_key,
+    )
+
+    agent = OpenAIAgent.from_tools(
+        weather_tool.to_tool_list(),
+        llm=llm,
+        verbose=True,
+    )
+
+    return agent.chat(query)
+
 def summarize(data_folder):
     
     # Reset OpenAI API type and base
@@ -595,10 +612,14 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
         conversation.append({"role": "user", "content": query})
 
         try:
+            # If the query contains any of the keywords, perform a Bing search
             if any(keyword in query.lower() for keyword in keywords):
-                # If the query contains any of the keywords, perform a Bing search
+                # If the query contains news
                 if "news" in query.lower():
                     assistant_reply = get_bing_news_results(query)
+                # If the query contains weather
+                elif "weather" in query.lower():
+                    assistant_reply = get_weather_data(query)
                 else:
                     assistant_reply = get_bing_results(query)
             else:
@@ -750,6 +771,8 @@ pinecone_environment = os.environ.get("PINECONE_ENVIRONMENT")
 bing_api_key = os.getenv("BING_API_KEY")
 bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
 bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
+
+openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
 
 os.environ["OPENAI_API_KEY"] = azure_api_key
 openai.api_type = azure_api_type

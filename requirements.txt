@@ -61,6 +61,8 @@ pytorch-lightning-logging-neptune
 pytorch-lightning-logging-comet
 pytube
 flask
+llama-hub==0.0.34
+pyowm
 llama-index==0.8.33
 langchain==0.0.302
 langchain-utilities
