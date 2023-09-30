@@ -239,7 +239,7 @@ if __name__ == "__main__":
     # max LLM token input size
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
-    chunk_size = 512
+    chunk_size = 256
     prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
     text_splitter = SentenceSplitter(
         separator=" ",
@@ -270,7 +270,7 @@ if __name__ == "__main__":
             openai_api_base=azure_api_base,
             openai_api_type=azure_api_type,
             openai_api_version=azure_api_version,
-            chunk_size=32,
+            chunk_size=16,
             max_retries=3,
         ),
         embed_batch_size=1,
