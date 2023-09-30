@@ -140,10 +140,10 @@ def get_weather_data(query):
     agent = OpenAIAgent.from_tools(
         weather_tool.to_tool_list(),
         llm=llm,
-        verbose=True,
+        verbose=False,
     )
 
-    return agent.chat(query)
+    return str(agent.chat(query))
 
 def summarize(data_folder):
     
