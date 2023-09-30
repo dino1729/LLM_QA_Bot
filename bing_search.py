@@ -26,6 +26,7 @@ from llama_index.node_parser import SimpleNodeParser
 from llama_index.prompts import PromptTemplate
 from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
+from llama_hub.tools.bing_search.base import BingSearchToolSpec
 import tiktoken
 import argparse
 import logging
@@ -144,6 +145,20 @@ def get_weather_data(query):
     )
 
     return str(agent.chat(query))
+
+def get_bing_agent(query):
+    
+        bing_tool = BingSearchToolSpec(
+            api_key=bing_api_key,
+        )
+    
+        agent = OpenAIAgent.from_tools(
+            bing_tool.to_tool_list(),
+            llm=llm,
+            verbose=False,
+        )
+    
+        return str(agent.chat(query))
 
 def summarize(data_folder):
     
@@ -415,10 +430,12 @@ if __name__ == "__main__":
     else:
         # Query the results using random model
         random_model = random.choice(model_names)
-        assistant_reply = generate_chat(random_model, conversation, temperature, max_tokens)
+        #assistant_reply = generate_chat(random_model, conversation, temperature, max_tokens)
+        assistant_reply = get_bing_agent(userquery)
         new_assistant_message = {"role": "assistant", "content": assistant_reply}
         conversation.append(new_assistant_message)
-        print(f"{random_model} says: {assistant_reply}")
+        #print(f"{random_model} says: {assistant_reply}")
+        print(assistant_reply)
 
 
 
