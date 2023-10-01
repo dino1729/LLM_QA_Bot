@@ -60,15 +60,14 @@ def text_extractor(url):
             #Check if the article text has atleast 75 words
             if len(article.text.split()) < 75:
                 raise Exception("Article is too short. Probably the article is behind a paywall.")
-        except Exception as e:
-            print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
+        except:
             # Try an alternate method using requests and beautifulsoup
             try:
                 req = requests.get(url)
                 soup = BeautifulSoup(req.content, 'html.parser')
                 article.text = soup.get_text()
-            except Exception as e:
-                print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
+            except:
+                pass
         return article.text
     else:
         return None
