@@ -291,7 +291,7 @@ if __name__ == "__main__":
     azure_api_key = os.environ["AZURE_API_KEY"]
     azure_api_type = "azure"
     azure_api_base = os.environ.get("AZURE_API_BASE")
-    azure_api_version = os.environ.get("AZURE_API_VERSION")
+    azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
     azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 
@@ -306,21 +306,9 @@ if __name__ == "__main__":
     openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
 
     # max LLM token input size
-    max_input_size = 96000
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
     chunk_size = 256
-    context_window = 32000
-    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-    text_splitter = SentenceSplitter(
-        separator=" ",
-        chunk_size=chunk_size,
-        chunk_overlap=20,
-        paragraph_separator="\n\n\n",
-        secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
-    )
-    node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
     os.environ["OPENAI_API_KEY"] = azure_api_key
     openai.api_type = azure_api_type
@@ -348,8 +336,9 @@ if __name__ == "__main__":
         api_key=azure_api_key,
         api_base=azure_api_base,
         api_type=azure_api_type,
+        api_version=azure_chatapi_version,
         temperature=0.5,
-        max_tokens=1024,
+        max_tokens=num_output,
     )
     embedding_llm = LangchainEmbedding(
         OpenAIEmbeddings(
@@ -358,12 +347,24 @@ if __name__ == "__main__":
             openai_api_key=azure_api_key,
             openai_api_base=azure_api_base,
             openai_api_type=azure_api_type,
-            openai_api_version=azure_api_version,
+            openai_api_version=azure_embeddingapi_version,
             chunk_size=16,
             max_retries=3,
         ),
         embed_batch_size=1,
     )
+
+    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
+    text_splitter = SentenceSplitter(
+        separator=" ",
+        chunk_size=chunk_size,
+        chunk_overlap=20,
+        paragraph_separator="\n\n\n",
+        secondary_chunking_regex="[^,.;。]+[,.;。]?",
+        tokenizer=tiktoken.encoding_for_model("gpt-35-turbo").encode
+    )
+    node_parser = SimpleNodeParser(text_splitter=text_splitter)
+
     service_context = ServiceContext.from_defaults(
         llm=llm,
         embed_model=embedding_llm,
@@ -373,6 +374,7 @@ if __name__ == "__main__":
         node_parser=node_parser,
     )
     set_global_service_context(service_context)
+
     sum_template = (
         "You are a world-class text summarizer connected to the internet. We have provided context information below from the internet below. \n"
         "---------------------\n"

@@ -767,7 +767,7 @@ google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
 azure_api_key = os.environ["AZURE_API_KEY"]
 azure_api_type = "azure"
 azure_api_base = os.environ.get("AZURE_API_BASE")
-azure_api_version = os.environ.get("AZURE_API_VERSION")
+azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
 azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
 
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
@@ -832,7 +832,7 @@ text_splitter = SentenceSplitter(
     chunk_overlap=20,
     paragraph_separator="\n\n\n",
     secondary_chunking_regex="[^,.;。]+[,.;。]?",
-    tokenizer=tiktoken.encoding_for_model("gpt-4").encode
+    tokenizer=tiktoken.encoding_for_model("gpt-35-turbo").encode
 )
 node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
@@ -842,11 +842,12 @@ lite_mode = True
 llm = AzureOpenAI(
     engine=LLM_DEPLOYMENT_NAME, 
     model=LLM_MODEL_NAME,
-    openai_api_key=azure_api_key,
-    openai_api_base=azure_api_base,
-    openai_api_type=azure_api_type,
+    api_key=azure_api_key,
+    api_base=azure_api_base,
+    api_type=azure_api_type,
+    api_version=azure_chatapi_version,
     temperature=0.5,
-    max_tokens=1024,
+    max_tokens=num_output,
 )
 embedding_llm = LangchainEmbedding(
     OpenAIEmbeddings(
@@ -855,7 +856,7 @@ embedding_llm = LangchainEmbedding(
         openai_api_key=azure_api_key,
         openai_api_base=azure_api_base,
         openai_api_type=azure_api_type,
-        openai_api_version=azure_api_version,
+        openai_api_version=azure_embeddingapi_version,
         chunk_size=16,
         max_retries=3,
     ),
