@@ -392,6 +392,7 @@ def download_art(url, memorize):
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
+    
     if model_name == "COHERE":
         co = cohere.Client(cohere_api_key)
         response = co.generate(
@@ -438,6 +439,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
+        return response['choices'][0]['message']['content']
     elif model_name == "WIZARDVICUNA7B":
         openai.api_type = llama2_api_type
         openai.api_key = llama2_api_key
@@ -545,6 +547,11 @@ def get_bing_news_results(query, num=5):
 
 def get_weather_data(query):
     
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
+
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
         key=openweather_api_key,
@@ -562,6 +569,7 @@ def summarize(data_folder):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
@@ -589,6 +597,7 @@ def simple_query(data_folder, query):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
