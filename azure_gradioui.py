@@ -717,7 +717,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("Generate 5 questions exactly in the format mentioned", example_template).lstrip('\n')
+        llmresponse = ask_fromfullcontext("Generate 8 questions exactly in the format mentioned", example_template).lstrip('\n')
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
@@ -808,7 +808,7 @@ else:
     openai.api_version = azure_chatapi_version
     max_input_size = 48000
     context_window = 16000
-    print("Using gpt-3p5-turbo-16k model.")
+    print("Using gpt-35-turbo-16k model.")
 
 system_prompt = [{
     "role": "system",

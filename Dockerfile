@@ -1,20 +1,17 @@
-# Use an official Python runtime as a base image
+# Use a specific Python version as the base image
 FROM python:latest
 
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Copy only the requirements file initially to leverage Docker cache
+COPY requirements_lite.txt /app/
 
 # Install required system dependencies
-RUN \
-    set -eux; \
+RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-    python3-pip \
     build-essential \
-    python3-venv \
     ffmpeg \
     git \
     ca-certificates \
@@ -22,6 +19,9 @@ RUN \
     wget \
     ; \
     rm -rf /var/lib/apt/lists/*
+
+# Install required Python dependencies
+RUN pip install -U pip && pip install -U wheel && pip install -U setuptools==59.5.0 && pip install -r requirements_lite.txt
 
 # Download and install OpenSSL
 RUN wget -O - https://www.openssl.org/source/openssl-1.1.1u.tar.gz | tar zxf - \
@@ -36,10 +36,8 @@ RUN ldconfig -v
 # Set SSL_CERT_DIR environment variable
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
-# Install required Python dependencies
-RUN pip install -U pip && pip install -U wheel && pip install -U setuptools==59.5.0
-COPY ./requirements_lite.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm -r /tmp/requirements.txt
+# Copy the rest of the application code
+COPY . /app/
 
 # Expose the port that Gradio uses (default is 7860)
 EXPOSE 7860
