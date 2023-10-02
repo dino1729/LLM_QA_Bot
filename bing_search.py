@@ -235,7 +235,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
         )
         return response.last
-    elif model_name == "OPENAI":
+    elif model_name == "GPT4":
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         openai.api_version = azure_chatapi_version
@@ -245,9 +245,24 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
+        )
+        return response['choices'][0]['message']['content']
+    elif model_name == "GPT35TURBO":
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
+        openai.api_version = azure_chatapi_version
+        openai.api_key = azure_api_key
+        response = openai.ChatCompletion.create(
+            engine="gpt-35-turbo",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
         )
         return response['choices'][0]['message']['content']
     elif model_name == "WIZARDVICUNA7B":
@@ -313,7 +328,7 @@ if __name__ == "__main__":
     openai.api_key = azure_api_key
 
     # Check if user set the gpt4 model flag
-    gpt4_flag = True
+    gpt4_flag = False
     if gpt4_flag:
         LLM_DEPLOYMENT_NAME = "gpt-4-32k"
         LLM_MODEL_NAME = "gpt-4-32k"
@@ -386,7 +401,7 @@ if __name__ == "__main__":
         "role": "system",
         "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
     }]
-    model_names = ["WIZARDVICUNA7B", "PALM", "OPENAI", "COHERE"]
+    model_names = ["WIZARDVICUNA7B", "PALM", "GPT4", "GPT35TURBO" "COHERE"]
     model_index = 0
     model_name = model_names[model_index]
     temperature = 0.3

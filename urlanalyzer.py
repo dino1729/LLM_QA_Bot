@@ -222,7 +222,7 @@ if __name__ == "__main__":
     openai.api_key = azure_api_key
 
    # Check if user set the davinci model flag
-    gpt4_flag = True
+    gpt4_flag = False
     if gpt4_flag:
         LLM_DEPLOYMENT_NAME = "gpt-4-32k"
         LLM_MODEL_NAME = "gpt-4-32k"
