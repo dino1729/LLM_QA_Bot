@@ -59,7 +59,7 @@ def generate_trip_plan(city, days):
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         response = openai.ChatCompletion.create(
-            engine="gpt-4",
+            engine="gpt-35-turbo",
             messages=conversation,
             max_tokens=2048,
             temperature=0.3,
@@ -79,15 +79,15 @@ def craving_satisfier(city, food_craving):
             "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. The user will ask you to generate a food craving and you must respond in one-word answer."
         }]
         conversation1 = foodsystem_prompt.copy()
-        user_message1 = f"I don't know what to eat and I want you to generate a food craving for me. Be as creative as possible"
+        user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
         conversation1.append({"role": "user", "content": str(user_message1)})
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         response1 = openai.ChatCompletion.create(
-            engine="gpt-4",
+            engine="gpt-35-turbo",
             messages=conversation1,
             max_tokens=32,
-            temperature=0.1,
+            temperature=0.5,
         )
         food_craving = response1['choices'][0]['message']['content']
         conversation1.append({"role": "assistant", "content": str(food_craving)})
@@ -100,21 +100,21 @@ def craving_satisfier(city, food_craving):
         "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants."
     }]
     conversation2 = restaurantsystem_prompt.copy()
-    user_message2 = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
+    user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
 
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
     response2 = openai.ChatCompletion.create(
-        engine="gpt-4",
+        engine="gpt-35-turbo",
         messages=conversation2,
-        max_tokens=1024,
+        max_tokens=2048,
         temperature=0.4,
     )
     message = response2['choices'][0]['message']['content']
     conversation2.append({"role": "assistant", "content": str(message)})
 
-    return f'Here are 6 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
+    return f'Here are 8 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
 
 def extract_context_frompinecone(query):
     
@@ -409,7 +409,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
         )
         return response.last
-    elif model_name == "OPENAI":
+    elif model_name == "GPT4":
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         openai.api_version = azure_chatapi_version
@@ -419,11 +419,25 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
         )
         return response['choices'][0]['message']['content']
+    elif model_name == "GPT35TURBO":
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
+        openai.api_version = azure_chatapi_version
+        openai.api_key = azure_api_key
+        response = openai.ChatCompletion.create(
+            engine="gpt-35-turbo",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=1,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
+        )
     elif model_name == "WIZARDVICUNA7B":
         openai.api_type = llama2_api_type
         openai.api_key = llama2_api_key
@@ -780,7 +794,7 @@ openai.api_base = azure_api_base
 openai.api_key = azure_api_key
 
 # Check if user set the davinci model flag
-gpt4_flag = True
+gpt4_flag = False
 if gpt4_flag:
     LLM_DEPLOYMENT_NAME = "gpt-4-32k"
     LLM_MODEL_NAME = "gpt-4-32k"
@@ -925,7 +939,7 @@ with gr.Blocks(theme=theme) as llmapp:
         <br>
         This app uses the Transformer magic to answer all your questions! <br>
         Check the "Memorize" box if you want to add the information to your memory palace! <br>
-        Using the default gpt-4-32k model! <br>
+        Using the default gpt-35-turbo-16k model! <br>
         </center>
         """
     )
@@ -964,7 +978,7 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="PALM"),
+                gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="PALM"),
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
@@ -986,7 +1000,7 @@ with gr.Blocks(theme=theme) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="OPENAI"),
+                    gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GPT35TURBO"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
