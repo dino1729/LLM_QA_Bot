@@ -166,6 +166,7 @@ def ask_fromfullcontext(question, fullcontext_template):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
