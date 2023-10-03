@@ -132,6 +132,10 @@ def get_bing_news_results(query, num=5):
 
 def get_weather_data(query):
     
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
         key=openweather_api_key,
@@ -146,24 +150,30 @@ def get_weather_data(query):
     return str(agent.chat(query))
 
 def get_bing_agent(query):
+
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     
-        bing_tool = BingSearchToolSpec(
-            api_key=bing_api_key,
-        )
-    
-        agent = OpenAIAgent.from_tools(
-            bing_tool.to_tool_list(),
-            llm=llm,
-            verbose=False,
-        )
-    
-        return str(agent.chat(query))
+    bing_tool = BingSearchToolSpec(
+        api_key=bing_api_key,
+    )
+
+    agent = OpenAIAgent.from_tools(
+        bing_tool.to_tool_list(),
+        llm=llm,
+        verbose=False,
+    )
+
+    return str(agent.chat(query))
 
 def summarize(data_folder):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
-    openai.api_base = azure_api_base   
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -190,7 +200,8 @@ def simple_query(data_folder, query):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
-    openai.api_base = azure_api_base  
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)

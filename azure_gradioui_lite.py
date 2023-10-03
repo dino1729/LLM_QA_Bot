@@ -58,6 +58,8 @@ def generate_trip_plan(city, days):
 
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
+        openai.api_key = azure_api_key
+        
         response = openai.ChatCompletion.create(
             engine="gpt-35-turbo",
             messages=conversation,
@@ -81,8 +83,11 @@ def craving_satisfier(city, food_craving):
         conversation1 = foodsystem_prompt.copy()
         user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
         conversation1.append({"role": "user", "content": str(user_message1)})
+
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
+        openai.api_key = azure_api_key
+
         response1 = openai.ChatCompletion.create(
             engine="gpt-35-turbo",
             messages=conversation1,
@@ -102,9 +107,6 @@ def craving_satisfier(city, food_craving):
     conversation2 = restaurantsystem_prompt.copy()
     user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
-
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
     response2 = openai.ChatCompletion.create(
         engine="gpt-35-turbo",
         messages=conversation2,
@@ -671,6 +673,7 @@ def ask_query(question):
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
@@ -700,6 +703,7 @@ def ask_fromfullcontext(question, fullcontext_template):
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
     # SummaryIndexRetriever
