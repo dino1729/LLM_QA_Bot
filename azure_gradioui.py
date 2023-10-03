@@ -841,7 +841,7 @@ text_splitter = SentenceSplitter(
     chunk_overlap=20,
     paragraph_separator="\n\n\n",
     secondary_chunking_regex="[^,.;。]+[,.;。]?",
-    tokenizer=tiktoken.encoding_for_model("gpt-35-turbo").encode
+    tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
 )
 node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
