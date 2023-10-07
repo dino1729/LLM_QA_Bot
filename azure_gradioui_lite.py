@@ -178,7 +178,7 @@ def fileformatvaliditycheck(files):
         file_name = file.name
         # Get extention of file name
         ext = file_name.split(".")[-1].lower()
-        if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg", "mp3"]:
+        if ext not in ["pdf", "txt", "docx"]:
             return False
     return True
 
@@ -973,7 +973,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         adownload_output = gr.Textbox(label="Article download Status")
                         adownload_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="File Analyzer"):
-                    files = gr.Files(label="Supported types: pdf, txt, docx, png, jpg, jpeg, mp3")
+                    files = gr.Files(label="Supported types: pdf, txt, docx")
                     with gr.Row():
                         upload_output = gr.Textbox(label="Upload Status")
                         upload_button = gr.Button(value="Upload", scale=0)
