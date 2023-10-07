@@ -78,7 +78,7 @@ def craving_satisfier(city, food_craving):
         # Generate a random food craving
         foodsystem_prompt = [{
             "role": "system",
-            "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. The user will ask you to generate a food craving and you must respond in one-word answer."
+            "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. You must respond in one-word answer."
         }]
         conversation1 = foodsystem_prompt.copy()
         user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
@@ -178,7 +178,7 @@ def fileformatvaliditycheck(files):
         file_name = file.name
         # Get extention of file name
         ext = file_name.split(".")[-1].lower()
-        if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg"]:
+        if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg", "mp3"]:
             return False
     return True
 
@@ -973,7 +973,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         adownload_output = gr.Textbox(label="Article download Status")
                         adownload_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="File Analyzer"):
-                    files = gr.Files(label="Upload the files to be analyzed")
+                    files = gr.Files(label="Supported types: pdf, txt, docx, png, jpg, jpeg, mp3")
                     with gr.Row():
                         upload_output = gr.Textbox(label="Upload Status")
                         upload_button = gr.Button(value="Upload", scale=0)

@@ -5,7 +5,7 @@ FROM python:3.11.4
 WORKDIR /app
 
 # Copy only the requirements file initially to leverage Docker cache
-COPY requirements_lite.txt /app/
+COPY requirements.txt /app/
 
 # Install required system dependencies
 RUN set -eux; \
@@ -21,7 +21,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Install required Python dependencies
-RUN pip install -U pip && pip install -U wheel && pip install -U setuptools==59.5.0 && pip install -r requirements_lite.txt
+RUN pip install -U pip && pip install -U wheel && pip install -U setuptools==59.5.0 && pip install -r requirements.txt
 
 # Download and install OpenSSL
 RUN wget -O - https://www.openssl.org/source/openssl-1.1.1u.tar.gz | tar zxf - \
@@ -43,4 +43,4 @@ COPY . /app/
 EXPOSE 7860
 
 # Command to run your Gradio app when the container starts
-CMD ["python", "azure_gradioui_lite.py"]
+CMD ["python", "azure_gradioui.py"]
