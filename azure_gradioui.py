@@ -44,6 +44,10 @@ from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
 
 def generate_trip_plan(city, days):
+
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     #Check if the days input is a number and throw an error if it is not
     try:
         days = int(days)
@@ -55,10 +59,6 @@ def generate_trip_plan(city, days):
         conversation = tripsystem_prompt.copy()
         user_message = f"Craft a thorough and detailed travel itinerary for {city}. This itinerary should encompass the city's most frequented tourist attractions, as well as its top-rated restaurants, all of which should be visitable within a timeframe of {days} days. The itinerary should be strategically organized to take into account the distance between each location and the time required to travel there, maximizing efficiency. Moreover, please include specific time windows for each location, arranged in ascending order, to facilitate effective planning. The final output should be a numbered list, where each item corresponds to a specific location. Accompany each location with a brief yet informative description to provide context and insight."
         conversation.append({"role": "user", "content": str(user_message)})
-
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_key = azure_api_key
         
         response = openai.ChatCompletion.create(
             engine="gpt-35-turbo",
@@ -73,6 +73,10 @@ def generate_trip_plan(city, days):
         return "Please enter a number for days."
 
 def craving_satisfier(city, food_craving):
+
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
@@ -83,10 +87,6 @@ def craving_satisfier(city, food_craving):
         conversation1 = foodsystem_prompt.copy()
         user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
         conversation1.append({"role": "user", "content": str(user_message1)})
-
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_key = azure_api_key
 
         response1 = openai.ChatCompletion.create(
             engine="gpt-35-turbo",
@@ -105,7 +105,7 @@ def craving_satisfier(city, food_craving):
         "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants."
     }]
     conversation2 = restaurantsystem_prompt.copy()
-    user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
+    user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of eight restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
     response2 = openai.ChatCompletion.create(
         engine="gpt-35-turbo",
