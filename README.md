@@ -17,7 +17,7 @@ Example of Ray Dalio's LinkedIn article analysis:
 
 Example of Steve Jobs's efficiency interview video analysis:
 
-![LLM Video Analysis](./screenshots/stevejobsvideo.png)
+![LLM Video Analysis](./screenshots/stevejobsvideoanalysis.png)
 
 # Memory Palace
 LLM_QA_Bot comes with a memory palace feature. You can choose to save the analyzed content to your memory palace for easy access and reference later. The app indexes the content and stores it in a Supabase database. You can then search for the content in your memory palace and access it whenever you want. 
