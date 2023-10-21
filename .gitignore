@@ -10,3 +10,4 @@ __pycache__/
 .vscode
 include/
 gradio_cached_examples/
+screenshots/
