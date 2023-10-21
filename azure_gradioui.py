@@ -44,6 +44,10 @@ from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
 
 def generate_trip_plan(city, days):
+
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     #Check if the days input is a number and throw an error if it is not
     try:
         days = int(days)
@@ -55,11 +59,9 @@ def generate_trip_plan(city, days):
         conversation = tripsystem_prompt.copy()
         user_message = f"Craft a thorough and detailed travel itinerary for {city}. This itinerary should encompass the city's most frequented tourist attractions, as well as its top-rated restaurants, all of which should be visitable within a timeframe of {days} days. The itinerary should be strategically organized to take into account the distance between each location and the time required to travel there, maximizing efficiency. Moreover, please include specific time windows for each location, arranged in ascending order, to facilitate effective planning. The final output should be a numbered list, where each item corresponds to a specific location. Accompany each location with a brief yet informative description to provide context and insight."
         conversation.append({"role": "user", "content": str(user_message)})
-
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
+        
         response = openai.ChatCompletion.create(
-            engine="gpt-4",
+            engine="gpt-35-turbo",
             messages=conversation,
             max_tokens=2048,
             temperature=0.3,
@@ -71,23 +73,26 @@ def generate_trip_plan(city, days):
         return "Please enter a number for days."
 
 def craving_satisfier(city, food_craving):
+
+    openai.api_type = azure_api_type
+    openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
         foodsystem_prompt = [{
             "role": "system",
-            "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. The user will ask you to generate a food craving and you must respond in one-word answer."
+            "content": "You are a world class food recommender who is knowledgeable about all the food items in the world. You must respond in one-word answer."
         }]
         conversation1 = foodsystem_prompt.copy()
-        user_message1 = f"I don't know what to eat and I want you to generate a food craving for me. Be as creative as possible"
+        user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
         conversation1.append({"role": "user", "content": str(user_message1)})
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
+
         response1 = openai.ChatCompletion.create(
-            engine="gpt-4",
+            engine="gpt-35-turbo",
             messages=conversation1,
             max_tokens=32,
-            temperature=0.1,
+            temperature=0.5,
         )
         food_craving = response1['choices'][0]['message']['content']
         conversation1.append({"role": "assistant", "content": str(food_craving)})
@@ -100,21 +105,18 @@ def craving_satisfier(city, food_craving):
         "content": "You are a world class restaurant recommender who is knowledgeable about all the restaurants in the world. You will serve the user by recommending restaurants."
     }]
     conversation2 = restaurantsystem_prompt.copy()
-    user_message2 = f"I'm looking for 6 restaurants in {city} that serves {food_craving}. Provide me with a list of six restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
+    user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of eight restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
-
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
     response2 = openai.ChatCompletion.create(
-        engine="gpt-4",
+        engine="gpt-35-turbo",
         messages=conversation2,
-        max_tokens=1024,
+        max_tokens=2048,
         temperature=0.4,
     )
     message = response2['choices'][0]['message']['content']
     conversation2.append({"role": "assistant", "content": str(message)})
 
-    return f'Here are 6 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
+    return f'Here are 8 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
 
 def extract_context_frompinecone(query):
     
@@ -176,7 +178,7 @@ def fileformatvaliditycheck(files):
         file_name = file.name
         # Get extention of file name
         ext = file_name.split(".")[-1].lower()
-        if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg"]:
+        if ext not in ["pdf", "txt", "docx", "png", "jpg", "jpeg", "mp3"]:
             return False
     return True
 
@@ -392,6 +394,7 @@ def download_art(url, memorize):
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
+    
     if model_name == "COHERE":
         co = cohere.Client(cohere_api_key)
         response = co.generate(
@@ -409,7 +412,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
         )
         return response.last
-    elif model_name == "OPENAI":
+    elif model_name == "GPT4":
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         openai.api_version = azure_chatapi_version
@@ -419,9 +422,24 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
+        )
+        return response['choices'][0]['message']['content']
+    elif model_name == "GPT35TURBO":
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
+        openai.api_version = azure_chatapi_version
+        openai.api_key = azure_api_key
+        response = openai.ChatCompletion.create(
+            engine="gpt-35-turbo",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
             top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
+            frequency_penalty=0.6,
+            presence_penalty=0.1
         )
         return response['choices'][0]['message']['content']
     elif model_name == "WIZARDVICUNA7B":
@@ -531,6 +549,11 @@ def get_bing_news_results(query, num=5):
 
 def get_weather_data(query):
     
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
+
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
         key=openweather_api_key,
@@ -548,6 +571,7 @@ def summarize(data_folder):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
@@ -575,6 +599,7 @@ def simple_query(data_folder, query):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
@@ -648,6 +673,7 @@ def ask_query(question):
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
@@ -677,6 +703,7 @@ def ask_fromfullcontext(question, fullcontext_template):
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
     openai.api_base = azure_api_base
+    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
     # SummaryIndexRetriever
@@ -703,7 +730,7 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("Generate 5 questions exactly in the format mentioned", example_template).lstrip('\n')
+        llmresponse = ask_fromfullcontext("Generate 8 questions exactly in the format mentioned", example_template).lstrip('\n')
         example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
@@ -753,7 +780,7 @@ google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
 azure_api_key = os.environ["AZURE_API_KEY"]
 azure_api_type = "azure"
 azure_api_base = os.environ.get("AZURE_API_BASE")
-azure_api_version = os.environ.get("AZURE_API_VERSION")
+azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
 azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
 
 EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
@@ -780,7 +807,7 @@ openai.api_base = azure_api_base
 openai.api_key = azure_api_key
 
 # Check if user set the davinci model flag
-gpt4_flag = True
+gpt4_flag = False
 if gpt4_flag:
     LLM_DEPLOYMENT_NAME = "gpt-4-32k"
     LLM_MODEL_NAME = "gpt-4-32k"
@@ -794,7 +821,7 @@ else:
     openai.api_version = azure_chatapi_version
     max_input_size = 48000
     context_window = 16000
-    print("Using gpt-3p5-turbo-16k model.")
+    print("Using gpt-35-turbo-16k model.")
 
 system_prompt = [{
     "role": "system",
@@ -818,7 +845,7 @@ text_splitter = SentenceSplitter(
     chunk_overlap=20,
     paragraph_separator="\n\n\n",
     secondary_chunking_regex="[^,.;。]+[,.;。]?",
-    tokenizer=tiktoken.encoding_for_model("gpt-4").encode
+    tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
 )
 node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
@@ -828,11 +855,12 @@ lite_mode = False
 llm = AzureOpenAI(
     engine=LLM_DEPLOYMENT_NAME, 
     model=LLM_MODEL_NAME,
-    openai_api_key=azure_api_key,
-    openai_api_base=azure_api_base,
-    openai_api_type=azure_api_type,
+    api_key=azure_api_key,
+    api_base=azure_api_base,
+    api_type=azure_api_type,
+    api_version=azure_chatapi_version,
     temperature=0.5,
-    max_tokens=1024,
+    max_tokens=num_output,
 )
 embedding_llm = LangchainEmbedding(
     OpenAIEmbeddings(
@@ -841,7 +869,7 @@ embedding_llm = LangchainEmbedding(
         openai_api_key=azure_api_key,
         openai_api_base=azure_api_base,
         openai_api_type=azure_api_type,
-        openai_api_version=azure_api_version,
+        openai_api_version=azure_embeddingapi_version,
         chunk_size=16,
         max_retries=3,
     ),
@@ -925,7 +953,7 @@ with gr.Blocks(theme=theme) as llmapp:
         <br>
         This app uses the Transformer magic to answer all your questions! <br>
         Check the "Memorize" box if you want to add the information to your memory palace! <br>
-        Using the default gpt-4-32k model! <br>
+        Using the default gpt-35-turbo-16k model! <br>
         </center>
         """
     )
@@ -945,7 +973,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         adownload_output = gr.Textbox(label="Article download Status")
                         adownload_button = gr.Button(value="Download", scale=0)
                 with gr.Tab(label="File Analyzer"):
-                    files = gr.Files(label="Upload the files to be analyzed")
+                    files = gr.Files(label="Supported types: pdf, txt, docx, png, jpg, jpeg, mp3")
                     with gr.Row():
                         upload_output = gr.Textbox(label="Upload Status")
                         upload_button = gr.Button(value="Upload", scale=0)
@@ -964,7 +992,7 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="PALM"),
+                gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="PALM"),
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
@@ -986,7 +1014,7 @@ with gr.Blocks(theme=theme) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "PALM", "OPENAI", "WIZARDVICUNA7B"], value="OPENAI"),
+                    gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GPT35TURBO"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],

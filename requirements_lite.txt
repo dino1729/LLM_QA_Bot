@@ -41,10 +41,10 @@ gensim
 spacy
 pytube
 flask
-llama-hub==0.0.34
+llama-hub==0.0.35
 pyowm
-llama-index==0.8.33
-langchain==0.0.302
+llama-index==0.8.40
+langchain==0.0.310
 youtube_transcript_api
 supabase
 docx2txt
