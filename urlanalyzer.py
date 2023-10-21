@@ -166,6 +166,7 @@ def ask_fromfullcontext(question, fullcontext_template):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
     openai.api_base = azure_api_base
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
@@ -209,7 +210,7 @@ if __name__ == "__main__":
     azure_api_key = os.environ["AZURE_API_KEY"]
     azure_api_type = "azure"
     azure_api_base = os.environ.get("AZURE_API_BASE")
-    azure_api_version = os.environ.get("AZURE_API_VERSION")
+    azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
     azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
     #Supabase API key
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     openai.api_key = azure_api_key
 
    # Check if user set the davinci model flag
-    gpt4_flag = True
+    gpt4_flag = False
     if gpt4_flag:
         LLM_DEPLOYMENT_NAME = "gpt-4-32k"
         LLM_MODEL_NAME = "gpt-4-32k"
@@ -247,7 +248,7 @@ if __name__ == "__main__":
         chunk_overlap=20,
         paragraph_separator="\n\n\n",
         secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
+        tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
     )
     node_parser = SimpleNodeParser(text_splitter=text_splitter)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
@@ -256,11 +257,12 @@ if __name__ == "__main__":
     llm = AzureOpenAI(
         engine=LLM_DEPLOYMENT_NAME, 
         model=LLM_MODEL_NAME,
-        openai_api_key=azure_api_key,
-        openai_api_base=azure_api_base,
-        openai_api_type=azure_api_type,
+        api_key=azure_api_key,
+        api_base=azure_api_base,
+        api_type=azure_api_type,
+        api_version=azure_chatapi_version,
         temperature=0.5,
-        max_tokens=1024,
+        max_tokens=num_output,
     )
     embedding_llm = LangchainEmbedding(
         OpenAIEmbeddings(
@@ -269,7 +271,7 @@ if __name__ == "__main__":
             openai_api_key=azure_api_key,
             openai_api_base=azure_api_base,
             openai_api_type=azure_api_type,
-            openai_api_version=azure_api_version,
+            openai_api_version=azure_embeddingapi_version,
             chunk_size=16,
             max_retries=3,
         ),

@@ -1,13 +1,5 @@
-# Use an official Python runtime as a base image
-FROM python:latest
+FROM python:3.11.4
 
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install required system dependencies
 RUN \
     set -eux; \
     apt-get update; \
@@ -17,29 +9,16 @@ RUN \
     python3-venv \
     ffmpeg \
     git \
-    ca-certificates \
-    libasound2 \
-    wget \
     ; \
     rm -rf /var/lib/apt/lists/*
 
-# Download and install OpenSSL
-RUN wget -O - https://www.openssl.org/source/openssl-1.1.1u.tar.gz | tar zxf - \
-    && cd openssl-1.1.1u \
-    && ./config --prefix=/usr/local \
-    && make -j $(nproc) \
-    && make install_sw install_ssldirs
+RUN pip3 install -U pip && pip3 install -U wheel && pip3 install -U setuptools==59.5.0
+COPY ./requirements_lite.txt /tmp/requirements_lite.txt
+RUN pip3 install -r /tmp/requirements_lite.txt && rm -r /tmp/requirements_lite.txt
 
-# Update library cache
-RUN ldconfig -v
-
-# Set SSL_CERT_DIR environment variable
-ENV SSL_CERT_DIR=/etc/ssl/certs
-
-# Install required Python dependencies
-RUN pip install -U pip && pip install -U wheel && pip install -U setuptools==59.5.0
-COPY ./requirements_lite.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm -r /tmp/requirements.txt
+# Copy the rest of the application code
+COPY . /app/
+WORKDIR /app
 
 # Expose the port that Gradio uses (default is 7860)
 EXPOSE 7860

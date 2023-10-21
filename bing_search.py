@@ -132,6 +132,10 @@ def get_bing_news_results(query, num=5):
 
 def get_weather_data(query):
     
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
         key=openweather_api_key,
@@ -146,24 +150,30 @@ def get_weather_data(query):
     return str(agent.chat(query))
 
 def get_bing_agent(query):
+
+    # Reset OpenAI API type and base
+    openai.api_type = azure_api_type
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     
-        bing_tool = BingSearchToolSpec(
-            api_key=bing_api_key,
-        )
-    
-        agent = OpenAIAgent.from_tools(
-            bing_tool.to_tool_list(),
-            llm=llm,
-            verbose=False,
-        )
-    
-        return str(agent.chat(query))
+    bing_tool = BingSearchToolSpec(
+        api_key=bing_api_key,
+    )
+
+    agent = OpenAIAgent.from_tools(
+        bing_tool.to_tool_list(),
+        llm=llm,
+        verbose=False,
+    )
+
+    return str(agent.chat(query))
 
 def summarize(data_folder):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
-    openai.api_base = azure_api_base   
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -190,7 +200,8 @@ def simple_query(data_folder, query):
     
     # Reset OpenAI API type and base
     openai.api_type = azure_api_type
-    openai.api_base = azure_api_base  
+    openai.api_key = azure_api_key
+    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -235,7 +246,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
         )
         return response.last
-    elif model_name == "OPENAI":
+    elif model_name == "GPT4":
         openai.api_type = azure_api_type
         openai.api_base = azure_api_base
         openai.api_version = azure_chatapi_version
@@ -245,9 +256,24 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
+        )
+        return response['choices'][0]['message']['content']
+    elif model_name == "GPT35TURBO":
+        openai.api_type = azure_api_type
+        openai.api_base = azure_api_base
+        openai.api_version = azure_chatapi_version
+        openai.api_key = azure_api_key
+        response = openai.ChatCompletion.create(
+            engine="gpt-35-turbo",
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=0.9,
+            frequency_penalty=0.6,
+            presence_penalty=0.1
         )
         return response['choices'][0]['message']['content']
     elif model_name == "WIZARDVICUNA7B":
@@ -276,7 +302,7 @@ if __name__ == "__main__":
     azure_api_key = os.environ["AZURE_API_KEY"]
     azure_api_type = "azure"
     azure_api_base = os.environ.get("AZURE_API_BASE")
-    azure_api_version = os.environ.get("AZURE_API_VERSION")
+    azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
     azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 
@@ -291,21 +317,9 @@ if __name__ == "__main__":
     openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
 
     # max LLM token input size
-    max_input_size = 96000
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
     chunk_size = 256
-    context_window = 32000
-    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-    text_splitter = SentenceSplitter(
-        separator=" ",
-        chunk_size=chunk_size,
-        chunk_overlap=20,
-        paragraph_separator="\n\n\n",
-        secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
-    )
-    node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
     os.environ["OPENAI_API_KEY"] = azure_api_key
     openai.api_type = azure_api_type
@@ -313,7 +327,7 @@ if __name__ == "__main__":
     openai.api_key = azure_api_key
 
     # Check if user set the gpt4 model flag
-    gpt4_flag = True
+    gpt4_flag = False
     if gpt4_flag:
         LLM_DEPLOYMENT_NAME = "gpt-4-32k"
         LLM_MODEL_NAME = "gpt-4-32k"
@@ -333,8 +347,9 @@ if __name__ == "__main__":
         api_key=azure_api_key,
         api_base=azure_api_base,
         api_type=azure_api_type,
+        api_version=azure_chatapi_version,
         temperature=0.5,
-        max_tokens=1024,
+        max_tokens=num_output,
     )
     embedding_llm = LangchainEmbedding(
         OpenAIEmbeddings(
@@ -343,12 +358,24 @@ if __name__ == "__main__":
             openai_api_key=azure_api_key,
             openai_api_base=azure_api_base,
             openai_api_type=azure_api_type,
-            openai_api_version=azure_api_version,
+            openai_api_version=azure_embeddingapi_version,
             chunk_size=16,
             max_retries=3,
         ),
         embed_batch_size=1,
     )
+
+    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
+    text_splitter = SentenceSplitter(
+        separator=" ",
+        chunk_size=chunk_size,
+        chunk_overlap=20,
+        paragraph_separator="\n\n\n",
+        secondary_chunking_regex="[^,.;。]+[,.;。]?",
+        tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
+    )
+    node_parser = SimpleNodeParser(text_splitter=text_splitter)
+
     service_context = ServiceContext.from_defaults(
         llm=llm,
         embed_model=embedding_llm,
@@ -358,6 +385,7 @@ if __name__ == "__main__":
         node_parser=node_parser,
     )
     set_global_service_context(service_context)
+
     sum_template = (
         "You are a world-class text summarizer connected to the internet. We have provided context information below from the internet below. \n"
         "---------------------\n"
@@ -386,7 +414,7 @@ if __name__ == "__main__":
         "role": "system",
         "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
     }]
-    model_names = ["WIZARDVICUNA7B", "PALM", "OPENAI", "COHERE"]
+    model_names = ["WIZARDVICUNA7B", "PALM", "GPT4", "GPT35TURBO" "COHERE"]
     model_index = 0
     model_name = model_names[model_index]
     temperature = 0.3
