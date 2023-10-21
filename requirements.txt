@@ -50,7 +50,7 @@ flask
 llama-hub==0.0.35
 pyowm
 llama-index==0.8.40
-langchain==0.0.310
+langchain>=0.0.312
 youtube_transcript_api
 supabase
 docx2txt
