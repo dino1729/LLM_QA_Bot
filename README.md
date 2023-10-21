@@ -9,9 +9,9 @@ There's also a memory palace feature now to help you remember the content you've
 # Content Analysis
 Upload your files or provide links to articles/YouTube videos, and let LLM_QA_Bot work its magic! It will analyze the content and provide you with detailed insights and information.
 
-[LLM UI](screenshots/ui.png)
+![LLM UI](./screenshots/ui.png)
 
-[LLM Article Analysis](screenshots/articleanalysis.png)
+![LLM Article Analysis](./screenshots/articleanalysis.png)
 
 # Memory Palace
 LLM_QA_Bot now comes with a memory palace feature. You can choose to save the analyzed content to your memory palace for easy access and reference later.
@@ -19,24 +19,24 @@ LLM_QA_Bot now comes with a memory palace feature. You can choose to save the an
 # Chat with LLMs
 LLM_QA_Bot has integrated support for various AI models and services. You can chat with Azure OpenAI, perform Bing searches for the latest news updates, utilize Google palm, Cohere, and even run local AI models for local inferencing.
 
-[LLM Chat](screenshots/palm.png)
+![LLM Chat](./screenshots/palm.png)
 
-[LLM Latest News](screenshots/news.png)
+![LLM Latest News](./screenshots/news.png)
 
 # Holy Book Chatbot
 If you seek wisdom from the holy book, LLM_QA_Bot has you covered. It now includes a Pinecone database with Bhagavad Gita embeddings. You can access the database to get gyan (knowledge) from the holy book.
 
-[LLM Gita](screenshots/gita.png)
+![LLM Gita](./screenshots/gita.png)
 
 # Random Food Cravings Generator
 Feeling hungry but can't decide what to eat? LLM_QA_Bot can help! It includes a random food cravings generator that suggests delicious food options to satisfy your cravings.
 
-[LLM Cravings generator](screenshots/cravings.png)
+![LLM Cravings generator](./screenshots/cravings.png)
 
 # Trip Planner
 Planning a trip? LLM_QA_Bot is here to assist you. It now includes a trip planner feature that can help you plan your next adventure.
 
-[LLM Trip Planner](screenshots/cityplanner.png)
+![LLM Trip Planner](./screenshots/cityplanner.png)
 
 # Setup
 To use LLM_QA_Bot, follow these steps:
