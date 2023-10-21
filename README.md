@@ -11,10 +11,18 @@ Upload your files or provide links to articles/YouTube videos, and let LLM_QA_Bo
 
 ![LLM UI](./screenshots/ui.png)
 
+Example of Ray Dalio's LinkedIn article analysis:
+
 ![LLM Article Analysis](./screenshots/articleanalysis.png)
 
+Example of Steve Jobs's efficiency interview video analysis:
+
+![LLM Video Analysis](./screenshots/stevejobsvideo.png)
+
 # Memory Palace
-LLM_QA_Bot now comes with a memory palace feature. You can choose to save the analyzed content to your memory palace for easy access and reference later.
+LLM_QA_Bot comes with a memory palace feature. You can choose to save the analyzed content to your memory palace for easy access and reference later. The app indexes the content and stores it in a Supabase database. You can then search for the content in your memory palace and access it whenever you want. 
+
+Here is the app for the Memory Palace: https://github.com/dino1729/mymemorypalace
 
 # Chat with LLMs
 LLM_QA_Bot has integrated support for various AI models and services. You can chat with Azure OpenAI, perform Bing searches for the latest news updates, utilize Google palm, Cohere, and even run local AI models for local inferencing.
