@@ -13,8 +13,8 @@ RUN \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install -U pip && pip3 install -U wheel && pip3 install -U setuptools==59.5.0
-COPY ./requirements_lite.txt /tmp/requirements_lite.txt
-RUN pip3 install -r /tmp/requirements_lite.txt && rm -r /tmp/requirements_lite.txt
+COPY ./requirements.txt /tmp/requirements.txt
+RUN pip3 install -r /tmp/requirements.txt && rm -r /tmp/requirements.txt
 
 # Copy the rest of the application code
 COPY . /app/
@@ -24,4 +24,4 @@ WORKDIR /app
 EXPOSE 7860
 
 # Command to run your Gradio app when the container starts
-CMD ["python", "azure_gradioui_lite.py"]
+CMD ["python", "azure_gradioui.py"]
