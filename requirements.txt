@@ -45,7 +45,7 @@ nltk
 gensim
 spacy
 transformers
-pytorch
+torch
 pytube
 flask
 llama-hub==0.0.43
