@@ -15,6 +15,9 @@ import tiktoken
 import sys
 import cohere
 import google.generativeai as palm
+import wget
+import whisper
+from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from datetime import datetime
 from newspaper import Article
 from bs4 import BeautifulSoup
@@ -392,6 +395,60 @@ def download_art(url, memorize):
         return "Article downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
     else:
         return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
+
+def download_media(url, memorize):
+
+    clearallfiles()
+    global example_queries, summary
+    if url:
+        try:
+            # Download the media using wget and save it as media.mp3 if it is an audio file and media.mp4 if it is a video file
+            media = wget.download(url, UPLOAD_FOLDER)
+            # Extract the file name
+            filename_with_path = media
+            file_name = os.path.basename(filename_with_path)
+            # Get extention of file name
+            ext = file_name.split(".")[-1].lower()
+            # Check if the file is an audio file
+            if ext in ["mp3", "wav"]:
+                # Rename the file to audio.mp3
+                os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+            # Check if the file is a video file
+            elif ext in ["mp4", "mkv"]:
+                # Rename the file to video.mp4
+                os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "video.mp4"))
+                # Extract the audio from the video and save it as audio.mp3
+                ffmpeg_extract_audio(os.path.join(UPLOAD_FOLDER, "video.mp4"), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+                # Delete the video file
+                os.remove(os.path.join(UPLOAD_FOLDER, "video.mp4"))
+            else:
+                raise Exception("Invalid media file format")
+        except Exception as e:
+            print("Failed to download media using wget from URL: %s. Error: %s", url, str(e))
+            return "Failed to download media. Please check the URL and try again.", gr.Dataset.update(samples=example_queries), summary
+        # Use whisper to extract the transcript from the audio
+        model = whisper.load_model("base")
+        media_text = model.transcribe(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+        # Save the transcript to a file in UPLOAD_FOLDER
+        with open(os.path.join(UPLOAD_FOLDER, "media_transcript.txt"), "w") as f:
+            f.write(media_text["text"])
+        # Delete the audio file
+        os.remove(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+        # Build index
+        build_index()
+        # Upload data to Supabase if the memorize checkbox is checked
+        if memorize:
+            metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+            upload_data_to_supabase(metadata_index, embedding_index, title=file_name, url=url)
+        # Generate summary
+        summary = summary_generator()
+        # Generate example queries
+        example_queries = example_generator()
+
+        return "Media downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+    else:
+        return "Please enter a valid media URL", gr.Dataset.update(samples=example_queries), summary
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
     
@@ -977,6 +1034,11 @@ with gr.Blocks(theme=theme) as llmapp:
                     with gr.Row():
                         upload_output = gr.Textbox(label="Upload Status")
                         upload_button = gr.Button(value="Upload", scale=0)
+                with gr.Tab(label="Media URL Analyzer"):
+                    mediaurl = gr.Textbox(placeholder="Input must be a URL", label="Enter Media URL")
+                    with gr.Row():
+                        mdownload_output = gr.Textbox(label="Media download Status")
+                        mdownload_button = gr.Button(value="Download", scale=0)
             with gr.Row():
                 with gr.Box():
                     summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
@@ -1042,6 +1104,7 @@ with gr.Blocks(theme=theme) as llmapp:
     upload_button.click(upload_file, inputs=[files, memorize], outputs=[upload_output, examples, summary_output], show_progress=True)
     download_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[download_output, examples, summary_output], show_progress=True)
     adownload_button.click(download_art, inputs=[arturl, memorize], outputs=[adownload_output, examples, summary_output], show_progress=True)
+    mdownload_button.click(download_media, inputs=[mediaurl, memorize], outputs=[mdownload_output, examples, summary_output], show_progress=True)
     city_button.click(generate_trip_plan, inputs=[city_name, number_of_days], outputs=[city_output], show_progress=True)
     craving_button.click(craving_satisfier, inputs=[craving_city_name, craving_cuisine], outputs=[craving_output], show_progress=True)
     examples.click(load_example, inputs=[examples], outputs=[query])
