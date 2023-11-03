@@ -8,6 +8,9 @@ import dotenv
 import supabase
 import tiktoken
 import argparse
+import wget
+import whisper
+from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from datetime import datetime
 from newspaper import Article
 from bs4 import BeautifulSoup
@@ -93,7 +96,6 @@ def download_ytvideo(url, memorize):
             video_title = video_id
         try:
             # Download the transcript using youtube_transcript_api
-            #transcript_list = YouTubeTranscriptApi.get_transcripts([video_id])
             transcript_list = YouTubeTranscriptApi.get_transcripts([video_id],languages=['en-IN', 'en'])
         except Exception as e:
             # Handle the case where the video does not have transcripts
@@ -115,11 +117,20 @@ def download_ytvideo(url, memorize):
                 upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
             # Generate summary
             summary = summary_generator()
-            # Generate example queries
             return summary
         # If the video does not have transcripts, download the video and post-process it locally
         else:
-            return "Youtube video doesn't have transcripts"
+            yt = YouTube(url)
+            yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first().download(UPLOAD_FOLDER)
+            build_index()
+            # Upload data to Supabase if memorize is True
+            if memorize:
+                metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+                embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+                upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
+            # Generate summary
+            summary = summary_generator()
+            return summary
     else:
         return "Please enter a valid Youtube URL"
 
@@ -143,8 +154,7 @@ def download_art(url, memorize):
                 soup = BeautifulSoup(req.content, 'html.parser')
                 article.text = soup.get_text()
             except Exception as e:
-                print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
-                return summary
+                pass
         # Save the article to the UPLOAD_FOLDER
         with open(os.path.join(UPLOAD_FOLDER, "article.txt"), 'w') as f:
             f.write(article.text)
@@ -157,7 +167,63 @@ def download_art(url, memorize):
             upload_data_to_supabase(metadata_index, embedding_index, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
+        return summary
+    else:
+        return "Please enter a valid URL"
 
+def download_media(url, memorize):
+
+    clearallfiles()
+    if url:
+        try:
+            # Check if the url contains overcast.fm and extract the media url
+            if "overcast.fm" in url:
+                req = requests.get(url)
+                soup = BeautifulSoup(req.content, 'html.parser')
+                audio_tag = soup.find('audio')
+                # look for mp3, m4a, wav, mkv, mp4 in the html content
+                media_url = audio_tag.source['src']
+                url = media_url
+                
+            media = wget.download(url, out=UPLOAD_FOLDER)
+            # Extract the file name
+            filename_with_path = media
+            file_name = os.path.basename(filename_with_path)
+            # Get extention of file name
+            ext = file_name.split(".")[-1].lower()
+            # Check if the file is an audio file
+            if ext in ["m4a", "mp3", "wav"]:
+                # Rename the file to audio.mp3
+                os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+            # Check if the file is a video file
+            elif ext in ["mp4", "mkv"]:
+                # Rename the file to video.mp4
+                os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "video.mp4"))
+                # Extract the audio from the video and save it as audio.mp3
+                ffmpeg_extract_audio(os.path.join(UPLOAD_FOLDER, "video.mp4"), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+                # Delete the video file
+                os.remove(os.path.join(UPLOAD_FOLDER, "video.mp4"))
+            else:
+                raise Exception("Invalid media file format")
+        except Exception as e:
+            pass
+        # Use whisper to extract the transcript from the audio
+        model = whisper.load_model("base")
+        media_text = model.transcribe(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+        # Save the transcript to a file in UPLOAD_FOLDER
+        with open(os.path.join(UPLOAD_FOLDER, "media_transcript.txt"), "w") as f:
+            f.write(media_text["text"])
+        # Delete the audio file
+        os.remove(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
+        # Build index
+        build_index()
+        # Upload data to Supabase if the memorize checkbox is checked
+        if memorize:
+            metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+            upload_data_to_supabase(metadata_index, embedding_index, title=file_name, url=url)
+        # Generate summary
+        summary = summary_generator()
         return summary
     else:
         return "Please enter a valid URL"
@@ -320,8 +386,13 @@ if __name__ == "__main__":
     memorize = False
 
     url = args.url.strip()
+    # Check if the url is a YouTube video url
     if "youtube.com/watch" in url or "youtu.be/" in url:
         summary = download_ytvideo(url, memorize)
+    # Check if the url is a media file url. A media url will contain m4a, mp3, wav, mp4 or mkv in the url
+    elif any(x in url for x in [".m4a", ".mp3", ".wav", ".mp4", ".mkv"]):
+        summary = download_media(url, memorize)
+    # Else, the url is an article url
     elif "http" in url:
         summary = download_art(url, memorize)
     else:

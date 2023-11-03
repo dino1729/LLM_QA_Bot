@@ -402,6 +402,14 @@ def download_media(url, memorize):
     global example_queries, summary
     if url:
         try:
+            # Check if the url contains overcast.fm and extract the media url
+            if "overcast.fm" in url:
+                req = requests.get(url)
+                soup = BeautifulSoup(req.content, 'html.parser')
+                audio_tag = soup.find('audio')
+                # look for mp3, m4a, wav, mkv, mp4 in the html content
+                media_url = audio_tag.source['src']
+                url = media_url
             # Download the media using wget and save it as media.mp3 if it is an audio file and media.mp4 if it is a video file
             media = wget.download(url, UPLOAD_FOLDER)
             # Extract the file name
@@ -410,7 +418,7 @@ def download_media(url, memorize):
             # Get extention of file name
             ext = file_name.split(".")[-1].lower()
             # Check if the file is an audio file
-            if ext in ["mp3", "wav"]:
+            if ext in ["m4a", "mp3", "wav"]:
                 # Rename the file to audio.mp3
                 os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
             # Check if the file is a video file
