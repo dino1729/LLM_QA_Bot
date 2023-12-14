@@ -29,7 +29,7 @@ ffmpeg-python
 PyPDF2
 tiktoken
 moviepy
-gradio==3.48.0
+gradio==3.50.2
 IPython
 pydub
 torch
@@ -48,9 +48,9 @@ transformers
 torch
 pytube
 flask
-llama-hub==0.0.43
+llama-hub>=0.0.43
 pyowm
-llama-index==0.8.57
+llama-index==0.8.69.post2
 langchain>=0.0.329
 youtube_transcript_api
 supabase

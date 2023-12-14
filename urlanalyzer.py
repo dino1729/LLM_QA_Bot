@@ -1,8 +1,6 @@
 import json
 import os
 import requests
-import openai
-import requests
 import re
 import dotenv
 import supabase
@@ -16,12 +14,11 @@ from newspaper import Article
 from bs4 import BeautifulSoup
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
-from langchain.embeddings import OpenAIEmbeddings
+from llama_index.embeddings import AzureOpenAIEmbedding
 from llama_index.llms import AzureOpenAI
 from llama_index import (
     VectorStoreIndex,
     SummaryIndex,
-    LangchainEmbedding,
     PromptHelper,
     SimpleDirectoryReader,
     ServiceContext,
@@ -230,10 +227,6 @@ def download_media(url, memorize):
 
 def ask_fromfullcontext(question, fullcontext_template):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
     # SummaryIndexRetriever
@@ -284,22 +277,17 @@ if __name__ == "__main__":
     SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 
     os.environ["OPENAI_API_KEY"] = azure_api_key
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
 
    # Check if user set the davinci model flag
-    gpt4_flag = False
+    gpt4_flag = True
     if gpt4_flag:
-        LLM_DEPLOYMENT_NAME = "gpt-4-32k"
-        LLM_MODEL_NAME = "gpt-4-32k"
-        openai.api_version = azure_chatapi_version
-        max_input_size = 96000
-        context_window = 32000
+        LLM_DEPLOYMENT_NAME = "gpt-4"
+        LLM_MODEL_NAME = "gpt-4"
+        max_input_size = 128000
+        context_window = 128000
     else:
         LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
         LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = azure_chatapi_version
         max_input_size = 48000
         context_window = 16000
 
@@ -314,7 +302,7 @@ if __name__ == "__main__":
         chunk_overlap=20,
         paragraph_separator="\n\n\n",
         secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
+        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
     )
     node_parser = SimpleNodeParser(text_splitter=text_splitter)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
@@ -324,23 +312,18 @@ if __name__ == "__main__":
         engine=LLM_DEPLOYMENT_NAME, 
         model=LLM_MODEL_NAME,
         api_key=azure_api_key,
-        api_base=azure_api_base,
-        api_type=azure_api_type,
+        azure_endpoint=azure_api_base,
         api_version=azure_chatapi_version,
-        temperature=0.5,
+        temperature=0.25,
         max_tokens=num_output,
     )
-    embedding_llm = LangchainEmbedding(
-        OpenAIEmbeddings(
-            model=EMBEDDINGS_DEPLOYMENT_NAME,
-            deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-            openai_api_key=azure_api_key,
-            openai_api_base=azure_api_base,
-            openai_api_type=azure_api_type,
-            openai_api_version=azure_embeddingapi_version,
-            chunk_size=16,
-            max_retries=3,
-        ),
+    embedding_llm =AzureOpenAIEmbedding(
+        model=EMBEDDINGS_DEPLOYMENT_NAME,
+        azure_deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_embeddingapi_version,
+        max_retries=3,
         embed_batch_size=1,
     )
     service_context = ServiceContext.from_defaults(
