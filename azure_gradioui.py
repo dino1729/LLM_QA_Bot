@@ -3,7 +3,6 @@ import os
 import pinecone
 import requests
 import gradio as gr
-import openai
 import requests
 import re
 import ast
@@ -17,18 +16,19 @@ import cohere
 import google.generativeai as palm
 import wget
 import whisper
+from openai import OpenAI
+from openai import AzureOpenAI as OpenAIAzure
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from datetime import datetime
 from newspaper import Article
 from bs4 import BeautifulSoup
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
-from langchain.embeddings import OpenAIEmbeddings
+from llama_index.embeddings import AzureOpenAIEmbedding
 from llama_index.llms import AzureOpenAI
 from llama_index import (
     VectorStoreIndex,
     SummaryIndex,
-    LangchainEmbedding,
     PromptHelper,
     SimpleDirectoryReader,
     ServiceContext,
@@ -48,9 +48,11 @@ from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
 
 def generate_trip_plan(city, days):
 
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
     #Check if the days input is a number and throw an error if it is not
     try:
         days = int(days)
@@ -63,13 +65,13 @@ def generate_trip_plan(city, days):
         user_message = f"Craft a thorough and detailed travel itinerary for {city}. This itinerary should encompass the city's most frequented tourist attractions, as well as its top-rated restaurants, all of which should be visitable within a timeframe of {days} days including the best budget-friendly hotels/resorts to stay for {days-1} nights. The itinerary should be strategically organized to take into account the distance between each location and the time required to travel there, maximizing efficiency. Moreover, please include specific time windows for each location, arranged in ascending order, to facilitate effective planning. The final output should be a numbered list, where each item corresponds to a specific location. Accompany each location with a brief yet informative description to provide context and insight."
         conversation.append({"role": "user", "content": str(user_message)})
         
-        response = openai.ChatCompletion.create(
-            engine="gpt-35-turbo",
+        response = client.chat.completions.create(
+            model="gpt-35-turbo",
             messages=conversation,
             max_tokens=2048,
             temperature=0.3,
         )
-        message = response['choices'][0]['message']['content']
+        message = response.choices[0].message.content
         conversation.append({"role": "assistant", "content": str(message)})
         return f"Here is your trip plan for {city} for {days} day(s): {message}"
     except:
@@ -77,9 +79,11 @@ def generate_trip_plan(city, days):
 
 def craving_satisfier(city, food_craving):
 
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
     # If the food craving is input as "idk", generate a random food craving
     if food_craving in ["idk","I don't know","I don't know what I want","I don't know what I want to eat","I don't know what I want to eat.","Idk"]:
         # Generate a random food craving
@@ -91,13 +95,13 @@ def craving_satisfier(city, food_craving):
         user_message1 = f"I don't know what to eat and I want you to generate a random cuisine. Be as creative as possible"
         conversation1.append({"role": "user", "content": str(user_message1)})
 
-        response1 = openai.ChatCompletion.create(
-            engine="gpt-35-turbo",
+        response1 = client.chat.completions.create(
+            model="gpt-35-turbo",
             messages=conversation1,
             max_tokens=32,
             temperature=0.5,
         )
-        food_craving = response1['choices'][0]['message']['content']
+        food_craving = response1.choices[0].message.content
         conversation1.append({"role": "assistant", "content": str(food_craving)})
         print(f"Don't worry, yo! I think you are craving for {food_craving}!")
     else:
@@ -110,29 +114,34 @@ def craving_satisfier(city, food_craving):
     conversation2 = restaurantsystem_prompt.copy()
     user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of eight restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
-    response2 = openai.ChatCompletion.create(
-        engine="gpt-35-turbo",
+    response2 = client.chat.completions.create(
+        model="gpt-35-turbo",
         messages=conversation2,
         max_tokens=2048,
         temperature=0.4,
     )
-    message = response2['choices'][0]['message']['content']
+    message = response2.choices[0].message.content
     conversation2.append({"role": "assistant", "content": str(message)})
 
     return f'Here are 8 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n {message}'
 
 def extract_context_frompinecone(query):
     
+    embed_client = OpenAIAzure(
+        api_key = azure_api_key,  
+        api_version = azure_embeddingapi_version,
+        azure_endpoint =azure_api_base,
+    )
     holybook = "gita"
     pinecone.init(api_key=pinecone_api_key, environment=pinecone_environment)
     index = pinecone.Index(holybook)
     # Get embeddings for the query
     try:
-        response = openai.Embedding.create(
+        response = embed_client.embeddings.create(
             input=[query], 
-            engine=EMBEDDINGS_DEPLOYMENT_NAME,
+            model=EMBEDDINGS_DEPLOYMENT_NAME,
             )
-        embedding = response["data"][0]["embedding"]
+        embedding = response.data[0].embedding
         # Find contex in pinecone
         with open(f"./holybook/{holybook}.json", "r") as f:
             data = json.loads(f.read())
@@ -256,12 +265,12 @@ def upload_file(files, memorize):
     global example_queries, summary
     # Basic checks
     if not files:
-        return "Please upload a file before proceeding", gr.Dataset.update(samples=example_queries), summary
+        return "Please upload a file before proceeding", gr.Dataset(samples=example_queries), summary
 
     fileformatvalidity = fileformatvaliditycheck(files)
     # Check if all the files are in the correct format
     if not fileformatvalidity:
-        return "Please upload documents in pdf/txt/docx/png/jpg/jpeg format only.", gr.Dataset.update(samples=example_queries), summary
+        return "Please upload documents in pdf/txt/docx/png/jpg/jpeg format only.", gr.Dataset(samples=example_queries), summary
 
     # Save files to UPLOAD_FOLDER
     uploaded_filenames = savetodisk(files)
@@ -270,14 +279,14 @@ def upload_file(files, memorize):
     # Upload data to Supabase if the memorize checkbox is checked
     if memorize:
         metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
         upload_data_to_supabase(metadata_index, embedding_index, title=uploaded_filenames[0], url="Local")
     # Generate summary
     summary = summary_generator()
     # Generate example queries
     example_queries = example_generator()
 
-    return "Files uploaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+    return "Files uploaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
 
 def download_ytvideo(url, memorize):
 
@@ -289,7 +298,7 @@ def download_ytvideo(url, memorize):
             # Extract the video id from the url
             match = re.search(r"youtu\.be\/(.+)", url)
             if match:
-                video_id = match.group(1)
+                video_id = match.Box(1)
             else:
                 video_id = url.split("=")[1]
             try:
@@ -319,13 +328,13 @@ def download_ytvideo(url, memorize):
                 # Upload data to Supabase if the memorize checkbox is checked
                 if memorize:
                     metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-                    embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+                    embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
                     upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
                 # Generate summary
                 summary = summary_generator()
                 # Generate example queries
                 example_queries = example_generator()
-                return "Youtube transcript downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                return "Youtube transcript downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
             # If the video does not have transcripts, download the video and post-process it locally
             else:
                 if not lite_mode:
@@ -339,20 +348,20 @@ def download_ytvideo(url, memorize):
                     # Upload data to Supabase if the memorize checkbox is checked
                     if memorize:
                         metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-                        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+                        embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
                         upload_data_to_supabase(metadata_index, embedding_index, title=video_title, url=url)
                     # Generate summary
                     summary = summary_generator()
                     # Generate example queries
                     example_queries = example_generator()
 
-                    return "Youtube video downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+                    return "Youtube video downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
                 elif lite_mode:
-                    return "Youtube transcripts do not exist for this video!", gr.Dataset.update(samples=example_queries), summary
+                    return "Youtube transcripts do not exist for this video!", gr.Dataset(samples=example_queries), summary
         else:
-            return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
+            return "Please enter a valid Youtube URL", gr.Dataset(samples=example_queries), summary
     else:
-        return "Please enter a valid Youtube URL", gr.Dataset.update(samples=example_queries), summary
+        return "Please enter a valid Youtube URL", gr.Dataset(samples=example_queries), summary
 
 def download_art(url, memorize):
 
@@ -376,7 +385,7 @@ def download_art(url, memorize):
                 article.text = soup.get_text()
             except Exception as e:
                 print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
-                return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset.update(samples=example_queries), summary
+                return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset(samples=example_queries), summary
         # Save the article to the UPLOAD_FOLDER
         with open(os.path.join(UPLOAD_FOLDER, "article.txt"), 'w') as f:
             f.write(article.text)
@@ -385,16 +394,16 @@ def download_art(url, memorize):
         # Upload data to Supabase if the memorize checkbox is checked
         if memorize:
             metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
             upload_data_to_supabase(metadata_index, embedding_index, title=article.title, url=url)
         # Generate summary
         summary = summary_generator()
         # Generate example queries
         example_queries = example_generator()
 
-        return "Article downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+        return "Article downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
     else:
-        return "Please enter a valid URL", gr.Dataset.update(samples=example_queries), summary
+        return "Please enter a valid URL", gr.Dataset(samples=example_queries), summary
 
 def download_media(url, memorize):
 
@@ -433,7 +442,7 @@ def download_media(url, memorize):
                 raise Exception("Invalid media file format")
         except Exception as e:
             print("Failed to download media using wget from URL: %s. Error: %s", url, str(e))
-            return "Failed to download media. Please check the URL and try again.", gr.Dataset.update(samples=example_queries), summary
+            return "Failed to download media. Please check the URL and try again.", gr.Dataset(samples=example_queries), summary
         # Use whisper to extract the transcript from the audio
         model = whisper.load_model("base")
         media_text = model.transcribe(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
@@ -447,20 +456,35 @@ def download_media(url, memorize):
         # Upload data to Supabase if the memorize checkbox is checked
         if memorize:
             metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
-            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "vector_store.json")))
+            embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
             upload_data_to_supabase(metadata_index, embedding_index, title=file_name, url=url)
         # Generate summary
         summary = summary_generator()
         # Generate example queries
         example_queries = example_generator()
 
-        return "Media downloaded and Index built successfully!", gr.Dataset.update(samples=example_queries), summary
+        return "Media downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
     else:
-        return "Please enter a valid media URL", gr.Dataset.update(samples=example_queries), summary
+        return "Please enter a valid media URL", gr.Dataset(samples=example_queries), summary
+
+def memorize_data():
+
+    # Upload data to Supabase
+    metadata_index = json.load(open(os.path.join(VECTOR_FOLDER, "docstore.json")))
+    embedding_index = json.load(open(os.path.join(VECTOR_FOLDER, "default__vector_store.json")))
+    upload_data_to_supabase(metadata_index, embedding_index, title="Custom", url="Custom")
+
+    return "Uploaded data to Supabase successfully!"
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
-    
+
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
     if model_name == "COHERE":
+
         co = cohere.Client(cohere_api_key)
         response = co.generate(
             model='command-nightly',
@@ -469,7 +493,9 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             max_tokens=max_tokens,
         )
         return response.generations[0].text
+    
     elif model_name == "PALM":
+
         palm.configure(api_key=google_palm_api_key)
         response = palm.chat(
             model="models/chat-bison-001",
@@ -477,13 +503,11 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
         )
         return response.last
+    
     elif model_name == "GPT4":
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_version = azure_chatapi_version
-        openai.api_key = azure_api_key
-        response = openai.ChatCompletion.create(
-            engine="gpt-4",
+
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -491,33 +515,35 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     elif model_name == "GPT35TURBO":
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_version = azure_chatapi_version
-        openai.api_key = azure_api_key
-        response = openai.ChatCompletion.create(
-            engine="gpt-35-turbo",
+
+        response = client.chat.completions.create(
+            model="gpt-35-turbo",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=1,
+            top_p=0.9,
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     elif model_name == "WIZARDVICUNA7B":
-        openai.api_type = llama2_api_type
-        openai.api_key = llama2_api_key
-        openai.api_base = llama2_api_base
-        response = openai.ChatCompletion.create(
+
+        local_client = OpenAI(
+            api_key=llama2_api_key,
+            base_url=llama2_api_base,
+        )
+        response = local_client.chat.completions.create(
             model="wizardvicuna7b-uncensored-hf",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     else:
         return "Invalid model name"
 
@@ -613,11 +639,6 @@ def get_bing_news_results(query, num=5):
     return bingsummary
 
 def get_weather_data(query):
-    
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
 
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
@@ -634,10 +655,6 @@ def get_weather_data(query):
 
 def summarize(data_folder):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -662,10 +679,6 @@ def summarize(data_folder):
 
 def simple_query(data_folder, query):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -735,10 +748,6 @@ def ask(question, history):
 
 def ask_query(question):
 
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
     vector_index = load_index_from_storage(storage_context, index_id="vector_index")
     # configure retriever
@@ -765,10 +774,6 @@ def ask_query(question):
 
 def ask_fromfullcontext(question, fullcontext_template):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
     storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
     summary_index = load_index_from_storage(storage_context, index_id="summary_index")
     # SummaryIndexRetriever
@@ -795,8 +800,8 @@ def example_generator():
     
     global example_queries, example_qs
     try:
-        llmresponse = ask_fromfullcontext("Generate 8 questions exactly in the format mentioned", example_template).lstrip('\n')
-        example_qs = [[str(item)] for item in ast.literal_eval(llmresponse.rstrip())]
+        llmresponse = ask_fromfullcontext("Generate upto 8 questions. Output must be a list of lists, where each inner list contains only one question in string format enclosed in double qoutes", example_template).lstrip('\n')
+        example_qs = ast.literal_eval(llmresponse.rstrip())
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
         example_qs = example_queries
@@ -816,7 +821,7 @@ def update_examples():
     
     global example_queries
     example_queries = example_generator()
-    return gr.Dataset.update(samples=example_queries)
+    return gr.Dataset(samples=example_queries)
 
 def load_example(example_id):
     
@@ -867,23 +872,23 @@ bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
 
 os.environ["OPENAI_API_KEY"] = azure_api_key
-openai.api_type = azure_api_type
-openai.api_base = azure_api_base
-openai.api_key = azure_api_key
 
+client = OpenAIAzure(
+    api_key=azure_api_key,
+    azure_endpoint=azure_api_base,
+    api_version=azure_chatapi_version,
+)
 # Check if user set the davinci model flag
-gpt4_flag = False
+gpt4_flag = True
 if gpt4_flag:
-    LLM_DEPLOYMENT_NAME = "gpt-4-32k"
-    LLM_MODEL_NAME = "gpt-4-32k"
-    openai.api_version = azure_chatapi_version
-    max_input_size = 96000
-    context_window = 32000
-    print("Using gpt4-32k model.")
+    LLM_DEPLOYMENT_NAME = "gpt-4"
+    LLM_MODEL_NAME = "gpt-4"
+    max_input_size = 128000
+    context_window = 128000
+    print("Using gpt4 model.")
 else:
     LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
     LLM_MODEL_NAME = "gpt-35-turbo-16k"
-    openai.api_version = azure_chatapi_version
     max_input_size = 48000
     context_window = 16000
     print("Using gpt-35-turbo-16k model.")
@@ -910,7 +915,7 @@ text_splitter = SentenceSplitter(
     chunk_overlap=20,
     paragraph_separator="\n\n\n",
     secondary_chunking_regex="[^,.;。]+[,.;。]?",
-    tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
+    tokenizer=tiktoken.encoding_for_model("gpt-4").encode
 )
 node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
@@ -921,23 +926,18 @@ llm = AzureOpenAI(
     engine=LLM_DEPLOYMENT_NAME, 
     model=LLM_MODEL_NAME,
     api_key=azure_api_key,
-    api_base=azure_api_base,
-    api_type=azure_api_type,
+    azure_endpoint=azure_api_base,
     api_version=azure_chatapi_version,
-    temperature=0.5,
+    temperature=0.25,
     max_tokens=num_output,
 )
-embedding_llm = LangchainEmbedding(
-    OpenAIEmbeddings(
-        model=EMBEDDINGS_DEPLOYMENT_NAME,
-        deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-        openai_api_key=azure_api_key,
-        openai_api_base=azure_api_base,
-        openai_api_type=azure_api_type,
-        openai_api_version=azure_embeddingapi_version,
-        chunk_size=16,
-        max_retries=3,
-    ),
+embedding_llm =AzureOpenAIEmbedding(
+    model=EMBEDDINGS_DEPLOYMENT_NAME,
+    azure_deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+    api_key=azure_api_key,
+    azure_endpoint=azure_api_base,
+    api_version=azure_embeddingapi_version,
+    max_retries=3,
     embed_batch_size=1,
 )
 service_context = ServiceContext.from_defaults(
@@ -976,7 +976,7 @@ eg_template = (
     "---------------------\n"
     "{context_str}"
     "\n---------------------\n"
-    "Based on the context provided, your task is to generate 5 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be must in the form of python list of 5 strings, 1 string for each question enclosed in double quotes\n"
+    "Based on the context provided, your task is to generate upto 8 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be a list of lists, where each inner list contains only one question in string format enclosed in double qoutes\n"
     "---------------------\n"
     "{query_str}\n"
 )
@@ -1017,8 +1017,8 @@ with gr.Blocks(theme=theme) as llmapp:
         <center>
         <br>
         This app uses the Transformer magic to answer all your questions! <br>
-        Check the "Memorize" box if you want to add the information to your memory palace! <br>
-        Using the default gpt-35-turbo-16k model! <br>
+        Check the "Memorize" Box if you want to add the information to your memory palace! <br>
+        Using the default gpt-4 model! <br>
         </center>
         """
     )
@@ -1066,7 +1066,7 @@ with gr.Blocks(theme=theme) as llmapp:
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
-            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What is the latest GDP per capita of India?"]],
+            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What's the latest GDP per capita of India?"]],
             submit_btn="Ask",
             retry_btn=None,
             undo_btn=None,
@@ -1107,7 +1107,6 @@ with gr.Blocks(theme=theme) as llmapp:
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places", show_copy_button=True)
                 clear_craving_button = gr.Button(value="Clear", scale=0)
-
 
     upload_button.click(upload_file, inputs=[files, memorize], outputs=[upload_output, examples, summary_output], show_progress=True)
     download_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[download_output, examples, summary_output], show_progress=True)
