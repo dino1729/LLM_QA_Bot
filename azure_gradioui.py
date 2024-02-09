@@ -14,6 +14,7 @@ import tiktoken
 import sys
 import cohere
 import google.generativeai as palm
+import google.generativeai as genai
 import wget
 import whisper
 from openai import OpenAI
@@ -40,8 +41,7 @@ from llama_index import (
 from llama_index.retrievers import VectorIndexRetriever
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index.node_parser import SemanticSplitterNodeParser
 from llama_index.prompts import PromptTemplate
 from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
@@ -496,13 +496,20 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     
     elif model_name == "PALM":
 
-        palm.configure(api_key=google_palm_api_key)
+        palm.configure(api_key=google_api_key)
         response = palm.chat(
             model="models/chat-bison-001",
             messages=str(conversation).replace("'", '"'),
             temperature=temperature,
         )
         return response.last
+    
+    elif model_name == "GEMINI":
+    
+        genai.configure(api_key=google_api_key)
+        gemini = genai.GenerativeModel('gemini-pro')
+        response = gemini.generate_content(str(conversation).replace("'", '"'))
+        return response.text
     
     elif model_name == "GPT4":
 
@@ -845,9 +852,9 @@ logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 # Get API key from environment variable
 dotenv.load_dotenv()
-cohere_api_key = os.environ["COHERE_API_KEY"]
-google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
-azure_api_key = os.environ["AZURE_API_KEY"]
+cohere_api_key = os.environ.get("COHERE_API_KEY")
+google_api_key = os.environ.get("GOOGLE_API_KEY")
+azure_api_key = os.environ.get("AZURE_API_KEY")
 azure_api_type = "azure"
 azure_api_base = os.environ.get("AZURE_API_BASE")
 azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
@@ -870,8 +877,6 @@ bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
 bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
 
 openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
-
-os.environ["OPENAI_API_KEY"] = azure_api_key
 
 client = OpenAIAzure(
     api_key=azure_api_key,
@@ -900,7 +905,7 @@ system_prompt = [{
 conversation = system_prompt.copy()
 temperature = 0.5
 max_tokens = 420
-model_name = "PALM"
+model_name = "GEMINI"
 # Define a list of keywords that trigger Bing search
 keywords = ["latest", "current", "recent", "update", "best", "top", "news", "weather", "summary", "previous"]
 # max LLM token input size
@@ -909,15 +914,6 @@ max_chunk_overlap_ratio = 0.1
 chunk_size = 256
 
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-text_splitter = SentenceSplitter(
-    separator=" ",
-    chunk_size=chunk_size,
-    chunk_overlap=20,
-    paragraph_separator="\n\n\n",
-    secondary_chunking_regex="[^,.;。]+[,.;。]?",
-    tokenizer=tiktoken.encoding_for_model("gpt-4").encode
-)
-node_parser = SimpleNodeParser(text_splitter=text_splitter)
 
 # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
 lite_mode = False
@@ -940,13 +936,16 @@ embedding_llm =AzureOpenAIEmbedding(
     max_retries=3,
     embed_batch_size=1,
 )
+
+splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=embedding_llm)
+
 service_context = ServiceContext.from_defaults(
     llm=llm,
     embed_model=embedding_llm,
     prompt_helper=prompt_helper,
     chunk_size=chunk_size,
     context_window=context_window,
-    node_parser=node_parser,
+    node_parser=splitter,
 )
 set_global_service_context(service_context)
 
@@ -1004,7 +1003,9 @@ if not os.path.exists(VECTOR_FOLDER ):
     os.makedirs(VECTOR_FOLDER)
 
 # theme = gr.Theme.from_hub("gstaff/xkcd")
-theme = gr.themes.Soft()
+# theme = gr.themes.Soft()
+# theme = gr.Theme.from_hub("gradio/monochrome")
+theme = gr.Theme.from_hub("sudeepshouche/minimalist")
 
 with gr.Blocks(theme=theme) as llmapp:
     gr.Markdown(
@@ -1023,7 +1024,7 @@ with gr.Blocks(theme=theme) as llmapp:
         """
     )
     with gr.Tab(label="LLM APP"):
-        with gr.Box():
+        with gr.Column():
             with gr.Row():
                 memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
             with gr.Row():
@@ -1048,7 +1049,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         mdownload_output = gr.Textbox(label="Media download Status")
                         mdownload_button = gr.Button(value="Download", scale=0)
             with gr.Row():
-                with gr.Box():
+                with gr.Column():
                     summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
                     chatui = gr.ChatInterface(
                         ask,
@@ -1062,7 +1063,7 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="PALM"),
+                gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GEMINI"),
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
@@ -1084,7 +1085,7 @@ with gr.Blocks(theme=theme) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "PALM", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GPT35TURBO"),
+                    gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GPT35TURBO"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
@@ -1117,8 +1118,8 @@ with gr.Blocks(theme=theme) as llmapp:
     examples.click(load_example, inputs=[examples], outputs=[query])
     clear_trip_button.click(clearhistory, inputs=[city_name, number_of_days, city_output], outputs=[city_name, number_of_days, city_output])
     clear_craving_button.click(clearhistory, inputs=[craving_city_name, craving_cuisine, craving_output], outputs=[craving_city_name, craving_cuisine, craving_output])
-    #gitaviewreferences.click(extract_context_frompinecone, inputs=[gita_question], outputs=[gitareferences], show_progress=True)
-    #gitaclear_button.click(clearfield, inputs=[gitareferences], outputs=[gitareferences])
+    # gitaviewreferences.click(extract_context_frompinecone, inputs=[gita_question], outputs=[gitareferences], show_progress=True)
+    # gitaclear_button.click(clearfield, inputs=[gitareferences], outputs=[gitareferences])
 
 if __name__ == '__main__':
     llmapp.launch(server_name='0.0.0.0', server_port=7860)
