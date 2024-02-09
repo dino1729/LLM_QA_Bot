@@ -2,16 +2,17 @@ import dotenv
 import os
 import cohere
 import google.generativeai as palm
+import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 from newspaper import Article
-import openai
-from langchain.embeddings import OpenAIEmbeddings
+from openai import OpenAI
+from openai import AzureOpenAI as OpenAIAzure
+from llama_index.embeddings import AzureOpenAIEmbedding
 from llama_index.llms import AzureOpenAI
 from llama_index import (
     VectorStoreIndex,
     SummaryIndex,
-    LangchainEmbedding,
     PromptHelper,
     SimpleDirectoryReader,
     ServiceContext,
@@ -21,12 +22,11 @@ from llama_index import (
 from llama_index.retrievers import VectorIndexRetriever
 from llama_index.query_engine import RetrieverQueryEngine
 from llama_index.indices.postprocessor import SimilarityPostprocessor
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index.node_parser import SemanticSplitterNodeParser
 from llama_index.prompts import PromptTemplate
 from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
-import tiktoken
+from llama_hub.tools.bing_search.base import BingSearchToolSpec
 import argparse
 import logging
 import sys
@@ -130,11 +130,7 @@ def get_bing_news_results(query, num=5):
     return bingsummary
 
 def get_weather_data(query):
-    
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
+
     # Initialize OpenWeatherMapToolSpec
     weather_tool = OpenWeatherMapToolSpec(
         key=openweather_api_key,
@@ -149,11 +145,6 @@ def get_weather_data(query):
     return str(agent.chat(query))
 
 def get_bing_agent(query):
-
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     
     bing_tool = BingSearchToolSpec(
         api_key=bing_api_key,
@@ -169,10 +160,6 @@ def get_bing_agent(query):
 
 def summarize(data_folder):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -197,10 +184,6 @@ def summarize(data_folder):
 
 def simple_query(data_folder, query):
     
-    # Reset OpenAI API type and base
-    openai.api_type = azure_api_type
-    openai.api_key = azure_api_key
-    openai.api_base = azure_api_base
     # Initialize a document
     documents = SimpleDirectoryReader(data_folder).load_data()
     #index = VectorStoreIndex.from_documents(documents)
@@ -227,8 +210,14 @@ def simple_query(data_folder, query):
     return response
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
-    
+
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
     if model_name == "COHERE":
+
         co = cohere.Client(cohere_api_key)
         response = co.generate(
             model='command-nightly',
@@ -237,21 +226,28 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             max_tokens=max_tokens,
         )
         return response.generations[0].text
+    
     elif model_name == "PALM":
-        palm.configure(api_key=google_palm_api_key)
+
+        palm.configure(api_key=google_api_key)
         response = palm.chat(
             model="models/chat-bison-001",
             messages=str(conversation).replace("'", '"'),
             temperature=temperature,
         )
         return response.last
+    
+    elif model_name == "GEMINI":
+    
+        genai.configure(api_key=google_api_key)
+        gemini = genai.GenerativeModel('gemini-pro')
+        response = gemini.generate_content(str(conversation).replace("'", '"'))
+        return response.text
+    
     elif model_name == "GPT4":
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_version = azure_chatapi_version
-        openai.api_key = azure_api_key
-        response = openai.ChatCompletion.create(
-            engine="gpt-4",
+
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -259,14 +255,12 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     elif model_name == "GPT35TURBO":
-        openai.api_type = azure_api_type
-        openai.api_base = azure_api_base
-        openai.api_version = azure_chatapi_version
-        openai.api_key = azure_api_key
-        response = openai.ChatCompletion.create(
-            engine="gpt-35-turbo",
+
+        response = client.chat.completions.create(
+            model="gpt-35-turbo",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -274,18 +268,22 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     elif model_name == "WIZARDVICUNA7B":
-        openai.api_type = llama2_api_type
-        openai.api_key = llama2_api_key
-        openai.api_base = llama2_api_base
-        response = openai.ChatCompletion.create(
+
+        local_client = OpenAI(
+            api_key=llama2_api_key,
+            base_url=llama2_api_base,
+        )
+        response = local_client.chat.completions.create(
             model="wizardvicuna7b-uncensored-hf",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    
     else:
         return "Invalid model name"
 
@@ -294,20 +292,27 @@ if __name__ == "__main__":
     logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
     logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
-    # Get API keys from environment variables
+    # Get API key from environment variable
     dotenv.load_dotenv()
-    cohere_api_key = os.environ["COHERE_API_KEY"]
-    google_palm_api_key = os.environ["GOOGLE_PALM_API_KEY"]
-    azure_api_key = os.environ["AZURE_API_KEY"]
+    cohere_api_key = os.environ.get("COHERE_API_KEY")
+    google_api_key = os.environ.get("GOOGLE_API_KEY")
+    azure_api_key = os.environ.get("AZURE_API_KEY")
     azure_api_type = "azure"
     azure_api_base = os.environ.get("AZURE_API_BASE")
     azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
     azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
-    EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
 
+    EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
+    # LocalAL API Base
     llama2_api_type = "open_ai"
     llama2_api_key = os.environ.get("LLAMA2_API_KEY")
     llama2_api_base = os.environ.get("LLAMA2_API_BASE")
+    #Supabase API key
+    SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+    #Pinecone API key
+    pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+    pinecone_environment = os.environ.get("PINECONE_ENVIRONMENT")
 
     bing_api_key = os.getenv("BING_API_KEY")
     bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
@@ -315,65 +320,66 @@ if __name__ == "__main__":
 
     openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
 
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
+    # Check if user set the davinci model flag
+    gpt4_flag = True
+    if gpt4_flag:
+        LLM_DEPLOYMENT_NAME = "gpt-4"
+        LLM_MODEL_NAME = "gpt-4"
+        max_input_size = 128000
+        context_window = 128000
+        print("Using gpt4 model.")
+    else:
+        LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
+        LLM_MODEL_NAME = "gpt-35-turbo-16k"
+        max_input_size = 48000
+        context_window = 16000
+        print("Using gpt-35-turbo-16k model.")
+
+    system_prompt = [{
+        "role": "system",
+        "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
+    }]
+    conversation = system_prompt.copy()
+    temperature = 0.5
+    max_tokens = 420
+    model_name = "GEMINI"
+    # Define a list of keywords that trigger Bing search
+    keywords = ["latest", "current", "recent", "update", "best", "top", "news", "weather", "summary", "previous"]
     # max LLM token input size
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
     chunk_size = 256
 
-    os.environ["OPENAI_API_KEY"] = azure_api_key
-    openai.api_type = azure_api_type
-    openai.api_base = azure_api_base
-    openai.api_key = azure_api_key
+    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
-    # Check if user set the gpt4 model flag
-    gpt4_flag = False
-    if gpt4_flag:
-        LLM_DEPLOYMENT_NAME = "gpt-4-32k"
-        LLM_MODEL_NAME = "gpt-4-32k"
-        openai.api_version = azure_chatapi_version
-        max_input_size = 96000
-        context_window = 32000
-    else:
-        LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
-        LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        openai.api_version = azure_chatapi_version
-        max_input_size = 48000
-        context_window = 16000
+    # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
+    lite_mode = False
 
     llm = AzureOpenAI(
         engine=LLM_DEPLOYMENT_NAME, 
         model=LLM_MODEL_NAME,
         api_key=azure_api_key,
-        api_base=azure_api_base,
-        api_type=azure_api_type,
+        azure_endpoint=azure_api_base,
         api_version=azure_chatapi_version,
-        temperature=0.5,
+        temperature=0.25,
         max_tokens=num_output,
     )
-    embedding_llm = LangchainEmbedding(
-        OpenAIEmbeddings(
-            model=EMBEDDINGS_DEPLOYMENT_NAME,
-            deployment=EMBEDDINGS_DEPLOYMENT_NAME,
-            openai_api_key=azure_api_key,
-            openai_api_base=azure_api_base,
-            openai_api_type=azure_api_type,
-            openai_api_version=azure_embeddingapi_version,
-            chunk_size=16,
-            max_retries=3,
-        ),
+    embedding_llm =AzureOpenAIEmbedding(
+        model=EMBEDDINGS_DEPLOYMENT_NAME,
+        azure_deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_embeddingapi_version,
+        max_retries=3,
         embed_batch_size=1,
     )
 
-    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-    text_splitter = SentenceSplitter(
-        separator=" ",
-        chunk_size=chunk_size,
-        chunk_overlap=20,
-        paragraph_separator="\n\n\n",
-        secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
-    )
-    node_parser = SimpleNodeParser(text_splitter=text_splitter)
+    splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=embedding_llm)
 
     service_context = ServiceContext.from_defaults(
         llm=llm,
@@ -381,7 +387,7 @@ if __name__ == "__main__":
         prompt_helper=prompt_helper,
         chunk_size=chunk_size,
         context_window=context_window,
-        node_parser=node_parser,
+        node_parser=splitter,
     )
     set_global_service_context(service_context)
 
@@ -413,7 +419,7 @@ if __name__ == "__main__":
         "role": "system",
         "content": "You are a helpful and super-intelligent voice assistant, that accurately answers user queries. Be accurate, helpful, concise, and clear."
     }]
-    model_names = ["WIZARDVICUNA7B", "PALM", "GPT4", "GPT35TURBO" "COHERE"]
+    model_names = ["PALM", "GPT4", "GPT35TURBO", "COHERE"]
     model_index = 0
     model_name = model_names[model_index]
     temperature = 0.3
