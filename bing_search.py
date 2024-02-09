@@ -26,7 +26,6 @@ from llama_index.node_parser import SimpleNodeParser
 from llama_index.prompts import PromptTemplate
 from llama_index.agent import OpenAIAgent
 from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
-from llama_hub.tools.bing_search.base import BingSearchToolSpec
 import tiktoken
 import argparse
 import logging
