@@ -887,7 +887,7 @@ client = OpenAIAzure(
 gpt4_flag = True
 if gpt4_flag:
     LLM_DEPLOYMENT_NAME = "gpt-4-turbo"
-    LLM_MODEL_NAME = "gpt-4-turbo"
+    LLM_MODEL_NAME = "gpt-4-1106-preview"
     max_input_size = 128000
     context_window = 128000
     print("Using gpt4 model.")
