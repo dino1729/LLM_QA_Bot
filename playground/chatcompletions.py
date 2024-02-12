@@ -13,7 +13,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             api_version=azure_chatapi_version,
         )
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4-turbo",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -78,7 +78,7 @@ if __name__ == '__main__':
         user_query = input("Enter your query: ")
         conversation.append(({"role": "user", "content": user_query}))
 
-        model_name = random.choice(["GPT4", "GPT35TURBO", "WIZARDVICUNA7B"])
+        model_name = random.choice(["GPT4", "GPT35TURBO"])
 
         assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
         print("Bot: ", assistant_reply)
