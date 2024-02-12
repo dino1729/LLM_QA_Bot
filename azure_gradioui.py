@@ -514,7 +514,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     elif model_name == "GPT4":
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4-turbo",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -537,14 +537,14 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         )
         return response.choices[0].message.content
     
-    elif model_name == "WIZARDVICUNA7B":
+    elif model_name == "MIXTRAL8x7B":
 
         local_client = OpenAI(
             api_key=llama2_api_key,
             base_url=llama2_api_base,
         )
         response = local_client.chat.completions.create(
-            model="wizardvicuna7b-uncensored-hf",
+            model="mixtral8x7b",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -886,8 +886,8 @@ client = OpenAIAzure(
 # Check if user set the davinci model flag
 gpt4_flag = True
 if gpt4_flag:
-    LLM_DEPLOYMENT_NAME = "gpt-4"
-    LLM_MODEL_NAME = "gpt-4"
+    LLM_DEPLOYMENT_NAME = "gpt-4-turbo"
+    LLM_MODEL_NAME = "gpt-4-turbo"
     max_input_size = 128000
     context_window = 128000
     print("Using gpt4 model.")
@@ -1063,7 +1063,7 @@ with gr.Blocks(theme=theme) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GEMINI"),
+                gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "MIXTRAL8x7B"], value="GEMINI"),
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
@@ -1085,7 +1085,7 @@ with gr.Blocks(theme=theme) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "WIZARDVICUNA7B"], value="GPT35TURBO"),
+                    gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "MIXTRAL8x7B"], value="GPT35TURBO"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
