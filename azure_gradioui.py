@@ -262,15 +262,15 @@ def clearallfiles_bing():
 def upload_file(files, memorize):
 
     clearallfiles()
-    global example_queries, summary
+    global example_queries, summary, query
     # Basic checks
     if not files:
-        return "Please upload a file before proceeding", gr.Dataset(samples=example_queries), summary
+        return "Please upload a file before proceeding", gr.Dataset(components=[query], samples=example_queries), summary
 
     fileformatvalidity = fileformatvaliditycheck(files)
     # Check if all the files are in the correct format
     if not fileformatvalidity:
-        return "Please upload documents in pdf/txt/docx/png/jpg/jpeg format only.", gr.Dataset(samples=example_queries), summary
+        return "Please upload documents in pdf/txt/docx/png/jpg/jpeg format only.", gr.Dataset(components=[query], samples=example_queries), summary
 
     # Save files to UPLOAD_FOLDER
     uploaded_filenames = savetodisk(files)
@@ -286,12 +286,12 @@ def upload_file(files, memorize):
     # Generate example queries
     example_queries = example_generator()
 
-    return "Files uploaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
+    return "Files uploaded and Index built successfully!", gr.Dataset(components=[query], samples=example_queries), summary
 
 def download_ytvideo(url, memorize):
 
     clearallfiles()
-    global example_queries, summary
+    global example_queries, summary, query
     if url:
         # Check if the URL belongs to YouTube
         if "youtube.com" in url or "youtu.be" in url:
@@ -334,7 +334,7 @@ def download_ytvideo(url, memorize):
                 summary = summary_generator()
                 # Generate example queries
                 example_queries = example_generator()
-                return "Youtube transcript downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
+                return "Youtube transcript downloaded and Index built successfully!", gr.Dataset(components=[query], samples=example_queries), summary
             # If the video does not have transcripts, download the video and post-process it locally
             else:
                 if not lite_mode:
@@ -355,18 +355,18 @@ def download_ytvideo(url, memorize):
                     # Generate example queries
                     example_queries = example_generator()
 
-                    return "Youtube video downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
+                    return "Youtube video downloaded and Index built successfully!", gr.Dataset(components=[query], samples=example_queries), summary
                 elif lite_mode:
-                    return "Youtube transcripts do not exist for this video!", gr.Dataset(samples=example_queries), summary
+                    return "Youtube transcripts do not exist for this video!", gr.Dataset(components=[query], samples=example_queries), summary
         else:
-            return "Please enter a valid Youtube URL", gr.Dataset(samples=example_queries), summary
+            return "Please enter a valid Youtube URL", gr.Dataset(components=[query], samples=example_queries), summary
     else:
-        return "Please enter a valid Youtube URL", gr.Dataset(samples=example_queries), summary
+        return "Please enter a valid Youtube URL", gr.Dataset(components=[query], samples=example_queries), summary
 
 def download_art(url, memorize):
 
     clearallfiles()
-    global example_queries, summary
+    global example_queries, summary, query
     if url:
         # Extract the article
         article = Article(url)
@@ -385,7 +385,7 @@ def download_art(url, memorize):
                 article.text = soup.get_text()
             except Exception as e:
                 print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
-                return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset(samples=example_queries), summary
+                return "Failed to download and parse article. Please check the URL and try again.", gr.Dataset(components=[query], samples=example_queries), summary
         # Save the article to the UPLOAD_FOLDER
         with open(os.path.join(UPLOAD_FOLDER, "article.txt"), 'w') as f:
             f.write(article.text)
@@ -401,14 +401,14 @@ def download_art(url, memorize):
         # Generate example queries
         example_queries = example_generator()
 
-        return "Article downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
+        return "Article downloaded and Index built successfully!", gr.Dataset(components=[query], samples=example_queries), summary
     else:
-        return "Please enter a valid URL", gr.Dataset(samples=example_queries), summary
+        return "Please enter a valid URL", gr.Dataset(components=[query], samples=example_queries), summary
 
 def download_media(url, memorize):
 
     clearallfiles()
-    global example_queries, summary
+    global example_queries, summary, query
     if url:
         try:
             # Check if the url contains overcast.fm and extract the media url
@@ -442,7 +442,7 @@ def download_media(url, memorize):
                 raise Exception("Invalid media file format")
         except Exception as e:
             print("Failed to download media using wget from URL: %s. Error: %s", url, str(e))
-            return "Failed to download media. Please check the URL and try again.", gr.Dataset(samples=example_queries), summary
+            return "Failed to download media. Please check the URL and try again.", gr.Dataset(components=[query], samples=example_queries), summary
         # Use whisper to extract the transcript from the audio
         model = whisper.load_model("base")
         media_text = model.transcribe(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
@@ -463,9 +463,9 @@ def download_media(url, memorize):
         # Generate example queries
         example_queries = example_generator()
 
-        return "Media downloaded and Index built successfully!", gr.Dataset(samples=example_queries), summary
+        return "Media downloaded and Index built successfully!", gr.Dataset(components=[query], samples=example_queries), summary
     else:
-        return "Please enter a valid media URL", gr.Dataset(samples=example_queries), summary
+        return "Please enter a valid media URL", gr.Dataset(components=[query], samples=example_queries), summary
 
 def memorize_data():
 
@@ -828,7 +828,7 @@ def update_examples():
     
     global example_queries
     example_queries = example_generator()
-    return gr.Dataset(samples=example_queries)
+    return gr.Dataset(components=[query], samples=example_queries)
 
 def load_example(example_id):
     
