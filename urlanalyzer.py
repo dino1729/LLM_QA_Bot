@@ -8,6 +8,9 @@ import tiktoken
 import argparse
 import wget
 import whisper
+import logging
+import sys
+from openai import AzureOpenAI as OpenAIAzure
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from datetime import datetime
 from newspaper import Article
@@ -28,8 +31,7 @@ from llama_index import (
     set_global_service_context,
 )
 from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index.node_parser import SemanticSplitterNodeParser
 from llama_index.prompts import PromptTemplate
 
 def build_index():
@@ -261,28 +263,33 @@ def summary_generator():
 
 if __name__ == "__main__":
     
-    # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    # logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+    logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
+    logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
     # Get API key from environment variable
     dotenv.load_dotenv()
-    azure_api_key = os.environ["AZURE_API_KEY"]
+    azure_api_key = os.environ.get("AZURE_API_KEY")
     azure_api_type = "azure"
     azure_api_base = os.environ.get("AZURE_API_BASE")
     azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
     azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
+
     EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
     #Supabase API key
     SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
 
-    os.environ["OPENAI_API_KEY"] = azure_api_key
+    client = OpenAIAzure(
+        api_key=azure_api_key,
+        azure_endpoint=azure_api_base,
+        api_version=azure_chatapi_version,
+    )
 
-   # Check if user set the davinci model flag
+    # Check if user set the davinci model flag
     gpt4_flag = True
     if gpt4_flag:
-        LLM_DEPLOYMENT_NAME = "gpt-4"
-        LLM_MODEL_NAME = "gpt-4"
+        LLM_DEPLOYMENT_NAME = "gpt-4-turbo"
+        LLM_MODEL_NAME = "gpt-4-1106-preview"
         max_input_size = 128000
         context_window = 128000
     else:
@@ -294,19 +301,9 @@ if __name__ == "__main__":
     # max LLM token input size
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
-    chunk_size = 256
     prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-    text_splitter = SentenceSplitter(
-        separator=" ",
-        chunk_size=chunk_size,
-        chunk_overlap=20,
-        paragraph_separator="\n\n\n",
-        secondary_chunking_regex="[^,.;。]+[,.;。]?",
-        tokenizer=tiktoken.encoding_for_model("gpt-4").encode
-    )
-    node_parser = SimpleNodeParser(text_splitter=text_splitter)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
-    lite_mode = True
+    lite_mode = False
 
     llm = AzureOpenAI(
         engine=LLM_DEPLOYMENT_NAME, 
@@ -326,13 +323,15 @@ if __name__ == "__main__":
         max_retries=3,
         embed_batch_size=1,
     )
+
+    splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=embedding_llm)
+
     service_context = ServiceContext.from_defaults(
         llm=llm,
         embed_model=embedding_llm,
         prompt_helper=prompt_helper,
-        chunk_size=chunk_size,
         context_window=context_window,
-        node_parser=node_parser,
+        node_parser=splitter,
     )
     set_global_service_context(service_context)
 
