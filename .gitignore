@@ -10,3 +10,5 @@ __pycache__/
 .vscode
 include/
 gradio_cached_examples/
+playground/*mp3
+playground/*txt
