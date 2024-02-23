@@ -12,3 +12,4 @@ include/
 gradio_cached_examples/
 playground/*mp3
 playground/*txt
+config/config.yml

@@ -1,3 +1,4 @@
+import config
 import json
 import os
 import requests
@@ -48,7 +49,7 @@ def build_index():
 def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
     # Insert the data for each document into the Supabase table
-    supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
+    supabase_client = supabase.Client(public_supabase_url, supabase_service_role_key)
     for doc_id, doc_data in metadata_index["docstore/data"].items():
         content_title = title
         content_url = url
@@ -266,18 +267,25 @@ if __name__ == "__main__":
     logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
     logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
-    # Get API key from environment variable
-    dotenv.load_dotenv()
-    azure_api_key = os.environ.get("AZURE_API_KEY")
-    azure_api_type = "azure"
-    azure_api_base = os.environ.get("AZURE_API_BASE")
-    azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
-    azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
+    azure_api_key = config.azure_api_key
+    azure_api_base = config.azure_api_base
+    azure_embeddingapi_version = config.azure_embeddingapi_version
+    azure_chatapi_version = config.azure_chatapi_version
+    azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
+    azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+    azure_embedding_deploymentid = config.azure_embedding_deploymentid
 
-    EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
-    #Supabase API key
-    SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
+    bing_api_key = config.bing_api_key
+    bing_endpoint = config.bing_endpoint
+    bing_news_endpoint = config.bing_news_endpoint
+    openweather_api_key = config.openweather_api_key
+
+    llama2_api_key = config.llama2_api_key
+    llama2_api_base = config.llama2_api_base
+    supabase_service_role_key = config.supabase_service_role_key
+    public_supabase_url = config.public_supabase_url
+    pinecone_api_key = config.pinecone_api_key
+    pinecone_environment = config.pinecone_environment
 
     client = OpenAIAzure(
         api_key=azure_api_key,
@@ -285,29 +293,18 @@ if __name__ == "__main__":
         api_version=azure_chatapi_version,
     )
 
-    # Check if user set the davinci model flag
-    gpt4_flag = True
-    if gpt4_flag:
-        LLM_DEPLOYMENT_NAME = "gpt-4-turbo"
-        LLM_MODEL_NAME = "gpt-4-1106-preview"
-        max_input_size = 128000
-        context_window = 128000
-    else:
-        LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
-        LLM_MODEL_NAME = "gpt-35-turbo-16k"
-        max_input_size = 48000
-        context_window = 16000
-
     # max LLM token input size
     num_output = 1024
     max_chunk_overlap_ratio = 0.1
+    max_input_size = 128000
+    context_window = 128000
     prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
     # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
     lite_mode = False
 
     llm = AzureOpenAI(
-        engine=LLM_DEPLOYMENT_NAME, 
-        model=LLM_MODEL_NAME,
+        deployment_name=azure_gpt4_deploymentid, 
+        model="gpt-4-0125-preview",
         api_key=azure_api_key,
         azure_endpoint=azure_api_base,
         api_version=azure_chatapi_version,
@@ -315,8 +312,8 @@ if __name__ == "__main__":
         max_tokens=num_output,
     )
     embedding_llm =AzureOpenAIEmbedding(
-        model=EMBEDDINGS_DEPLOYMENT_NAME,
-        azure_deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+        deployment_name=azure_embedding_deploymentid,
+        model="text-embedding-3-large",
         api_key=azure_api_key,
         azure_endpoint=azure_api_base,
         api_version=azure_embeddingapi_version,

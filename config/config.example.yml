@@ -1,0 +1,39 @@
+
+azure_api_key: ""
+azure_api_base: ""
+azure_chatapi_version: ""
+azure_embeddingapi_version: ""
+
+azure_gpt4_deploymentid: ""
+azure_gpt35_deploymentid: ""
+azure_embedding_deploymentid: ""
+
+llama2_api_key: ""
+llama2_api_base: ""
+
+rvctts_api_base: ""
+
+# Supabase
+public_supabase_url: ""
+supabase_service_role_key: ""
+
+# Pinecone
+pinecone_api_key: ""
+pinecone_environment: ""
+
+# Bing Search
+bing_api_key: ""
+bing_endpoint: ""
+
+# PALM
+google_api_key: ""
+
+# Cohere
+cohere_api_key: ""
+
+# weather agent
+openweather_api_key: ""
+
+azurespeechkey: ""
+azurespeechregion: ""
+azuretexttranslatorkey: ""
