@@ -1,3 +1,4 @@
+import config
 import json
 import os
 import pinecone
@@ -6,7 +7,6 @@ import gradio as gr
 import requests
 import re
 import ast
-import dotenv
 import logging
 import shutil
 import supabase
@@ -66,7 +66,7 @@ def generate_trip_plan(city, days):
         conversation.append({"role": "user", "content": str(user_message)})
         
         response = client.chat.completions.create(
-            model="gpt-35-turbo",
+            model=azure_gpt35_deploymentid,
             messages=conversation,
             max_tokens=2048,
             temperature=0.3,
@@ -96,7 +96,7 @@ def craving_satisfier(city, food_craving):
         conversation1.append({"role": "user", "content": str(user_message1)})
 
         response1 = client.chat.completions.create(
-            model="gpt-35-turbo",
+            model=azure_gpt35_deploymentid,
             messages=conversation1,
             max_tokens=32,
             temperature=0.5,
@@ -115,7 +115,7 @@ def craving_satisfier(city, food_craving):
     user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of eight restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
     response2 = client.chat.completions.create(
-        model="gpt-35-turbo",
+        model=azure_gpt35_deploymentid,
         messages=conversation2,
         max_tokens=2048,
         temperature=0.4,
@@ -139,7 +139,7 @@ def extract_context_frompinecone(query):
     try:
         response = embed_client.embeddings.create(
             input=[query], 
-            model=EMBEDDINGS_DEPLOYMENT_NAME,
+            model=azure_embedding_deploymentid,
             )
         embedding = response.data[0].embedding
         # Find contex in pinecone
@@ -224,7 +224,7 @@ def build_index():
 def upload_data_to_supabase(metadata_index, embedding_index, title, url):
     
     # Insert the data for each document into the Supabase table
-    supabase_client = supabase.Client(SUPABASE_URL, SUPABASE_API_KEY)
+    supabase_client = supabase.Client(public_supabase_url, supabase_service_role_key)
     for doc_id, doc_data in metadata_index["docstore/data"].items():
         content_title = title
         content_url = url
@@ -298,7 +298,7 @@ def download_ytvideo(url, memorize):
             # Extract the video id from the url
             match = re.search(r"youtu\.be\/(.+)", url)
             if match:
-                video_id = match.Box(1)
+                video_id = match.group(1)
             else:
                 video_id = url.split("=")[1]
             try:
@@ -514,7 +514,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     elif model_name == "GPT4":
 
         response = client.chat.completions.create(
-            model="gpt-4-turbo",
+            model=azure_gpt4_deploymentid,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -527,7 +527,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     elif model_name == "GPT35TURBO":
 
         response = client.chat.completions.create(
-            model="gpt-35-turbo",
+            model=azure_gpt35_deploymentid,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -770,9 +770,6 @@ def ask_query(question):
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
         response_synthesizer=response_synthesizer,
-        node_postprocessors=[
-            SimilarityPostprocessor(similarity_cutoff=0.7)
-        ],
     )
     response = query_engine.query(question)
     answer = response.response
@@ -850,53 +847,34 @@ def clearhistory(field1, field2, field3):
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
-# Get API key from environment variable
-dotenv.load_dotenv()
-cohere_api_key = os.environ.get("COHERE_API_KEY")
-google_api_key = os.environ.get("GOOGLE_API_KEY")
-azure_api_key = os.environ.get("AZURE_API_KEY")
-azure_api_type = "azure"
-azure_api_base = os.environ.get("AZURE_API_BASE")
-azure_embeddingapi_version = os.environ.get("AZURE_EMBEDDINGAPI_VERSION")
-azure_chatapi_version = os.environ.get("AZURE_CHATAPI_VERSION")
+cohere_api_key = config.cohere_api_key
+google_api_key = config.google_api_key
 
-EMBEDDINGS_DEPLOYMENT_NAME = "text-embedding-ada-002"
-# LocalAL API Base
-llama2_api_type = "open_ai"
-llama2_api_key = os.environ.get("LLAMA2_API_KEY")
-llama2_api_base = os.environ.get("LLAMA2_API_BASE")
-#Supabase API key
-SUPABASE_API_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-SUPABASE_URL = os.environ.get("PUBLIC_SUPABASE_URL")
-#Pinecone API key
-pinecone_api_key = os.environ.get("PINECONE_API_KEY")
-pinecone_environment = os.environ.get("PINECONE_ENVIRONMENT")
+azure_api_key = config.azure_api_key
+azure_api_base = config.azure_api_base
+azure_embeddingapi_version = config.azure_embeddingapi_version
+azure_chatapi_version = config.azure_chatapi_version
+azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
+azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_embedding_deploymentid = config.azure_embedding_deploymentid
 
-bing_api_key = os.getenv("BING_API_KEY")
-bing_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/search"
-bing_news_endpoint = os.getenv("BING_ENDPOINT") + "/v7.0/news/search"
+bing_api_key = config.bing_api_key
+bing_endpoint = config.bing_endpoint
+bing_news_endpoint = config.bing_news_endpoint
+openweather_api_key = config.openweather_api_key
 
-openweather_api_key = os.environ.get("OPENWEATHER_API_KEY")
+llama2_api_key = config.llama2_api_key
+llama2_api_base = config.llama2_api_base
+supabase_service_role_key = config.supabase_service_role_key
+public_supabase_url = config.public_supabase_url
+pinecone_api_key = config.pinecone_api_key
+pinecone_environment = config.pinecone_environment
 
 client = OpenAIAzure(
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_chatapi_version,
 )
-# Check if user set the davinci model flag
-gpt4_flag = True
-if gpt4_flag:
-    LLM_DEPLOYMENT_NAME = "gpt-4-turbo"
-    LLM_MODEL_NAME = "gpt-4-1106-preview"
-    max_input_size = 128000
-    context_window = 128000
-    print("Using gpt4 model.")
-else:
-    LLM_DEPLOYMENT_NAME = "gpt-35-turbo-16k"
-    LLM_MODEL_NAME = "gpt-35-turbo-16k"
-    max_input_size = 48000
-    context_window = 16000
-    print("Using gpt-35-turbo-16k model.")
 
 system_prompt = [{
     "role": "system",
@@ -911,7 +889,8 @@ keywords = ["latest", "current", "recent", "update", "best", "top", "news", "wea
 # max LLM token input size
 num_output = 1024
 max_chunk_overlap_ratio = 0.1
-chunk_size = 256
+max_input_size = 128000
+context_window = 128000
 
 prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
@@ -919,8 +898,8 @@ prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio
 lite_mode = False
 
 llm = AzureOpenAI(
-    engine=LLM_DEPLOYMENT_NAME, 
-    model=LLM_MODEL_NAME,
+    deployment_name=azure_gpt4_deploymentid, 
+    model="gpt-4-0125-preview",
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_chatapi_version,
@@ -928,8 +907,8 @@ llm = AzureOpenAI(
     max_tokens=num_output,
 )
 embedding_llm =AzureOpenAIEmbedding(
-    model=EMBEDDINGS_DEPLOYMENT_NAME,
-    azure_deployment=EMBEDDINGS_DEPLOYMENT_NAME,
+    deployment_name=azure_embedding_deploymentid,
+    model="text-embedding-3-large",
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_embeddingapi_version,
@@ -943,7 +922,6 @@ service_context = ServiceContext.from_defaults(
     llm=llm,
     embed_model=embedding_llm,
     prompt_helper=prompt_helper,
-    chunk_size=chunk_size,
     context_window=context_window,
     node_parser=splitter,
 )
