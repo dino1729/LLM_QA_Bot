@@ -41,6 +41,8 @@ keywords:
   - "weather"
   - "summary"
   - "previous"
+  - "IPL"
+  - "elections"
 
 example_queries:
   - ["Generate key 5 point summary"]

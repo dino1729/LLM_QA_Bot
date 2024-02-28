@@ -18,23 +18,13 @@ from pytube import YouTube
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api import YouTubeTranscriptApi
-from llama_index.embeddings import AzureOpenAIEmbedding
-from llama_index.llms import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+from llama_index.llms.azure_openai import AzureOpenAI
 from openai import AzureOpenAI as OpenAIAzure
-from llama_index import (
-    VectorStoreIndex,
-    SummaryIndex,
-    PromptHelper,
-    SimpleDirectoryReader,
-    ServiceContext,
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
-    set_global_service_context,
-)
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.node_parser import SemanticSplitterNodeParser
-from llama_index.prompts import PromptTemplate
+from llama_index.core import VectorStoreIndex, SummaryIndex, PromptHelper, SimpleDirectoryReader, ServiceContext, StorageContext, load_index_from_storage, get_response_synthesizer, set_global_service_context
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.core import PromptTemplate
 
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -46,6 +36,7 @@ azure_chatapi_version = config.azure_chatapi_version
 azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
 openai_gpt4_modelname = config.openai_gpt4_modelname
 azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+openai_gpt35_modelname = config.openai_gpt35_modelname
 azure_embedding_deploymentid = config.azure_embedding_deploymentid
 openai_embedding_modelname = config.openai_embedding_modelname
 

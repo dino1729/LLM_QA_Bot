@@ -6,19 +6,15 @@ import tiktoken
 import re
 import logging
 import sys
-from llama_index import (
-    LangchainEmbedding,
-    PromptHelper,
-    ServiceContext,
-    Prompt,
-)
+from llama_index.embeddings.langchain import LangchainEmbedding
+from llama_index.core import PromptHelper, ServiceContext, Prompt
 from langchain.embeddings import OpenAIEmbeddings
 import dotenv
 import openai
-from llama_index.llms import AzureOpenAI
-from llama_index import set_global_service_context
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.core import set_global_service_context
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SimpleNodeParser
 
 
 # Set OpenAI API key

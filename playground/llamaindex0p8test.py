@@ -8,32 +8,22 @@ import re
 import logging
 
 import sys
-from llama_index import (
-    VectorStoreIndex,
-    ListIndex,
-    LangchainEmbedding,
-    PromptHelper,
-    SimpleDirectoryReader,
-    ServiceContext,
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
-    Prompt,
-)
+from llama_index.core import VectorStoreIndex, ListIndex, PromptHelper, SimpleDirectoryReader, ServiceContext, StorageContext, load_index_from_storage, get_response_synthesizer, Prompt
+from llama_index.embeddings.langchain import LangchainEmbedding
 from langchain.embeddings import OpenAIEmbeddings
 import dotenv
 
 import openai
-from llama_index.llms import AzureOpenAI
-from llama_index import set_global_service_context
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
-from llama_index.storage import StorageContext
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.indices.postprocessor import SimilarityPostprocessor
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.indices.list import ListIndexLLMRetriever
-from llama_index.response_synthesizers import TreeSummarize
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.core import set_global_service_context
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SimpleNodeParser
+from llama_index.core import StorageContext
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.indices.list import ListIndexLLMRetriever
+from llama_index.core.response_synthesizers import TreeSummarize
 
 # Set OpenAI API key
 dotenv.load_dotenv()

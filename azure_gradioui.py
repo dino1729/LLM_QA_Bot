@@ -2,14 +2,10 @@ import os
 import gradio as gr
 import logging
 import sys
-from llama_index import (
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
-)
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.prompts import PromptTemplate
+from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core import PromptTemplate
 from helper_functions.chat_gita import gita_answer
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
