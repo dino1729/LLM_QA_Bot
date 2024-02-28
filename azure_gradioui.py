@@ -190,8 +190,9 @@ with gr.Blocks(theme=theme) as llmapp:
                         mdownload_output = gr.Textbox(label="Media download Status")
                         mdownload_button = gr.Button(value="Download", scale=0)
             with gr.Row():
-                with gr.Column():
-                    summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways")
+                with gr.Column(scale=2):
+                    summary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways", scale=0)
+                with gr.Column(scale=6):
                     chatui = gr.ChatInterface(
                         ask,
                         submit_btn="Ask",
@@ -199,6 +200,7 @@ with gr.Blocks(theme=theme) as llmapp:
                         undo_btn=None,
                     )
                     query_component = chatui.textbox
+                with gr.Column(scale=2):
                     examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")
     with gr.Tab(label="AI Assistant"):
         gr.ChatInterface(
@@ -208,7 +210,7 @@ with gr.Blocks(theme=theme) as llmapp:
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
-            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What's the latest GDP per capita of India?"], ["What is the current weather in North Plains?"], ["What is the latest on room temperature superconductors?"]],
+            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What's the latest GDP per capita of India?"], ["What is the current weather in North Plains?"], ["What is the latest on room temperature superconductors?"], ["Give me an update on IPL 2024"], ["Bring me upto speed on Indian and US elections"]],
             submit_btn="Ask",
             retry_btn=None,
             undo_btn=None,
