@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from IPython.display import Markdown, display
 from langchain import OpenAI
 from langchain.agents import initialize_agent
-from llama_index import Document, GPTSimpleVectorIndex, SimpleDirectoryReader
+from llama_index.core import Document, GPTSimpleVectorIndex, SimpleDirectoryReader
 from newspaper import Article
 from PIL import Image
 from pytube import YouTube

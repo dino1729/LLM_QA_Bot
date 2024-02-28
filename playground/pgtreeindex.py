@@ -5,14 +5,8 @@ import dotenv
 import openai
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.llms import AzureOpenAI
-from llama_index import (
-    TreeIndex,
-    LangchainEmbedding,
-    LLMPredictor,
-    PromptHelper,
-    SimpleDirectoryReader,
-    ServiceContext,
-)
+from llama_index.core import TreeIndex, LLMPredictor, PromptHelper, SimpleDirectoryReader, ServiceContext
+from llama_index.embeddings.langchain import LangchainEmbedding
 # Get API key from environment variable
 dotenv.load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.environ.get("AZUREOPENAIAPIKEY")

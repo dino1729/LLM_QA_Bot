@@ -7,6 +7,7 @@ azure_embeddingapi_version: ""
 azure_gpt4_deploymentid: ""
 openai_gpt4_modelname: ""
 azure_gpt35_deploymentid: ""
+openai_gpt35_modelname: ""
 azure_embedding_deploymentid: ""
 openai_embedding_modelname: ""
 

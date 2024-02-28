@@ -21,26 +21,15 @@ from bs4 import BeautifulSoup
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain.embeddings import OpenAIEmbeddings
-from llama_index.llms import AzureOpenAI
-from llama_index import (
-    VectorStoreIndex,
-    ListIndex,
-    LangchainEmbedding,
-    PromptHelper,
-    Prompt,
-    SimpleDirectoryReader,
-    ServiceContext,
-    StorageContext,
-    load_index_from_storage,
-    get_response_synthesizer,
-    set_global_service_context,
-)
-from llama_index.indices.document_summary import DocumentSummaryIndex
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.indices.postprocessor import SimilarityPostprocessor
-from llama_index.text_splitter import SentenceSplitter
-from llama_index.node_parser import SimpleNodeParser
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.core import VectorStoreIndex, ListIndex, PromptHelper, Prompt, SimpleDirectoryReader, ServiceContext, StorageContext, load_index_from_storage, get_response_synthesizer, set_global_service_context
+from llama_index.embeddings.langchain import LangchainEmbedding
+from llama_index.core import DocumentSummaryIndex
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SimpleNodeParser
 
 def generate_trip_plan(city, days):
     #Check if the days input is a number and throw an error if it is not

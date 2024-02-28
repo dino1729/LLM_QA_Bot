@@ -3,27 +3,18 @@ import requests
 from datetime import datetime
 from config import config
 from helper_functions.chat_generation import generate_chat
-from llama_index.agent import OpenAIAgent
-from llama_hub.tools.weather.base import OpenWeatherMapToolSpec
-from llama_hub.tools.bing_search.base import BingSearchToolSpec
-from llama_index.llms import AzureOpenAI
-from llama_index.embeddings import AzureOpenAIEmbedding
+from llama_index.agent.openai import OpenAIAgent
+from llama_index.tools.weather import OpenWeatherMapToolSpec
+from llama_index.tools.bing_search import BingSearchToolSpec
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from newspaper import Article
 from bs4 import BeautifulSoup
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.query_engine import RetrieverQueryEngine
-from llama_index.indices.postprocessor import SimilarityPostprocessor
-from llama_index.prompts import PromptTemplate
-from llama_index.node_parser import SemanticSplitterNodeParser
-from llama_index import (
-    VectorStoreIndex,
-    SummaryIndex,
-    PromptHelper,
-    SimpleDirectoryReader,
-    ServiceContext,
-    get_response_synthesizer,
-    set_global_service_context,
-)
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core import PromptTemplate
+from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.core import VectorStoreIndex, SummaryIndex, PromptHelper, SimpleDirectoryReader, ServiceContext, get_response_synthesizer, set_global_service_context
 
 bing_api_key = config.bing_api_key
 bing_endpoint = config.bing_endpoint
@@ -42,6 +33,7 @@ azure_chatapi_version = config.azure_chatapi_version
 azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
 openai_gpt4_modelname = config.openai_gpt4_modelname
 azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+openai_gpt35_modelname = config.openai_gpt35_modelname
 azure_embedding_deploymentid = config.azure_embedding_deploymentid
 openai_embedding_modelname = config.openai_embedding_modelname
 
@@ -231,9 +223,6 @@ def simple_query(data_folder, query):
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
         response_synthesizer=response_synthesizer,
-        node_postprocessors=[
-            SimilarityPostprocessor(similarity_cutoff=0.7)
-        ],
     )
     response = query_engine.query(query)
 

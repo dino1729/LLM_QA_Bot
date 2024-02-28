@@ -20,6 +20,7 @@ azure_embeddingapi_version = config_yaml["azure_embeddingapi_version"]
 azure_gpt4_deploymentid = config_yaml["azure_gpt4_deploymentid"]
 openai_gpt4_modelname = config_yaml["openai_gpt4_modelname"]
 azure_gpt35_deploymentid = config_yaml["azure_gpt35_deploymentid"]
+openai_gpt35_modelname = config_yaml["openai_gpt35_modelname"]
 azure_embedding_deploymentid = config_yaml["azure_embedding_deploymentid"]
 openai_embedding_modelname = config_yaml["openai_embedding_modelname"]
 

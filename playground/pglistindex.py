@@ -1,10 +1,11 @@
-from llama_index import ServiceContext, PromptHelper, SimpleDirectoryReader, ListIndex, LangchainEmbedding
+from llama_index.core import ServiceContext, PromptHelper, SimpleDirectoryReader, ListIndex
+from llama_index.embeddings.langchain import LangchainEmbedding
 
 import os
 import openai
 import dotenv
 from langchain.embeddings import OpenAIEmbeddings
-from llama_index.llms import AzureOpenAI
+from llama_index.llms.azure_openai import AzureOpenAI
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens
