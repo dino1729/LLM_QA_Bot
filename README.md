@@ -50,24 +50,13 @@ Planning a trip? LLM_QA_Bot is here to assist you. It now includes a trip planne
 To use LLM_QA_Bot, follow these steps:
 
 Install all the required packages mentioned in the requirements.txt file.
-Create a .env file with the following variables:
+
+Next, fill in the API keys and other details mentioned in the config/config.example.yml file and rename it to config.yml.
+
+Finally, run the app using the following command:
 
 ```bash
-AZURE_API_BASE
-AZURE_CHATAPI_VERSION
-AZURE_EMBEDDINGAPI_VERSION
-AZURE_API_KEY
-LLAMA2_API_KEY
-LLAMA2_API_BASE
-PUBLIC_SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-BING_API_KEY
-BING_ENDPOINT
-GOOGLE_API_KEY
-COHERE_API_KEY
-PINECONE_API_KEY
-PINECONE_ENVIRONMENT
-OPENWEATHER_API_KEY
+python azure_gradioui.py
 ```
 
 # Instruction set up Docker container:
