@@ -35,6 +35,9 @@ gemini_model_name: ""
 # Cohere
 cohere_api_key: ""
 
+# Groq
+groq_api_key: ""
+
 # weather agent
 openweather_api_key: ""
 
