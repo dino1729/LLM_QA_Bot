@@ -65,5 +65,6 @@ supabase
 docx2txt
 pypdf
 cohere
+groq
 google.generativeai
 pinecone-client
