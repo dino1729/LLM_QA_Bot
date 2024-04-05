@@ -29,13 +29,14 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     if model_name == "COHERE":
 
         co = cohere.Client(cohere_api_key)
-        response = co.generate(
-            model='command-nightly',
-            prompt=str(conversation).replace("'", '"'),
+        response = co.chat(
+            model='command-r-plus',
+            message=str(conversation).replace("'", '"'),
             temperature=temperature,
             max_tokens=max_tokens,
+            connectors=[{"id": "web-search"}]
         )
-        return response.generations[0].text
+        return response.text
     
     elif model_name == "PALM":
 
