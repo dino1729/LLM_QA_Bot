@@ -65,3 +65,4 @@ python azure_gradioui.py
 docker build -t llmqabot .
 docker run --restart always -p 7860:7860 --name llmqabot llmqabot
 ```
+![Alt](https://repobeats.axiom.co/api/embed/1549a965f82a760a1ec07652a8debb95b9599fd3.svg "Repobeats analytics image")
