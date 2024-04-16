@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain.embeddings import OpenAIEmbeddings
-from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAI
 from llama_index.core import VectorStoreIndex, ListIndex, PromptHelper, Prompt, SimpleDirectoryReader, ServiceContext, StorageContext, load_index_from_storage, get_response_synthesizer, set_global_service_context
 from llama_index.embeddings.langchain import LangchainEmbedding
 from llama_index.core import DocumentSummaryIndex

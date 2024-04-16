@@ -5,7 +5,7 @@ import os
 import openai
 import dotenv
 from langchain.embeddings import OpenAIEmbeddings
-from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAI
 # max LLM token input size
 max_input_size = 4096
 # set number of output tokens

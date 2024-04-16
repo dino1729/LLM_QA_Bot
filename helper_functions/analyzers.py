@@ -17,14 +17,15 @@ from bs4 import BeautifulSoup
 from pytube import YouTube
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api import YouTubeTranscriptApi
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-from llama_index.llms.azure_openai import AzureOpenAI
 from openai import AzureOpenAI as OpenAIAzure
-from llama_index.core import VectorStoreIndex, SummaryIndex, PromptHelper, SimpleDirectoryReader, ServiceContext, StorageContext, load_index_from_storage, get_response_synthesizer, set_global_service_context
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, StorageContext, load_index_from_storage, get_response_synthesizer
+from llama_index.core.indices import SummaryIndex
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.node_parser import SemanticSplitterNodeParser
 from llama_index.core import PromptTemplate
+from llama_index.core import Settings
 
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -59,42 +60,27 @@ keywords = config.keywords
 # Set a flag for lite mode: Choose lite mode if you dont want to analyze videos without transcripts
 lite_mode = False
 
-client = OpenAIAzure(
+Settings.client = OpenAIAzure(
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_chatapi_version,
 )
-
-llm = AzureOpenAI(
-    deployment_name=azure_gpt4_deploymentid, 
-    model=openai_gpt4_modelname,
+Settings.llm = AzureOpenAI(
+    azure_deployment=azure_gpt4_deploymentid,
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_chatapi_version,
-    temperature=temperature,
-    max_tokens=num_output,
 )
-embedding_llm =AzureOpenAIEmbedding(
-    deployment_name=azure_embedding_deploymentid,
-    model=openai_embedding_modelname,
+Settings.embed_model = AzureOpenAIEmbedding(
+    azure_deployment=azure_embedding_deploymentid,
     api_key=azure_api_key,
     azure_endpoint=azure_api_base,
     api_version=azure_embeddingapi_version,
     max_retries=3,
     embed_batch_size=1,
 )
-
-splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=embedding_llm)
-prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
-
-service_context = ServiceContext.from_defaults(
-    llm=llm,
-    embed_model=embedding_llm,
-    prompt_helper=prompt_helper,
-    context_window=context_window,
-    node_parser=splitter,
-)
-set_global_service_context(service_context)
+Settings.splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=Settings.embed_model)
+Settings.prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
 example_qs = []
 summary = "No Summary available yet"

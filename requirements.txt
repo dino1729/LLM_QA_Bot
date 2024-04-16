@@ -1,4 +1,5 @@
 #for i in $(cat requirements.txt); do pip install $i; done
+#for i in $(cat requirements.txt); do pip install --upgrade $i; done
 # For testing
 pytest
 pytest-dotenv
@@ -50,15 +51,16 @@ pytube
 flask
 llama-hub==0.0.79.post1
 llama-index-llms-azure-openai
+llama-index-readers-file
+llama-index-readers-llama-parse
 llama-index-embeddings-azure-openai
 llama-index-agent-openai
 llama-index-tools-bing-search
 llama-index-tools-weather
 llama-index-tools-google
-llama-index-llms-azure-openai
 llama-index-tools-wikipedia
 pyowm
-llama-index==0.10.13.post1
+llama-index==0.10.29
 langchain>=0.0.329
 youtube_transcript_api
 supabase
@@ -68,3 +70,4 @@ cohere
 groq
 google.generativeai
 pinecone-client
+lxml_html_clean
