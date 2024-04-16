@@ -11,7 +11,7 @@ from llama_index.core import PromptHelper, ServiceContext, Prompt
 from langchain.embeddings import OpenAIEmbeddings
 import dotenv
 import openai
-from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAI
 from llama_index.core import set_global_service_context
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.node_parser import SimpleNodeParser
