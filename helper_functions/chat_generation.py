@@ -107,7 +107,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             api_key=groq_api_key,
         )
         response = groq_client.chat.completions.create(
-            model="llama2-70b-4096",
+            model="llama3-70b-8192",
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
