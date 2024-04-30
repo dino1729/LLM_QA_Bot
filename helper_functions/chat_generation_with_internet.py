@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core import PromptTemplate
-from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, get_response_synthesizer
 from llama_index.core.indices import SummaryIndex
 from llama_index.core import Settings
@@ -63,7 +63,8 @@ Settings.embed_model =AzureOpenAIEmbedding(
     embed_batch_size=1,
 )
 
-Settings.splitter = SemanticSplitterNodeParser(buffer_size=1, breakpoint_percentile_threshold=95, embed_model=Settings.embed_model)
+text_splitter = SentenceSplitter()
+Settings.text_splitter = text_splitter
 Settings.prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
 BING_FOLDER = config.BING_FOLDER

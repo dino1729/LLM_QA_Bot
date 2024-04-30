@@ -44,7 +44,7 @@ scipy
 tqdm
 nltk
 gensim
-spacy
+# spacy
 transformers
 torch
 pytube
