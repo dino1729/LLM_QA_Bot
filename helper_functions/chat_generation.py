@@ -57,7 +57,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             "top_p": 0.9,
             "top_k": 1,
         }
-        gemini = genai.GenerativeModel(model_name= gemini_model_name, generation_config=generation_config)
+        gemini = genai.GenerativeModel(model_name= gemini_model_name, generation_config= generation_config)
         response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
     
