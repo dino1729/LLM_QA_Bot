@@ -50,9 +50,9 @@ azuretexttranslatorkey = config_yaml["azuretexttranslatorkey"]
 
 openweather_api_key = config_yaml["openweather_api_key"]
 
-yahoo_id = config_env["YAHOO_ID"]
-yahoo_app_password = config_env["YAHOO_APP_PASSWORD"]
-pyowm_api_key = config_env["PYOWM_API_KEY"]
+yahoo_id = config_yaml["yahoo_id"]
+yahoo_app_password = config_yaml["yahoo_app_password"]
+pyowm_api_key = config_yaml["pyowm_api_key"]
 
 UPLOAD_FOLDER = config_yaml['paths']['UPLOAD_FOLDER']
 BING_FOLDER = config_yaml['paths']['BING_FOLDER']
