@@ -71,3 +71,6 @@ groq
 google.generativeai
 pinecone-client
 lxml_html_clean
+azure-cognitiveservices-speech
+soundfile
+sounddevice
