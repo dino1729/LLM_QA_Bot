@@ -100,7 +100,7 @@ def get_weather_data(query):
     )
     return str(agent.chat(query))
 
-def text_extractor(url):
+def text_extractor(url, debug=False):
 
     if url:
         # Extract the article
@@ -108,18 +108,20 @@ def text_extractor(url):
         try:
             article.download()
             article.parse()
-            #Check if the article text has atleast 75 words
+            # Check if the article text has at least 75 words
             if len(article.text.split()) < 75:
                 raise Exception("Article is too short. Probably the article is behind a paywall.")
         except Exception as e:
-            print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
+            if debug:
+                print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
             # Try an alternate method using requests and beautifulsoup
             try:
                 req = requests.get(url)
                 soup = BeautifulSoup(req.content, 'html.parser')
                 article.text = soup.get_text()
             except Exception as e:
-                print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
+                if debug:
+                    print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
         return article.text
     else:
         return None
