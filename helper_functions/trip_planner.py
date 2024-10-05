@@ -5,7 +5,7 @@ azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
 azure_chatapi_version = config.azure_chatapi_version
 azure_chatapi_version = config.azure_chatapi_version
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
 
 def generate_trip_plan(city, days):
 
@@ -27,7 +27,7 @@ def generate_trip_plan(city, days):
         conversation.append({"role": "user", "content": str(user_message)})
         
         response = client.chat.completions.create(
-            model=azure_gpt35_deploymentid,
+            model=azure_gpt4omini_deploymentid,
             messages=conversation,
             max_tokens=2048,
             temperature=0.3,

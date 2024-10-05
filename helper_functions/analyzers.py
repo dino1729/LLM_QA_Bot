@@ -36,8 +36,8 @@ azure_embeddingapi_version = config.azure_embeddingapi_version
 azure_chatapi_version = config.azure_chatapi_version
 azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
 openai_gpt4_modelname = config.openai_gpt4_modelname
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
-openai_gpt35_modelname = config.openai_gpt35_modelname
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
+openai_gpt4omini_modelname = config.openai_gpt4omini_modelname
 azure_embedding_deploymentid = config.azure_embedding_deploymentid
 openai_embedding_modelname = config.openai_embedding_modelname
 

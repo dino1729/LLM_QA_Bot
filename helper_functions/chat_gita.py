@@ -9,7 +9,7 @@ azure_api_base = config.azure_api_base
 azure_chatapi_version = config.azure_chatapi_version
 azure_chatapi_version = config.azure_chatapi_version
 azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
 azure_embeddingapi_version = config.azure_embeddingapi_version
 azure_embedding_deploymentid = config.azure_embedding_deploymentid
 

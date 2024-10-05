@@ -15,7 +15,7 @@ azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
 azure_chatapi_version = config.azure_chatapi_version
 azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
 llama2_api_key = config.llama2_api_key
 llama2_api_base = config.llama2_api_base
 
@@ -77,7 +77,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     elif model_name == "GPT35TURBO":
 
         response = client.chat.completions.create(
-            model=azure_gpt35_deploymentid,
+            model=azure_gpt4omini_deploymentid,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
