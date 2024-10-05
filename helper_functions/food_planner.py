@@ -5,7 +5,7 @@ azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
 azure_chatapi_version = config.azure_chatapi_version
 azure_chatapi_version = config.azure_chatapi_version
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
 
 def craving_satisfier(city, food_craving):
 
@@ -26,7 +26,7 @@ def craving_satisfier(city, food_craving):
         conversation1.append({"role": "user", "content": str(user_message1)})
 
         response1 = client.chat.completions.create(
-            model=azure_gpt35_deploymentid,
+            model=azure_gpt4omini_deploymentid,
             messages=conversation1,
             max_tokens=32,
             temperature=0.5,
@@ -45,7 +45,7 @@ def craving_satisfier(city, food_craving):
     user_message2 = f"I'm looking for 8 restaurants in {city} that serves {food_craving}. Provide me with a list of eight restaurants, including their brief addresses. Also, mention one dish from each that particularly stands out, ensuring it contains neither beef nor pork."
     conversation2.append({"role": "user", "content": str(user_message2)})
     response2 = client.chat.completions.create(
-        model=azure_gpt35_deploymentid,
+        model=azure_gpt4omini_deploymentid,
         messages=conversation2,
         max_tokens=2048,
         temperature=0.4,

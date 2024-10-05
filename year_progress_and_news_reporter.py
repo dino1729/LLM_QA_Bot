@@ -12,7 +12,7 @@ azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
 azure_chatapi_version = config.azure_chatapi_version
 azure_chatapi_version = config.azure_chatapi_version
-azure_gpt35_deploymentid = config.azure_gpt35_deploymentid
+azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
 
 yahoo_id = config.yahoo_id
 yahoo_app_password = config.yahoo_app_password
@@ -36,7 +36,7 @@ def generate_gpt_response(user_message):
     conversation = system_prompt.copy()
     conversation.append({"role": "user", "content": str(user_message)})
     response = client.chat.completions.create(
-        model=azure_gpt35_deploymentid,
+        model=azure_gpt4omini_deploymentid,
         messages=conversation,
         max_tokens=1024,
         temperature=0.3,
