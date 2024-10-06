@@ -60,7 +60,7 @@ llama-index-tools-weather
 llama-index-tools-google
 llama-index-tools-wikipedia
 pyowm
-llama-index==0.10.55
+llama-index==0.11.16
 langchain>=0.0.329
 youtube_transcript_api
 supabase
