@@ -13,8 +13,7 @@ eg_template: |
   ---------------------
   {context_str}
   ---------------------
-  Based on the context provided, your task is to generate upto 8 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be a list of lists, where each inner list contains only one question in string format enclosed in double qoutes
-  ---------------------
+  Based on the context provided, your task is to generate upto 8 relevant questions that would enable the user to get key ideas from the input context. Disregard any irrelevant information such as discounts, promotions, sponsorships or advertisements from the context. Output must be in the format requested by the user.
   {query_str}
 
 ques_template: |
