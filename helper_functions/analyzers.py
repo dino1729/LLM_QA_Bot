@@ -182,8 +182,21 @@ def summary_generator():
 def example_generator():
     
     try:
-        llmresponse = ask_fromfullcontext("Generate upto 8 questions. Output must be a list of lists, where each inner list contains only one question in string format enclosed in double qoutes", example_template).lstrip('\n')
+        llmresponse = ask_fromfullcontext("Generate upto 8 questions. Output must be a valid python literal formatted as a list of lists, where each inner list contains only one question in string format enclosed in double qoutes and square braces. It must be compatible for postprocessing with ast.literal_eval", example_template).lstrip('\n')
+        # Debugging
+        print("LLM Response:", llmresponse)
+
+        # Check if the response is wrapped in a code block
+        if llmresponse.startswith("```python") and llmresponse.endswith("```"):
+            # Extract the content inside the code block
+            llmresponse = llmresponse.strip("```python").strip()
+
+        #MDebugging
+        print("LLM Response after stripping:", llmresponse)
+
         example_qs = ast.literal_eval(llmresponse.rstrip())
+        # Debugging
+        print(example_qs)
     except Exception as e:
         print("Error occurred while generating examples:", str(e))
         example_qs = example_queries
