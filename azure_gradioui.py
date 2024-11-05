@@ -1,4 +1,5 @@
 import os
+from click import clear
 import gradio as gr
 import logging
 import sys
@@ -6,12 +7,14 @@ from llama_index.core import StorageContext, load_index_from_storage, get_respon
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core import PromptTemplate
+from sqlalchemy import desc
 from helper_functions.chat_gita import gita_answer
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
 from helper_functions.food_planner import craving_satisfier
 from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze_media, analyze_file, upload_data_to_supabase, clearallfiles
 from config import config
+from helper_functions.query_supabasememory import query_memorypalace_stream
 
 def upload_file(files, memorize):
 
@@ -156,7 +159,7 @@ if not os.path.exists(VECTOR_FOLDER):
 
 # theme = gr.Theme.from_hub("sudeepshouche/minimalist")
 # with gr.Blocks(theme=theme) as llmapp:
-with gr.Blocks() as llmapp:
+with gr.Blocks(fill_height=True) as llmapp:
     gr.Markdown(
         """
         <h1><center><b>LLM Bot: Your AI-Powered Knowledge Companion</center></h1>
@@ -227,12 +230,35 @@ with gr.Blocks() as llmapp:
                     chatui = gr.ChatInterface(
                         ask,
                         submit_btn="Ask",
-                        retry_btn=None,
-                        undo_btn=None,
+                        fill_height=True
                     )
                     query_component = chatui.textbox
                 with gr.Column(scale=2):
-                    examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")        
+                    examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")      
+    with gr.Tab(label="Memory Palace"):
+        memory_palace_chat = gr.ChatInterface(
+            title="Memory Palace Chat",
+            description="Ask a question to generate a summary or lesson learned based on the search results from the memory palace.",
+            fn=query_memorypalace_stream,
+            submit_btn="Ask",
+            examples=[
+                ["How can I be more productive?"],
+                ["How to improve my communication skills?"],
+                ["How to be a better leader?"],
+                ["How are electric vehicles less harmful to the environment?"],
+                ["How can I think clearly in adverse scenarios?"],
+                ["What are the tenets of effective office politics?"],
+                ["How to be more creative?"],
+                ["How to improve my problem-solving skills?"],
+                ["How to be more confident?"],
+                ["How to be more empathetic?"],
+                ["What can I learn from Boyd, the fighter pilot who changed the art of war?"],
+                ["How can I seek the mentorship I want from key influential people"],
+                ["How can I communicate more effectively?"],
+                ["Give me suggestions to reduce using filler words when communicating highly technical topics?"]
+            ],
+            fill_height=True
+        )  
     with gr.Tab(label="AI Assistant"):
         gr.ChatInterface(
             internet_connected_chatbot,
@@ -243,8 +269,7 @@ with gr.Blocks() as llmapp:
             ],
             examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What's the latest GDP per capita of India?"], ["What is the current weather in North Plains?"], ["What is the latest on room temperature superconductors?"], ["Give me an update on IPL 2024"], ["Bring me upto speed on Indian and US elections"]],
             submit_btn="Ask",
-            retry_btn=None,
-            undo_btn=None,
+            fill_height=True
         )
     with gr.Tab(label="Fun"):
         with gr.Tab(label="City Planner"):
@@ -265,8 +290,7 @@ with gr.Blocks() as llmapp:
                 ],
                 examples=[["What is the meaning of life?"], ["What is the purpose of life?"], ["What is the meaning of death?"], ["What is the purpose of death?"], ["What is the meaning of existence?"], ["What is the purpose of existence?"], ["What is the meaning of the universe?"], ["What is the purpose of the universe?"], ["What is the meaning of the world?"], ["What is the purpose of the world?"]],
                 submit_btn="Ask",
-                retry_btn=None,
-                undo_btn=None,
+                fill_height=True
             )
             gita_question = gitachat.textbox
         with gr.Tab(label="Cravings Generator"):
@@ -277,6 +301,8 @@ with gr.Blocks() as llmapp:
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places", show_copy_button=True)
                 clear_craving_button = gr.Button(value="Clear", scale=0)
+    
+    memory_palace_question = memory_palace_chat.textbox
 
     video_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[video_output, examples, vsummary_output, video_title, video_memoryupload_status], show_progress=True)
     video_memoryupload_button.click(upload_data_to_supabase, inputs=[video_title, yturl], outputs=[video_memoryupload_status], show_progress=True)
