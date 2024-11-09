@@ -144,6 +144,7 @@ summary = "No Summary available yet"
 example_queries = config.example_queries
 example_memorypalacequeries = config.example_memorypalacequeries
 example_internetqueries = config.example_internetqueries
+example_bhagawatgeetaqueries = config.example_bhagawatgeetaqueries
 summary_template = PromptTemplate(sum_template)
 example_template = PromptTemplate(eg_template)
 qa_template = PromptTemplate(ques_template)
@@ -275,7 +276,7 @@ with gr.Blocks(fill_height=True) as llmapp:
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],
-                examples=[["What is the meaning of life?"], ["What is the purpose of life?"], ["What is the meaning of death?"], ["What is the purpose of death?"], ["What is the meaning of existence?"], ["What is the purpose of existence?"], ["What is the meaning of the universe?"], ["What is the purpose of the universe?"], ["What is the meaning of the world?"], ["What is the purpose of the world?"]],
+                examples=example_bhagawatgeetaqueries,
                 submit_btn="Ask",
                 fill_height=True
             )
