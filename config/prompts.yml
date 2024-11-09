@@ -79,3 +79,16 @@ example_internetqueries:
   - ["What is the latest on room temperature superconductors?"]
   - ["Give me an update on Indian Cricket"]
   - ["Bring me upto speed on Indian and US elections"]
+
+
+example_bhagawatgeetaqueries:
+  - ["What is the meaning of life?"]
+  - ["What is the purpose of life?"]
+  - ["What is the meaning of death?"]
+  - ["What is the purpose of death?"]
+  - ["What is the meaning of existence?"]
+  - ["What is the purpose of existence?"]
+  - ["What is the meaning of the universe?"]
+  - ["What is the purpose of the universe?"]
+  - ["What is the meaning of the world?"]
+  - ["What is the purpose of the world?"]

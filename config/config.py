@@ -88,4 +88,5 @@ system_prompt = [{
 example_queries = prompts_config['example_queries']
 example_memorypalacequeries = prompts_config['example_memorypalacequeries']
 example_internetqueries = prompts_config['example_internetqueries']
+example_bhagawatgeetaqueries = prompts_config['example_bhagawatgeetaqueries']
 keywords = prompts_config['keywords']
