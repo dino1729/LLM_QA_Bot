@@ -142,6 +142,8 @@ ques_template = config.ques_template
 example_qs = []
 summary = "No Summary available yet"
 example_queries = config.example_queries
+example_memorypalacequeries = config.example_memorypalacequeries
+example_internetqueries = config.example_internetqueries
 summary_template = PromptTemplate(sum_template)
 example_template = PromptTemplate(eg_template)
 qa_template = PromptTemplate(ques_template)
@@ -241,22 +243,7 @@ with gr.Blocks(fill_height=True) as llmapp:
             description="Ask a question to generate a summary or lesson learned based on the search results from the memory palace.",
             fn=query_memorypalace_stream,
             submit_btn="Ask",
-            examples=[
-                ["How can I be more productive?"],
-                ["How to improve my communication skills?"],
-                ["How to be a better leader?"],
-                ["How are electric vehicles less harmful to the environment?"],
-                ["How can I think clearly in adverse scenarios?"],
-                ["What are the tenets of effective office politics?"],
-                ["How to be more creative?"],
-                ["How to improve my problem-solving skills?"],
-                ["How to be more confident?"],
-                ["How to be more empathetic?"],
-                ["What can I learn from Boyd, the fighter pilot who changed the art of war?"],
-                ["How can I seek the mentorship I want from key influential people"],
-                ["How can I communicate more effectively?"],
-                ["Give me suggestions to reduce using filler words when communicating highly technical topics?"]
-            ],
+            examples=example_memorypalacequeries,
             fill_height=True
         )  
     with gr.Tab(label="AI Assistant"):
@@ -267,7 +254,7 @@ with gr.Blocks(fill_height=True) as llmapp:
                 gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
-            examples=[["Latest news summary"], ["Explain special theory of relativity"], ["Latest Chelsea FC news"], ["Latest news from India"],["What's the latest GDP per capita of India?"], ["What is the current weather in North Plains?"], ["What is the latest on room temperature superconductors?"], ["Give me an update on IPL 2024"], ["Bring me upto speed on Indian and US elections"]],
+            examples=example_internetqueries,
             submit_btn="Ask",
             fill_height=True
         )
