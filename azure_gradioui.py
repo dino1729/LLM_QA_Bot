@@ -7,7 +7,6 @@ from llama_index.core import StorageContext, load_index_from_storage, get_respon
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core import PromptTemplate
-from sqlalchemy import desc
 from helper_functions.chat_gita import gita_answer
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
@@ -179,11 +178,12 @@ with gr.Blocks(fill_height=True) as llmapp:
         """
     )
     with gr.Tab(label="LLM APP"):
-        with gr.Column():
-            with gr.Row():
+        with gr.Row():
+            with gr.Column():
                 memorize = gr.Checkbox(label="I want this information stored in my memory palace!")
                 reset_button = gr.Button(value="Reset Database. Deletes all local data")
-            with gr.Row():
+        with gr.Row():
+            with gr.Column():
                 with gr.Tab(label="Video Analyzer"):
                     with gr.Row():
                         with gr.Column(scale=0):
@@ -228,16 +228,17 @@ with gr.Blocks(fill_height=True) as llmapp:
                             media_memoryupload_status = gr.Textbox(label="Media Memory Upload Status")
                             media_memoryupload_button = gr.Button(value="Upload to Memory")
                         msummary_output = gr.Textbox(placeholder="Summary will be generated here", label="Key takeaways", show_copy_button=True)
-            with gr.Row():
-                with gr.Column(scale=8):
-                    chatui = gr.ChatInterface(
-                        ask,
-                        submit_btn="Ask",
-                        fill_height=True
-                    )
-                    query_component = chatui.textbox
-                with gr.Column(scale=2):
-                    examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")      
+        with gr.Row():
+            with gr.Column(scale=8):
+                chatui = gr.ChatInterface(
+                    ask,
+                    submit_btn="Ask",
+                    fill_height=True,
+                    type="messages"  # Updated to use 'messages' format
+                )
+                query_component = chatui.textbox
+            with gr.Column(scale=2):
+                examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")      
     with gr.Tab(label="Memory Palace"):
         memory_palace_chat = gr.ChatInterface(
             title="Memory Palace Chat",
@@ -245,7 +246,8 @@ with gr.Blocks(fill_height=True) as llmapp:
             fn=query_memorypalace_stream,
             submit_btn="Ask",
             examples=example_memorypalacequeries,
-            fill_height=True
+            fill_height=True,
+            type="messages"  # Updated to use 'messages' format
         )  
     with gr.Tab(label="AI Assistant"):
         gr.ChatInterface(
@@ -257,7 +259,8 @@ with gr.Blocks(fill_height=True) as llmapp:
             ],
             examples=example_internetqueries,
             submit_btn="Ask",
-            fill_height=True
+            fill_height=True,
+            type="messages"  # Updated to use 'messages' format
         )
     with gr.Tab(label="Fun"):
         with gr.Tab(label="City Planner"):
@@ -278,7 +281,8 @@ with gr.Blocks(fill_height=True) as llmapp:
                 ],
                 examples=example_bhagawatgeetaqueries,
                 submit_btn="Ask",
-                fill_height=True
+                fill_height=True,
+                type="messages"  # Updated to use 'messages' format
             )
             gita_question = gitachat.textbox
         with gr.Tab(label="Cravings Generator"):
