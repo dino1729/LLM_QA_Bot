@@ -10,6 +10,8 @@ from config import config
 cohere_api_key = config.cohere_api_key
 google_api_key = config.google_api_key
 gemini_model_name = config.gemini_model_name
+gemini_thinkingmodel_name = config.gemini_thinkingmodel_name
+
 groq_api_key = config.groq_api_key
 azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
@@ -30,7 +32,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
 
         co = cohere.Client(cohere_api_key)
         response = co.chat(
-            model='command-r-plus',
+            model='command-r-08-2024',
             message=str(conversation).replace("'", '"'),
             temperature=temperature,
             max_tokens=max_tokens,
@@ -58,6 +60,19 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             "top_k": 1,
         }
         gemini = genai.GenerativeModel(model_name= gemini_model_name, generation_config= generation_config)
+        response = gemini.generate_content(str(conversation).replace("'", '"'))
+        return response.text
+
+    elif model_name == "GEMINI_THINKING":
+    
+        genai.configure(api_key=google_api_key)
+        generation_config = {
+            "temperature": temperature,
+            "max_output_tokens": max_tokens,
+            "top_p": 0.9,
+            "top_k": 1,
+        }
+        gemini = genai.GenerativeModel(model_name= gemini_thinkingmodel_name, generation_config= generation_config)
         response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
     
@@ -100,7 +115,21 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             max_tokens=max_tokens,
         )
         return response.choices[0].message.content
-    
+
+    elif model_name == "GROQ":
+
+        groq_client = Groq(
+            api_key=groq_api_key,
+        )
+        response = groq_client.chat.completions.create(
+            model="deepseek-r1-distill-llama-70b",
+            messages=conversation,
+            temperature=temperature,
+            max_completion_tokens=max_tokens,
+            top_p=0.9
+        )
+        return response.choices[0].message.content
+
     elif model_name == "GROQ_LLAMA":
 
         groq_client = Groq(

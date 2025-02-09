@@ -253,8 +253,8 @@ with gr.Blocks(fill_height=True) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["GROQ_MIXTRAL", "GROQ_LLAMA", "GPT35TURBO", "GPT4", "GEMINI", "COHERE"], value="GROQ_LLAMA"),
-                gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
+                gr.Radio(label="Model", choices=["GROQ", "GPT4", "GEMINI_THINKING", "COHERE"], value="GROQ"),
+                gr.Slider(10, 8680, value=4840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
             examples=example_internetqueries,
