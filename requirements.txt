@@ -49,7 +49,7 @@ transformers
 torch
 pytube
 flask
-llama-hub==0.0.79.post1
+llama-hub>=0.0.79.post1
 llama-index-llms-azure-openai
 llama-index-readers-file
 llama-index-readers-llama-parse
@@ -60,7 +60,7 @@ llama-index-tools-weather
 llama-index-tools-google
 llama-index-tools-wikipedia
 pyowm
-llama-index==0.11.20
+llama-index==0.12.6
 langchain>=0.0.329
 youtube_transcript_api
 supabase
