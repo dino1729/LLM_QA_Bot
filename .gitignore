@@ -14,3 +14,5 @@ playground/*mp3
 playground/*txt
 config/config.yml
 *mp3
+*article_list.txt
+*pdf

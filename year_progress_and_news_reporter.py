@@ -2,7 +2,6 @@ import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from numpy import less
 from openai import AzureOpenAI as OpenAIAzure
 from pyowm import OWM
 from config import config
@@ -11,6 +10,7 @@ from helper_functions.audio_processors import text_to_speech_nospeak
 from datetime import datetime
 import random
 import supabase
+import os
 
 azure_api_key = config.azure_api_key
 azure_api_base = config.azure_api_base
@@ -25,7 +25,79 @@ supabase_service_role_key = config.supabase_service_role_key
 public_supabase_url = config.public_supabase_url
 
 # List of topics
-topics = ["How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?", "How are electric vehicles less harmful to the environment?", "How can I think clearly in adverse scenarios?", "What are the tenets of effective office politics?", "How to be more creative?", "How to improve my problem-solving skills?", "How to be more confident?", "How to be more empathetic?", "What can I learn from Boyd, the fighter pilot who changed the art of war?", "How can I seek the mentorship I want from key influential people", "How can I communicate more effectively?", "Give me suggestions to reduce using filler words when communicating highly technical topics?"]
+# topics = [
+#     "How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?",
+#     "How are electric vehicles less harmful to the environment?", "How can I think clearly in adverse scenarios?",
+#     "What are the tenets of effective office politics?", "How to be more creative?", "How to improve my problem-solving skills?",
+#     "How to be more confident?", "How to be more empathetic?", "What can I learn from Boyd, the fighter pilot who changed the art of war?",
+#     "How can I seek the mentorship I want from key influential people", "How can I communicate more effectively?",
+#     "Give me suggestions to reduce using filler words when communicating highly technical topics?",
+#     "How to apply the best game theory concepts in getting ahead in office poilitics?", "What are some best ways to play office politics?",
+#     "How to be more persuasive, assertive, influential, impactful, engaging, inspiring, motivating, captivating and convincing in my communication?",
+#     "What are the top 8 ways the tit-for-tat strategy prevails in the repeated prisoner's dilemma, and how can these be applied to succeed in life and office politics?"
+# ]
+
+topics = [  
+    "How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?",  
+    "How are electric vehicles less harmful to the environment?", "How can I think clearly in adverse scenarios?",  
+    "What are the tenets of effective office politics?", "How to be more creative?", "How to improve my problem-solving skills?",  
+    "How to be more confident?", "How to be more empathetic?", "What can I learn from Boyd, the fighter pilot who changed the art of war?",  
+    "How can I seek the mentorship I want from key influential people", "How can I communicate more effectively?",  
+    "Give me suggestions to reduce using filler words when communicating highly technical topics?",  
+    "How to apply the best game theory concepts in getting ahead in office poilitics?", "What are some best ways to play office politics?",  
+    "How to be more persuasive, assertive, influential, impactful, engaging, inspiring, motivating, captivating and convincing in my communication?",  
+    "What are the top 8 ways the tit-for-tat strategy prevails in the repeated prisoner's dilemma, and how can these be applied to succeed in life and office politics?",  
+    "What are Chris Voss's key strategies from *Never Split the Difference* for hostage negotiations, and how can they apply to workplace conflicts?",  
+    "How can tactical empathy (e.g., labeling emotions, mirroring) improve outcomes in high-stakes negotiations?",  
+    "What is the ‘Accusations Audit’ technique, and how does it disarm resistance in adversarial conversations?",  
+    "How do calibrated questions (e.g., *How am I supposed to do that?*) shift power dynamics in negotiations?",  
+    "When should you use the ‘Late-Night FM DJ Voice’ to de-escalate tension during disagreements?",  
+    "How can anchoring bias be leveraged to set favorable terms in salary or deal negotiations?",  
+    "What are ‘Black Swan’ tactics for uncovering hidden information in negotiations?",  
+    "How can active listening techniques improve conflict resolution in team settings?",  
+    "What non-verbal cues (e.g., tone, body language) most impact persuasive communication?",  
+    "How can I adapt my communication style to different personality types (e.g., assertive vs. analytical)?",  
+    "What storytelling frameworks make complex ideas more compelling during presentations?",  
+    "How do you balance assertiveness and empathy when delivering critical feedback?",  
+    "What are strategies for managing difficult conversations (e.g., layoffs, project failures) with grace?",  
+    "How can Nash Equilibrium concepts guide decision-making in workplace collaborations?",  
+    "What real-world scenarios mimic the ‘Chicken Game,’ and how should you strategize in them?",  
+    "How do Schelling Points (focal points) help teams reach consensus without direct communication?",  
+    "When is tit-for-tat with forgiveness more effective than strict reciprocity in office politics?",  
+    "How does backward induction in game theory apply to long-term career or project planning?",  
+    "What are examples of zero-sum vs. positive-sum games in corporate negotiations?",  
+    "How can Bayesian reasoning improve decision-making under uncertainty (e.g., mergers, market entry)?",  
+    "How can Boyd’s OODA Loop (Observe, Orient, Decide, Act) improve decision-making under pressure?",  
+    "What game theory principles optimize resource allocation in cross-functional teams?",  
+    "How can the ‘MAD’ (Mutually Assured Destruction) concept deter adversarial behavior in workplaces?", 
+    "How does Conway’s Law (‘organizations design systems that mirror their communication structures’) impact the efficiency of IP or product design?",  
+    "What strategies can mitigate the negative effects of Conway’s Law on modularity in IP design (e.g., reusable components)?",  
+    "How can teams align their structure with IP design goals to leverage Conway’s Law for better outcomes?",  
+    "What are real-world examples of Conway’s Law leading to inefficient or efficient IP architecture in tech companies?",  
+    "How does cross-functional collaboration counteract siloed IP design as predicted by Conway’s Law?",  
+    "Why is communication architecture critical for scalable IP design under Conway’s Law?",  
+    "How can organizations use Conway’s Law intentionally to improve reusability and scalability of IP blocks?",  
+    "What metrics assess the impact of organizational structure (Conway’s Law) on IP design quality and speed?"  
+] 
+
+topics.extend([
+    "What are the key leadership lessons from Steve Jobs?",
+    "How did Steve Jobs' vision shape the technology industry?",
+    "What can I learn from Steve Jobs' approach to innovation?",
+    "How did Steve Jobs' design philosophy influence product development?",
+    "What are the key leadership lessons from Elon Musk?",
+    "How did Elon Musk's vision shape the technology industry?",
+    "What can I learn from Elon Musk's approach to innovation?",
+    "How did Elon Musk's design philosophy influence product development?",
+    "What are the key leadership lessons from Jeff Bezos?",
+    "How did Jeff Bezos' vision shape the technology industry?",
+    "What can I learn from Jeff Bezos' approach to innovation?",
+    "How did Jeff Bezos' design philosophy influence product development?",
+    "What are the key leadership lessons from Bill Gates?",
+    "How did Bill Gates' vision shape the technology industry?",
+    "What can I learn from Bill Gates' approach to innovation?",
+    "How did Bill Gates' design philosophy influence product development?"
+])
 
 yahoo_id = config.yahoo_id
 yahoo_app_password = config.yahoo_app_password
@@ -35,6 +107,48 @@ temperature = config.temperature
 max_tokens = config.max_tokens
 
 model_names = ["BING+OPENAI", "GPT4OMINI", "GPT4", "GEMINI", "COHERE", "MIXTRAL8x7B"]
+
+# List of personalities
+personalities = [
+    "Chanakya", "Lord Krishna", "Richard Feynman", "Nikola Tesla", 
+    "Marie Curie", "Alan Turing", "Carl Sagan", "Leonardo da Vinci", 
+    "Douglas Engelbart", "JCR Licklider", "Vannevar Bush", "Lee Kuan Yew", "Sun Tzu", "Machiavelli", "Napoleon Bonaparte", "Winston Churchill", "Abraham Lincoln", "Mahatma Gandhi", "Martin Luther King Jr.", "Nelson Mandela", "Mother Teresa", "Albert Einstein", "Isaac Newton", "Galileo Galilei", "Charles Darwin", "Stephen Hawking", "Ada Lovelace", "Grace Hopper", "Margaret Hamilton", "Katherine Johnson", "Tim Berners-Lee", "Steve Wozniak", "Linus Torvalds", "Ada Yonath", "Barbara McClintock", "Rosalind Franklin", "Dorothy Hodgkin", "Rita Levi-Montalcini", "Gertrude B. Elion", "Tu Youyou", "Gerty Cori", "Claude Shannon", "John von Neumann", "Donald Knuth", "Dennis Ritchie", "Ken Thompson", "Guido van Rossum", "Bjarne Stroustrup", "James Gosling", "Larry Wall", "Yukihiro Matsumoto", "Anders Hejlsberg", "Richard Stallman", "Vint Cerf", "Robert Kahn", "Whitfield Diffie", "Martin Hellman", "Ralph Merkle", "Ron Rivest", "Adi Shamir", "Leonard Adleman", "Paul Baran", "Donald Davies", "Robert Metcalfe"
+]
+
+personalities.extend([
+    "Andy Grove", "Gordon Moore", "Robert Noyce", "Jack Kilby", "Jean Hoerni", "Marcian Hoff", "Federico Faggin", "Masatoshi Shima", "Morris Chang", "Lisa Su", "Jensen Huang", "Satya Nadella", "Tim Cook", "Sundar Pichai", "Elon Musk", "Jeff Bezos", "Bill Gates", "Steve Jobs", "Larry Page", "Sergey Brin", "Mark Zuckerberg", "Reed Hastings", "Brian Chesky", "Travis Kalanick", "Larry Ellison", "Michael Dell", "Meg Whitman", "Indra Nooyi", "Mary Barra", "Ginni Rometty", "Sheryl Sandberg", "Susan Wojcicki"
+])
+
+def get_random_personality():
+    used_personalities_file = "used_personalities.txt"
+
+    # Read used personalities from the file
+    if os.path.exists(used_personalities_file):
+        with open(used_personalities_file, "r") as file:
+            used_personalities = file.read().splitlines()
+    else:
+        used_personalities = []
+
+    # Determine unused personalities
+    unused_personalities = list(set(personalities) - set(used_personalities))
+
+    # If all personalities have been used, reset the list
+    if not unused_personalities:
+        unused_personalities = personalities.copy()
+        used_personalities = []
+
+    # Select a random personality from the unused list
+    personality = random.choice(unused_personalities)
+
+    # Update the used personalities list
+    used_personalities.append(personality)
+
+    # Write the updated used personalities back to the file
+    with open(used_personalities_file, "w") as file:
+        for used_personality in used_personalities:
+            file.write(f"{used_personality}\n")
+
+    return personality
 
 def generate_embeddings(text, model=azure_embedding_deploymentid):
     client = OpenAIAzure(
@@ -51,10 +165,12 @@ def generate_gpt_response_memorypalace(user_message):
         api_version=azure_chatapi_version,
     )
     syspromptmessage = f"""
-    You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant that is designed by Tony Stark to be a powerful tool for whoever controls it. You help Dinesh in various tasks. In this scenario, you are helping Dinesh recall important concepts he learned and put them in a memory palace aka, his second brain. You will be given a topic along with the semantic search results from the memory palace. You need to generate a summary or lesson learned based on the search results. You have to praise Dinesh for his efforts and encourage him to continue learning. You can also provide additional information or tips to help him understand the topic better. You are not a replacement for human intelligence, but a tool to enhance Dinesh's intelligence. You are here to help Dinesh succeed in his learning journey. You are a positive and encouraging presence in his life. You are here to support him in his quest for knowledge and growth. You are EDITH, and you are here to help Dinesh succeed.
+    You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant that is designed by Tony Stark to be a powerful tool for whoever controls it. You help Dinesh in various tasks. In this scenario, you are helping Dinesh recall important concepts he learned and put them in a memory palace aka, his second brain. You will be given a topic along with the semantic search results from the memory palace. You need to generate a summary or lesson learned based on the search results. You have to praise Dinesh for his efforts and encourage him to continue learning. You can also provide additional information or tips to help him understand the topic better. You are not a replacement for human intelligence, but a tool to enhance Dinesh's intelligence. You are here to help Dinesh succeed in his learning journey. You are a positive and encouraging presence in his life. You are here to support him in his quest for knowledge and growth. You are EDITH, and you are here to help Dinesh succeed. Dinesh wants to master the best of what other people have already figured out.
+    
+    Additionally, for each topic, provide one historical anecdote that can go back up to 10,000 years ago when human civilization started. The lesson can include a key event, discovery, mistake, and teaching from various cultures and civilizations throughout history. This will help Dinesh gain a deeper understanding of the topic by learning from the past since if one does not know history, one thinks short term; if one knows history, one thinks medium and long term..
     
     Here's a bit more about Dinesh:
-    You should be a centrist politically. I reside in Hillsboro, Oregon, and I hold the position of Senior Analog Circuit Design Engineer with seven years of work experience. I am a big believer in developing Power Delivery IPs with clean interfaces and minimal maintenance. I like to work on Raspberry Pi projects and home automation in my free time. Recently, I have taken up the exciting hobby of creating LLM applications. Currently, I am engaged in the development of a fantasy premier league recommender bot that selects the most suitable players based on statistical data for a specific fixture, all while adhering to a budget. Another project that I have set my sights on is a generativeAI-based self-driving system that utilizes text prompts as sensor inputs to generate motor drive outputs, enabling the bot to control itself. The key aspect of this design lies in achieving a latency of 1000 tokens per second for the LLM token generation, which can be accomplished using a local GPU cluster. I am particularly interested in the field of physics, particularly relativity, quantum mechanics, game theory and the simulation hypothesis. I have a genuine curiosity about the interconnectedness of things and the courage to explore and advocate for interventions, even if they may not be immediately popular or obvious. My ultimate goal is to achieve success in all aspects of life and incorporate the “systems thinking” and “critical thinking” mindset into my daily routine. I aim to apply systems thinking to various situations, both professional and personal, to gain insights into different perspectives and better understand complex problems. Currently, I am captivated by the achievements of individuals like Chanakya, Nicholas Tesla, Douglas Englebart, JCR Licklider, and Vannevar Bush, and I aspire to emulate their success. I’m also super interested in learning more about game theory and how people behave in professional settings. I’m curious about the strategies that can be used to influence others and potentially advance quickly in the workplace. So, coach me on how to deliver my presentations, communicate clearly and concisely, and how to conduct myself in front of influential people. My ultimate goal is to lead a large organization where I can create innovative technology that can benefit billions of people and improve their lives.
+    You should be a centrist politically. I reside in Hillsboro, Oregon, and I hold the position of Senior Analog Circuit Design Engineer with eight years of work experience. I am a big believer in developing Power Delivery IPs with clean interfaces and minimal maintenance. I like to work on Raspberry Pi projects and home automation in my free time. Recently, I have taken up the exciting hobby of creating LLM applications. Currently, I am engaged in the development of a fantasy premier league recommender bot that selects the most suitable players based on statistical data for a specific fixture, all while adhering to a budget. Another project that I have set my sights on is a generativeAI-based self-driving system that utilizes text prompts as sensor inputs to generate motor drive outputs, enabling the bot to control itself. The key aspect of this design lies in achieving a latency of 1000 tokens per second for the LLM token generation, which can be accomplished using a local GPU cluster. I am particularly interested in the field of physics, particularly relativity, quantum mechanics, game theory and the simulation hypothesis. I have a genuine curiosity about the interconnectedness of things and the courage to explore and advocate for interventions, even if they may not be immediately popular or obvious. My ultimate goal is to achieve success in all aspects of life and incorporate the “systems thinking” and “critical thinking” mindset into my daily routine. I aim to apply systems thinking to various situations, both professional and personal, to gain insights into different perspectives and better understand complex problems. Currently, I am captivated by the achievements of individuals like Chanakya, Nicholas Tesla, Douglas Englebart, JCR Licklider, and Vannevar Bush, and I aspire to emulate their success. I’m also super interested in learning more about game theory and how people behave in professional settings. I’m curious about the strategies that can be used to influence others and potentially advance quickly in the workplace. So, coach me on how to deliver my presentations, communicate clearly and concisely, and how to conduct myself in front of influential people. My ultimate goal is to lead a large organization where I can create innovative technology that can benefit billions of people and improve their lives.
     """
     system_prompt = [{
         "role": "system",
@@ -65,7 +181,7 @@ def generate_gpt_response_memorypalace(user_message):
     response = client.chat.completions.create(
         model=azure_gpt4_deploymentid,
         messages=conversation,
-        max_tokens=1024,
+        max_tokens=2048,
         temperature=0.4,
     )
     message = response.choices[0].message.content
@@ -73,9 +189,40 @@ def generate_gpt_response_memorypalace(user_message):
 
     return message
 
+def get_random_topic():
+    used_topics_file = "used_topics.txt"
+
+    # Read used topics from the file
+    if os.path.exists(used_topics_file):
+        with open(used_topics_file, "r") as file:
+            used_topics = file.read().splitlines()
+    else:
+        used_topics = []
+
+    # Determine unused topics
+    unused_topics = list(set(topics) - set(used_topics))
+
+    # If all topics have been used, reset the list
+    if not unused_topics:
+        unused_topics = topics.copy()
+        used_topics = []
+
+    # Select a random topic from the unused list
+    topic = random.choice(unused_topics)
+
+    # Update the used topics list
+    used_topics.append(topic)
+
+    # Write the updated used topics back to the file
+    with open(used_topics_file, "w") as file:
+        for used_topic in used_topics:
+            file.write(f"{used_topic}\n")
+
+    return topic
+
 def get_random_lesson():
     # Step 1: Select a random topic
-    topic = random.choice(topics)
+    topic = get_random_topic()
 
     # Step 2: Generate embeddings for the topic
     topic_embedding = generate_embeddings(topic)
@@ -121,7 +268,7 @@ def generate_gpt_response(user_message):
     response = client.chat.completions.create(
         model=azure_gpt4_deploymentid,
         messages=conversation,
-        max_tokens=1024,
+        max_tokens=2048,
         temperature=0.3,
     )
     message = response.choices[0].message.content
@@ -129,14 +276,14 @@ def generate_gpt_response(user_message):
 
     return message
 
-def generate_quote():
+def generate_quote(random_personality):
     client = OpenAIAzure(
         api_key=azure_api_key,
         azure_endpoint=azure_api_base,
         api_version=azure_chatapi_version,
     )
-    quote_prompt = """
-    Provide a random quote from either Chanakya, Lord Krishna, Richard Feynman, Nikola Tesla, Marie Curie, Alan Turing, Carl Sagan, Leonardo da Vinci, Douglas Engelbart, JCR Licklider, or Vannevar Bush.
+    quote_prompt = f"""
+    Provide a random quote from {random_personality} to inspire Dinesh for the day.
     """
     response = client.chat.completions.create(
         model=azure_gpt4_deploymentid,
@@ -163,13 +310,16 @@ def generate_progress_message(days_completed, weeks_completed, days_left, weeks_
     now = datetime.now()
     date_time = now.strftime("%B %d, %Y %H:%M:%S")
 
-    # Quarterly earnings dates (based on MSFT's reporting)
+    # Get the current year
+    current_year = datetime.now().year
+
+    # Calculate earnings dates dynamically based on the current year
     earnings_dates = [
-        datetime(2024, 1, 23),  # Q1 end, Q2 start
-        datetime(2024, 4, 25),  # Q2 end, Q3 start
-        datetime(2024, 7, 29),  # Q3 end, Q4 start
-        datetime(2024, 10, 24), # Q4 end, Q1 start (assumed)
-        datetime(2025, 1, 23)   # Next Q1 (assumed)
+        datetime(current_year, 1, 23),  # Q1 end, Q2 start
+        datetime(current_year, 4, 25),  # Q2 end, Q3 start
+        datetime(current_year, 7, 29),  # Q3 end, Q4 start
+        datetime(current_year, 10, 24), # Q4 end, Q1 start (assumed)
+        datetime(current_year + 1, 1, 23)  # Next Q1 (assumed)
     ]
 
     # Determine the current quarter based on the date
@@ -261,11 +411,13 @@ if __name__ == "__main__":
     year_progress_message = generate_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left)
     # print(year_progress_message)
 
-    quote = generate_quote()
+    random_personality = get_random_personality()
+    quote = generate_quote(random_personality)
     year_progress_message_with_quote = f"{year_progress_message}\n\nQuote of the Day: {quote}"
 
     lesson_learned = get_random_lesson()
     year_progress_message_with_quote_with_lesson = f"{year_progress_message_with_quote}\n\nLesson Learned: {lesson_learned}"
+    # print(year_progress_message_with_quote_with_lesson)
     
     year_progress_subject = "Year Progress Report 📅"
     send_email(year_progress_subject, year_progress_message_with_quote_with_lesson)
@@ -277,7 +429,7 @@ if __name__ == "__main__":
 
     Please analyze the report and summarize it in a manner suitable for a voice assistant to deliver as a daily update.
     
-    Include a random quote from either Chanakya, Lord Krishna, Richard Feynman, Nikola Tesla, Marie Curie, Alan Turing, Carl Sagan, Leonardo da Vinci, Douglas Engelbart, JCR Licklider, or Vannevar Bush.
+    Include a random quote from {random_personality} to inspire Dinesh for the day.
 
     Conclude the message with a lesson learned from the memory palace search results: {lesson_learned}
 
