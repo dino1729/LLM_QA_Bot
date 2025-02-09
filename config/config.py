@@ -38,6 +38,8 @@ pinecone_environment = config_yaml["pinecone_environment"]
 cohere_api_key = config_yaml["cohere_api_key"]
 google_api_key = config_yaml["google_api_key"]
 gemini_model_name = config_yaml["gemini_model_name"]
+gemini_thinkingmodel_name = config_yaml["gemini_thinkingmodel_name"]
+
 groq_api_key = config_yaml["groq_api_key"]
 
 bing_api_key = config_yaml["bing_api_key"]
