@@ -1,5 +1,4 @@
 import os
-from click import clear
 import gradio as gr
 import logging
 import sys
