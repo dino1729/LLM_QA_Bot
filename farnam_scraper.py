@@ -59,8 +59,17 @@ def save_links_from_file(file_path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python farnam_scraper.py <links_file>")
+        print("Usage:")
+        print("For single URL: python farnam_scraper.py <url>")
+        print("For file with URLs: python farnam_scraper.py <links_file>")
         sys.exit(1)
     
-    file_path = sys.argv[1]
-    save_links_from_file(file_path)
+    input_path = sys.argv[1]
+    
+    # Check if input is a URL or file
+    if input_path.startswith(('http://', 'https://')):
+        # Handle single URL
+        save_as_pdf(input_path)
+    else:
+        # Handle file containing URLs
+        save_links_from_file(input_path)

@@ -1,5 +1,6 @@
 import os
 import requests
+import asyncio
 from datetime import datetime
 from config import config
 from helper_functions.chat_generation import generate_chat
@@ -17,6 +18,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, get_response_synthesizer
 from llama_index.core.indices import SummaryIndex
 from llama_index.core import Settings
+from helper_functions.researcher import get_report
 
 bing_api_key = config.bing_api_key
 bing_endpoint = config.bing_endpoint
@@ -245,7 +247,7 @@ def get_bing_results(query, num=10):
 
     return answer
 
-def internet_connected_chatbot(query, history, model_name, max_tokens, temperature):
+def internet_connected_chatbot(query, history, model_name, max_tokens, temperature, fast_response=True):
     
     assistant_reply = "Sorry, I couldn't generate a response. Please try again."
     try:
@@ -257,16 +259,22 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
         conversation.append({"role": "user", "content": query})
 
         try:
-            # If the query contains any of the keywords, perform a Bing search
+            # If the query contains any of the keywords, perform a search
             if any(keyword in query.lower() for keyword in keywords):
                 # If the query contains news
                 if "news" in query.lower():
-                    assistant_reply = get_bing_news_results(query)
+                    if fast_response:
+                        assistant_reply = get_bing_news_results(query)
+                    else:
+                        assistant_reply = gpt_researcher(query)
                 # If the query contains weather
                 elif "weather" in query.lower():
                     assistant_reply = get_weather_data(query)
                 else:
-                    assistant_reply = get_bing_results(query)
+                    if fast_response:
+                        assistant_reply = get_bing_results(query)
+                    else:
+                        assistant_reply = gpt_researcher(query)
             else:
                 # Generate a response using the selected model
                 assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
@@ -280,3 +288,21 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
         conversation = system_prompt.copy()
 
     return assistant_reply
+
+def gpt_researcher(query):
+    """
+    Conducts research on a given query using GPT Researcher and returns the research report.
+    
+    Args:
+        query (str): The research query to investigate
+        
+    Returns:
+        str: The research report or error message
+    """
+    try:
+        report_type = "research_report"
+        report, _, _, _, _ = asyncio.run(get_report(query, report_type))
+        return report if report else "Research failed to complete."
+    except Exception as e:
+        print(f"Error in GPT Researcher: {str(e)}")
+        return f"Error conducting research: {str(e)}"
