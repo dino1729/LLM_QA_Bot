@@ -160,7 +160,7 @@ if not os.path.exists(VECTOR_FOLDER):
 
 # theme = gr.Theme.from_hub("sudeepshouche/minimalist")
 # with gr.Blocks(theme=theme) as llmapp:
-with gr.Blocks(fill_height=True) as llmapp:
+with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
     gr.Markdown(
         """
         <h1><center><b>LLM Bot: Your AI-Powered Knowledge Companion</center></h1>

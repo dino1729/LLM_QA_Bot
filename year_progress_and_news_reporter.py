@@ -221,34 +221,44 @@ def get_random_topic():
     return topic
 
 def get_random_lesson():
-    # Step 1: Select a random topic
-    topic = get_random_topic()
+    try:
+        # Step 1: Select a random topic
+        topic = get_random_topic()
 
-    # Step 2: Generate embeddings for the topic
-    topic_embedding = generate_embeddings(topic)
-    # Debugging
-    # print(f"Topic: {topic}")
+        # Step 2: Generate embeddings for the topic
+        topic_embedding = generate_embeddings(topic)
+        # Debugging
+        # print(f"Topic: {topic}")
 
-    supabase_client = supabase.Client(public_supabase_url, supabase_service_role_key)
-    # Step 3: Perform a vector search in the Supabase database
-    response = supabase_client.rpc('mp_search', {
-        'query_embedding': topic_embedding,
-        'similarity_threshold': 0.4,  # Adjust this threshold as needed
-        'match_count': 6
-    }).execute()
+        try:
+            supabase_client = supabase.Client(public_supabase_url, supabase_service_role_key)
+            # Step 3: Perform a vector search in the Supabase database
+            response = supabase_client.rpc('mp_search', {
+                'query_embedding': topic_embedding,
+                'similarity_threshold': 0.4,  # Adjust this threshold as needed
+                'match_count': 6
+            }).execute()
+            
+            # Extract the content from the top matches
+            top_matches = response.data
+            contents = [match['content'] for match in top_matches]
+
+            # Step 4: Generate a response using OpenAI
+            prompt = f"Today's Topic: {topic}\n\nBased on the following lessons, generate a summary or lesson learned for the topic:\n\n" + "\n\n".join(contents)
+            lesson_learned = generate_gpt_response_memorypalace(prompt)
+        
+        except Exception as e:
+            print(f"Error connecting to Supabase: {str(e)}")
+            # Fallback: Generate a response without using Supabase data
+            prompt = f"Today's Topic: {topic}\n\nPlease provide insights, lessons, and historical context about this topic. Include one historical anecdote going back up to 10,000 years of human civilization that relates to this topic."
+            lesson_learned = generate_gpt_response_memorypalace(prompt)
+            
+        return lesson_learned
     
-    # Debugging
-    # print(f"Number of matches: {len(response.data)}")
-
-    # Extract the content from the top 5 matches
-    top_matches = response.data
-    contents = [match['content'] for match in top_matches]
-
-    # Step 4: Generate a response using OpenAI
-    prompt = f"Today's Topic: {topic}\n\nBased on the following lessons, generate a summary or lesson learned for the topic:\n\n" + "\n\n".join(contents)
-    lesson_learned = generate_gpt_response_memorypalace(prompt)
-
-    return lesson_learned
+    except Exception as e:
+        # Ultimate fallback if everything fails
+        print(f"Critical error in get_random_lesson: {str(e)}")
+        return "Today I encountered some technical difficulties retrieving your lesson. However, remember that setbacks are temporary, and persistence is key to overcoming challenges. Let's continue our learning journey tomorrow with renewed enthusiasm."
 
 def generate_gpt_response(user_message):
     client = OpenAIAzure(
@@ -1193,15 +1203,17 @@ if __name__ == "__main__":
     model_name = random.choice(model_names)
     text_to_speech_nospeak(year_progress_gpt_response, yearprogress_tts_output_path, model_name=model_name)
 
-    # News Updates with different formats for newsletter and voicebot
+    # News updates with different formats for the newsletter and voicebot
     news_update_subject = "📰 Your Daily News Briefing"
-    technews = "Latest news in technology"
+    technews = f"Provide a detailed summary of today's technology news for {datetime.now().strftime('%Y-%m-%d')}. Include major developments, innovative breakthroughs, and significant industry updates."
     news_update_tech = internet_connected_chatbot(technews, [], model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_tech, "news_tech_report.txt")
-    usanews = "Latest news in Financial Markets"
+    
+    usanews = f"Provide a comprehensive overview of today's financial markets news for {datetime.now().strftime('%Y-%m-%d')}. Emphasize market trends, stock performance, economic indicators, and key financial events."
     news_update_usa = internet_connected_chatbot(usanews, [], model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_usa, "news_usa_report.txt")
-    india_news = "Latest news from India"
+    
+    india_news = f"Provide a detailed summary of today's news from India for {datetime.now().strftime('%Y-%m-%d')}. Cover political developments, economic news, social events, and cultural stories."
     news_update_india = internet_connected_chatbot(india_news, [], model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_india, "news_india_report.txt")
 
