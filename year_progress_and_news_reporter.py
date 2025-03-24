@@ -25,17 +25,6 @@ supabase_service_role_key = config.supabase_service_role_key
 public_supabase_url = config.public_supabase_url
 
 # List of topics
-# topics = [
-#     "How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?",
-#     "How are electric vehicles less harmful to the environment?", "How can I think clearly in adverse scenarios?",
-#     "What are the tenets of effective office politics?", "How to be more creative?", "How to improve my problem-solving skills?",
-#     "How to be more confident?", "How to be more empathetic?", "What can I learn from Boyd, the fighter pilot who changed the art of war?",
-#     "How can I seek the mentorship I want from key influential people", "How can I communicate more effectively?",
-#     "Give me suggestions to reduce using filler words when communicating highly technical topics?",
-#     "How to apply the best game theory concepts in getting ahead in office poilitics?", "What are some best ways to play office politics?",
-#     "How to be more persuasive, assertive, influential, impactful, engaging, inspiring, motivating, captivating and convincing in my communication?",
-#     "What are the top 8 ways the tit-for-tat strategy prevails in the repeated prisoner's dilemma, and how can these be applied to succeed in life and office politics?"
-# ]
 
 topics = [  
     "How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?",  
@@ -49,11 +38,11 @@ topics = [
     "What are the top 8 ways the tit-for-tat strategy prevails in the repeated prisoner's dilemma, and how can these be applied to succeed in life and office politics?",  
     "What are Chris Voss's key strategies from *Never Split the Difference* for hostage negotiations, and how can they apply to workplace conflicts?",  
     "How can tactical empathy (e.g., labeling emotions, mirroring) improve outcomes in high-stakes negotiations?",  
-    "What is the ‘Accusations Audit’ technique, and how does it disarm resistance in adversarial conversations?",  
+    "What is the 'Accusations Audit' technique, and how does it disarm resistance in adversarial conversations?",  
     "How do calibrated questions (e.g., *How am I supposed to do that?*) shift power dynamics in negotiations?",  
-    "When should you use the ‘Late-Night FM DJ Voice’ to de-escalate tension during disagreements?",  
+    "When should you use the 'Late-Night FM DJ Voice' to de-escalate tension during disagreements?",  
     "How can anchoring bias be leveraged to set favorable terms in salary or deal negotiations?",  
-    "What are ‘Black Swan’ tactics for uncovering hidden information in negotiations?",  
+    "What are 'Black Swan' tactics for uncovering hidden information in negotiations?",  
     "How can active listening techniques improve conflict resolution in team settings?",  
     "What non-verbal cues (e.g., tone, body language) most impact persuasive communication?",  
     "How can I adapt my communication style to different personality types (e.g., assertive vs. analytical)?",  
@@ -61,43 +50,88 @@ topics = [
     "How do you balance assertiveness and empathy when delivering critical feedback?",  
     "What are strategies for managing difficult conversations (e.g., layoffs, project failures) with grace?",  
     "How can Nash Equilibrium concepts guide decision-making in workplace collaborations?",  
-    "What real-world scenarios mimic the ‘Chicken Game,’ and how should you strategize in them?",  
+    "What real-world scenarios mimic the 'Chicken Game,' and how should you strategize in them?",  
     "How do Schelling Points (focal points) help teams reach consensus without direct communication?",  
     "When is tit-for-tat with forgiveness more effective than strict reciprocity in office politics?",  
     "How does backward induction in game theory apply to long-term career or project planning?",  
     "What are examples of zero-sum vs. positive-sum games in corporate negotiations?",  
     "How can Bayesian reasoning improve decision-making under uncertainty (e.g., mergers, market entry)?",  
-    "How can Boyd’s OODA Loop (Observe, Orient, Decide, Act) improve decision-making under pressure?",  
+    "How can Boyd's OODA Loop (Observe, Orient, Decide, Act) improve decision-making under pressure?",  
     "What game theory principles optimize resource allocation in cross-functional teams?",  
-    "How can the ‘MAD’ (Mutually Assured Destruction) concept deter adversarial behavior in workplaces?", 
-    "How does Conway’s Law (‘organizations design systems that mirror their communication structures’) impact the efficiency of IP or product design?",  
-    "What strategies can mitigate the negative effects of Conway’s Law on modularity in IP design (e.g., reusable components)?",  
-    "How can teams align their structure with IP design goals to leverage Conway’s Law for better outcomes?",  
-    "What are real-world examples of Conway’s Law leading to inefficient or efficient IP architecture in tech companies?",  
-    "How does cross-functional collaboration counteract siloed IP design as predicted by Conway’s Law?",  
-    "Why is communication architecture critical for scalable IP design under Conway’s Law?",  
-    "How can organizations use Conway’s Law intentionally to improve reusability and scalability of IP blocks?",  
-    "What metrics assess the impact of organizational structure (Conway’s Law) on IP design quality and speed?"  
+    "How can the 'MAD' (Mutually Assured Destruction) concept deter adversarial behavior in workplaces?", 
+    "How does Conway's Law ('organizations design systems that mirror their communication structures') impact the efficiency of IP or product design?",  
+    "What strategies can mitigate the negative effects of Conway's Law on modularity in IP design (e.g., reusable components)?",  
+    "How can teams align their structure with IP design goals to leverage Conway's Law for better outcomes?",  
+    "What are real-world examples of Conway's Law leading to inefficient or efficient IP architecture in tech companies?",  
+    "How does cross-functional collaboration counteract siloed IP design as predicted by Conway's Law?",  
+    "Why is communication architecture critical for scalable IP design under Conway's Law?",  
+    "How can organizations use Conway's Law intentionally to improve reusability and scalability of IP blocks?",  
+    "What metrics assess the impact of organizational structure (Conway's Law) on IP design quality and speed?",
+    
+    # Steve Jobs specific questions
+    "What were Steve Jobs' key leadership principles at Apple?",
+    "How did Steve Jobs' product design philosophy transform consumer electronics?",
+    "What can engineers learn from Steve Jobs' approach to simplicity and user experience?",
+    "How did Steve Jobs balance innovation with commercial viability?",
+    
+    # Elon Musk specific questions
+    "What makes Elon Musk's approach to engineering challenges unique?",
+    "How does Elon Musk manage multiple revolutionary companies simultaneously?",
+    "What risk management strategies does Elon Musk employ in his ventures?",
+    "How has Elon Musk's first principles thinking changed traditional industries?",
+    
+    # Jeff Bezos specific questions
+    "What is the significance of Jeff Bezos' Day 1 philosophy at Amazon?",
+    "How did Jeff Bezos' customer obsession shape Amazon's business model?",
+    "What can be learned from Jeff Bezos' approach to long-term thinking?",
+    "How does Jeff Bezos' decision-making framework handle uncertainty?",
+    
+    # Bill Gates specific questions
+    "How did Bill Gates transition from technology leader to philanthropist?",
+    "What made Bill Gates' product strategy at Microsoft so effective?",
+    "How did Bill Gates foster a culture of technical excellence?",
+    "What can we learn from Bill Gates' approach to global health challenges?",
+    
+    # Guns, Germs, and Steel
+    "How did geographical factors determine which societies developed advanced technologies and conquered others?",
+    "What does Jared Diamond's analysis reveal about environmental determinism in human development?",
+    
+    # The Rise and Fall of the Third Reich
+    "What political and economic conditions in Germany enabled Hitler's rise to power?",
+    "How did the Nazi regime's propaganda techniques create such effective mass manipulation?",
+    
+    # The Silk Roads
+    "How did the ancient trade networks of the Silk Roads facilitate cultural exchange and technological diffusion?",
+    "What does a Silk Roads perspective teach us about geopolitical power centers throughout history?",
+    
+    # 1491
+    "What advanced civilizations existed in pre-Columbian Americas that challenge our historical narratives?",
+    "How did indigenous American societies develop sophisticated agricultural and urban systems before European contact?",
+    
+    # The Age of Revolution
+    "How did the dual revolutions (French and Industrial) fundamentally reshape European society?",
+    "What economic and social factors drove the revolutionary changes across Europe from 1789-1848?",
+    
+    # The Ottoman Empire
+    "What administrative innovations allowed the Ottoman Empire to successfully govern a diverse, multi-ethnic state?",
+    "How did the Ottoman Empire's position between East and West influence its cultural development?",
+    
+    # Decline and Fall of the Roman Empire
+    "What internal factors contributed most significantly to the Roman Empire's decline?",
+    "How did the rise of Christianity influence the political transformation of the Roman Empire?",
+    
+    # The Warmth of Other Suns
+    "How did the Great Migration of African Americans transform both Northern and Southern American society?",
+    "What personal stories from the Great Migration reveal about systemic racism and individual resilience?",
+    
+    # The Peloponnesian War
+    "What strategic and leadership lessons can be learned from Athens' and Sparta's conflict?",
+    "How did democratic Athens' political system influence its military decisions during the war?",
+    
+    # The Making of the Atomic Bomb
+    "What moral dilemmas faced scientists during the Manhattan Project, and how are they relevant today?",
+    "How did the development of nuclear weapons transform the relationship between science and government?"
 ] 
-
-topics.extend([
-    "What are the key leadership lessons from Steve Jobs?",
-    "How did Steve Jobs' vision shape the technology industry?",
-    "What can I learn from Steve Jobs' approach to innovation?",
-    "How did Steve Jobs' design philosophy influence product development?",
-    "What are the key leadership lessons from Elon Musk?",
-    "How did Elon Musk's vision shape the technology industry?",
-    "What can I learn from Elon Musk's approach to innovation?",
-    "How did Elon Musk's design philosophy influence product development?",
-    "What are the key leadership lessons from Jeff Bezos?",
-    "How did Jeff Bezos' vision shape the technology industry?",
-    "What can I learn from Jeff Bezos' approach to innovation?",
-    "How did Jeff Bezos' design philosophy influence product development?",
-    "What are the key leadership lessons from Bill Gates?",
-    "How did Bill Gates' vision shape the technology industry?",
-    "What can I learn from Bill Gates' approach to innovation?",
-    "How did Bill Gates' design philosophy influence product development?"
-])
 
 yahoo_id = config.yahoo_id
 yahoo_app_password = config.yahoo_app_password
@@ -109,15 +143,32 @@ max_tokens = config.max_tokens
 model_names = ["BING+OPENAI", "GPT4OMINI", "GPT4", "GEMINI", "COHERE", "MIXTRAL8x7B"]
 
 # List of personalities
+# List of personalities
 personalities = [
-    "Chanakya", "Lord Krishna", "Richard Feynman", "Nikola Tesla", 
-    "Marie Curie", "Alan Turing", "Carl Sagan", "Leonardo da Vinci", 
-    "Douglas Engelbart", "JCR Licklider", "Vannevar Bush", "Lee Kuan Yew", "Sun Tzu", "Machiavelli", "Napoleon Bonaparte", "Winston Churchill", "Abraham Lincoln", "Mahatma Gandhi", "Martin Luther King Jr.", "Nelson Mandela", "Mother Teresa", "Albert Einstein", "Isaac Newton", "Galileo Galilei", "Charles Darwin", "Stephen Hawking", "Ada Lovelace", "Grace Hopper", "Margaret Hamilton", "Katherine Johnson", "Tim Berners-Lee", "Steve Wozniak", "Linus Torvalds", "Ada Yonath", "Barbara McClintock", "Rosalind Franklin", "Dorothy Hodgkin", "Rita Levi-Montalcini", "Gertrude B. Elion", "Tu Youyou", "Gerty Cori", "Claude Shannon", "John von Neumann", "Donald Knuth", "Dennis Ritchie", "Ken Thompson", "Guido van Rossum", "Bjarne Stroustrup", "James Gosling", "Larry Wall", "Yukihiro Matsumoto", "Anders Hejlsberg", "Richard Stallman", "Vint Cerf", "Robert Kahn", "Whitfield Diffie", "Martin Hellman", "Ralph Merkle", "Ron Rivest", "Adi Shamir", "Leonard Adleman", "Paul Baran", "Donald Davies", "Robert Metcalfe"
+    # Historical figures and philosophers
+    "Chanakya", "Sun Tzu", "Machiavelli", "Leonardo da Vinci", "Socrates", "Plato", "Aristotle",
+    "Confucius", "Marcus Aurelius", "Friedrich Nietzsche", "Carl Jung", "Sigmund Freud",
+    
+    # Political and social leaders
+    "Winston Churchill", "Abraham Lincoln", "Mahatma Gandhi", "Martin Luther King Jr.", "Nelson Mandela",
+    
+    # Scientists and mathematicians
+    "Albert Einstein", "Isaac Newton", "Marie Curie", "Stephen Hawking", "Richard Feynman", "Nikola Tesla",
+    "Galileo Galilei", "James Clerk Maxwell", "Charles Darwin",
+    
+    # Computer science and tech pioneers
+    "Alan Turing", "Claude Shannon", "Ada Lovelace", "Grace Hopper", "Tim Berners-Lee",
+    
+    # Programming language creators
+    "Linus Torvalds", "Guido van Rossum", "Dennis Ritchie",
+    
+    # Modern tech leaders
+    "Bill Gates", "Steve Jobs", "Elon Musk", "Jeff Bezos", "Satya Nadella", "Tim Cook",
+    "Lisa Su", "Larry Page", "Sergey Brin", "Mark Zuckerberg", "Jensen Huang",
+    
+    # Semiconductor pioneers
+    "Gordon Moore", "Robert Noyce", "Andy Grove"
 ]
-
-personalities.extend([
-    "Andy Grove", "Gordon Moore", "Robert Noyce", "Jack Kilby", "Jean Hoerni", "Marcian Hoff", "Federico Faggin", "Masatoshi Shima", "Morris Chang", "Lisa Su", "Jensen Huang", "Satya Nadella", "Tim Cook", "Sundar Pichai", "Elon Musk", "Jeff Bezos", "Bill Gates", "Steve Jobs", "Larry Page", "Sergey Brin", "Mark Zuckerberg", "Reed Hastings", "Brian Chesky", "Travis Kalanick", "Larry Ellison", "Michael Dell", "Meg Whitman", "Indra Nooyi", "Mary Barra", "Ginni Rometty", "Sheryl Sandberg", "Susan Wojcicki"
-])
 
 def get_random_personality():
     used_personalities_file = "used_personalities.txt"
