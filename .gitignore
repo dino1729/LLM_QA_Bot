@@ -16,3 +16,5 @@ config/config.yml
 *mp3
 *article_list.txt
 *pdf
+used_personalities.txt
+used_topics.txt

@@ -43,23 +43,62 @@ def transcribe_audio(audio_file):
 
     return translated_result, detectedSrcLang
 
-def text_to_speech(text, output_path, language="en-US", model_name="GPT35TURBO"):
+def text_to_speech(text, output_path, language, model_name):
     
     speech_config = speechsdk.SpeechConfig(subscription=azurespeechkey, region=azurespeechregion)
     # Set the voice based on the language
     if language == "te-IN":
-        speech_config.speech_synthesis_voice_name = "te-IN-ShrutiNeural"
+        # speech_config.speech_synthesis_voice_name = "te-IN-ShrutiNeural"
+        speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
     elif language == "hi-IN":
         speech_config.speech_synthesis_voice_name = "hi-IN-SwaraNeural"
     else:
         # Use a default voice if the language is not specified or unsupported
         default_voice = "en-US-AriaNeural"
-        if model_name == "PALM":
-            speech_config.speech_synthesis_voice_name = "en-US-JaneNeural"
+        if model_name == "GEMINI":
+            speech_config.speech_synthesis_voice_name = "en-US-AnaNeural"
         elif model_name == "GPT4":
             speech_config.speech_synthesis_voice_name = "en-US-BlueNeural"
-        elif model_name == "GPT35TURBO":
+        elif model_name == "GPT4OMINI":
+            speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
+        elif model_name == "COHERE":
+            speech_config.speech_synthesis_voice_name = "en-US-SaraNeural"
+        elif model_name == "BING+OPENAI":
+            speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
+        elif model_name == "MIXTRAL8x7B":
+            speech_config.speech_synthesis_voice_name = "en-US-AmberNeural"
+        else:
+            speech_config.speech_synthesis_voice_name = default_voice
+    # Use the default speaker as audio output and start playing the audio
+    speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
+    #speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+    result = speech_synthesizer.speak_text_async(text).get()
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        # Get the audio data from the result object
+        audio_data = result.audio_data  
+        # Save the audio data as a WAV file
+        with open(output_path, "wb") as audio_file:
+            audio_file.write(audio_data)
+            print("Speech synthesized and saved to WAV file.")
+
+def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI"):
+    
+    speech_config = speechsdk.SpeechConfig(subscription=azurespeechkey, region=azurespeechregion)
+    # Set the voice based on the language
+    if language == "te-IN":
+        # speech_config.speech_synthesis_voice_name = "te-IN-ShrutiNeural"
+        speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
+    elif language == "hi-IN":
+        speech_config.speech_synthesis_voice_name = "hi-IN-SwaraNeural"
+    else:
+        # Use a default voice if the language is not specified or unsupported
+        default_voice = "en-US-AriaNeural"
+        if model_name == "GEMINI":
             speech_config.speech_synthesis_voice_name = "en-US-AnaNeural"
+        elif model_name == "GPT4":
+            speech_config.speech_synthesis_voice_name = "en-US-BlueNeural"
+        elif model_name == "GPT4OMINI":
+            speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
         elif model_name == "COHERE":
             speech_config.speech_synthesis_voice_name = "en-US-SaraNeural"
         elif model_name == "BING+OPENAI":
