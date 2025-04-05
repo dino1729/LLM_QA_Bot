@@ -1286,11 +1286,12 @@ if __name__ == "__main__":
     Format requirements:
     1. Each section must have exactly 5 points
     2. Use this exact format for items with URLs:
-       - [Source] Headline and brief description | Date: MM/DD/YYYY | Actual URL from source | Commentary: Brief insight
+       - [Source] Headline and brief description | Date: MM/DD/YYYY | Actual URL from source | Commentary: [Concise summary of implications, analysis, or context - 3-5 substantive sentences]
     3. Use this format if no URL is available:
-       - [Source] Headline and brief description | Date: MM/DD/YYYY | Commentary: Brief insight
+       - [Source] Headline and brief description | Date: MM/DD/YYYY | Commentary: [Concise summary of implications, analysis, or context - 3-5 substantive sentences]
     4. Only include URLs that are explicitly mentioned in the source text
     5. Keep the original source URLs intact - do not modify them
+    6. The commentary section must provide meaningful analysis, context, or implications - not just a restatement of the headline
 
     Please format the content into these three sections:
     ## Tech News Update:
