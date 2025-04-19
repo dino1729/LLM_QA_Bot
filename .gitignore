@@ -10,11 +10,16 @@ __pycache__/
 .vscode
 include/
 gradio_cached_examples/
-playground/*mp3
 playground/*txt
 config/config.yml
 *mp3
+*mp4
+*wav
+*log
+*transcript.txt
 *article_list.txt
 *pdf
+*formatted_transcript.md
+*TTF
 used_personalities.txt
 used_topics.txt
