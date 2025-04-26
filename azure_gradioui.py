@@ -2,6 +2,8 @@ import os
 import gradio as gr
 import logging
 import sys
+import traceback # Added import
+from openai import OpenAI # Added import
 from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -13,6 +15,19 @@ from helper_functions.food_planner import craving_satisfier
 from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze_media, analyze_file, upload_data_to_supabase, clearallfiles
 from config import config
 from helper_functions.query_supabasememory import query_memorypalace_stream
+# Import image tool functions
+# import gptimage_tool as tool # Removed import
+from helper_functions import gptimage_tool as tool # Added import
+
+# --- OpenAI Client Initialization ---
+# Create one client instance to reuse
+# Ensure OPENAI_API_KEY and optionally OPENAI_API_BASE are set as environment variables
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE") # Use None if not using a custom base URL
+)
+# --- End OpenAI Client Initialization ---
+
 
 def upload_file(files, memorize):
 
@@ -130,6 +145,40 @@ def clearhistory(field1, field2, field3):
     # Function to clear history
     return ["", "", ""]
 
+# --- Image Tool UI Helper Functions ---
+def clear_generate():
+	# Clear the Generate tab fields: prompt, enhanced prompt display, generated image, and size dropdown.
+	# Return default size
+	return "", "", None, "1024x1024" # Enhanced prompt is cleared by returning ""
+
+def clear_edit():
+	# Clear the Edit tab fields: image file, prompt (reset to default), enhanced prompt, edited image, and size dropdown.
+	# Return default size
+	return None, "Turn the subject into a cyberpunk character with neon lights", "", None, "1024x1024" # Enhanced prompt is cleared by returning ""
+
+# Wrapper for generate to handle prompt choice
+def ui_generate_wrapper(prompt: str, enhanced_prompt: str, size: str):
+    final_prompt = enhanced_prompt if enhanced_prompt and enhanced_prompt.strip() else prompt
+    img_path = tool.run_generate(final_prompt, size=size)
+    return img_path
+
+# Wrapper for edit to handle prompt choice and errors
+def ui_edit_wrapper(img_path: str, prompt: str, enhanced_prompt: str, size: str):
+    if not img_path:
+        raise gr.Error("Please upload an image to edit.")
+    edited_img_path = img_path # Default to original path in case of error
+    final_prompt = enhanced_prompt if enhanced_prompt and enhanced_prompt.strip() else prompt
+    try:
+        edited_img_path = tool.run_edit(img_path, final_prompt, size=size)
+    except Exception as e:
+        print(f"Error during image edit: {e}") # Log error to console
+        traceback.print_exc() # Print full traceback for debugging
+        gr.Warning(f"Image edit failed: {e}. Returning original image.") # Show warning in UI
+        return img_path # Return original image path on error
+    return edited_img_path
+# --- End Image Tool UI Helper Functions ---
+
+
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
@@ -237,7 +286,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                 )
                 query_component = chatui.textbox
             with gr.Column(scale=2):
-                examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")      
+                examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")
     with gr.Tab(label="Memory Palace"):
         memory_palace_chat = gr.ChatInterface(
             title="Memory Palace Chat",
@@ -292,9 +341,67 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
             with gr.Row():
                 craving_output = gr.Textbox(label="Food Places", show_copy_button=True)
                 clear_craving_button = gr.Button(value="Clear", scale=0)
-    
+
+    # --- Image Studio Tab ---
+    with gr.Tab("Image Studio"):
+        gr.Markdown("## Generate and Edit Images using GPT-IMAGE-1")
+        with gr.Tab("Generate"):
+            clear_gen_btn = gr.Button("Clear")
+            with gr.Row():
+                gen_prompt = gr.Textbox(
+                    label="Prompt",
+                    value="A futuristic cityscape at sunset, synthwave style",
+                    scale=4
+                )
+                gen_size = gr.Dropdown(
+                    label="Size",
+                    choices=["1024x1024", "1024x1792", "1792x1024"], # DALL-E 3 sizes
+                    value="1024x1024",
+                    scale=1
+                )
+            with gr.Row():
+                enhance_btn = gr.Button("Enhance Prompt (Uses GPT)")
+                surprise_gen_btn = gr.Button("🎁 Surprise Me! (Uses GPT)")
+            gen_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
+            with gr.Row():
+                gen_ex1_btn = gr.Button("🌆 Synthwave City")
+                gen_ex2_btn = gr.Button("🐶 Dog Astronaut")
+                gen_ex3_btn = gr.Button("🍔 Giant Burger")
+                gen_ex4_btn = gr.Button("🎨 Watercolor Forest")
+            gen_btn = gr.Button("Generate Image")
+            gen_out = gr.Image(label="Generated Image", show_download_button=True)
+
+        with gr.Tab("Edit"):
+            clear_edit_btn = gr.Button("Clear")
+            edit_img = gr.Image(type="filepath", label="Image to Edit", sources=["upload"], height=400) # Allow upload
+            with gr.Row():
+                edit_prompt = gr.Textbox(
+                    label="Edit Prompt",
+                    value="Turn the subject into a cyberpunk character with neon lights",
+                    scale=4
+                )
+                edit_size = gr.Dropdown(
+                    label="Size",
+                    choices=["1024x1024"], # DALL-E 2 edit size
+                    value="1024x1024",
+                    scale=1
+                )
+            with gr.Row():
+                edit_enhance_btn = gr.Button("Enhance Prompt (Uses GPT)")
+                surprise_edit_btn = gr.Button("🎁 Surprise Me! (Uses GPT)")
+            edit_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
+            with gr.Row():
+                ghibli_btn = gr.Button("🎨 Ghibli Style")
+                simp_btn = gr.Button("📺 Simpsons")
+                sp_btn = gr.Button("☃️ South Park")
+                comic_btn = gr.Button("💥 Comic Style")
+            edit_btn = gr.Button("Edit Image")
+            edit_out = gr.Image(label="Edited Image", show_download_button=True)
+    # --- End Image Studio Tab ---
+
     memory_palace_question = memory_palace_chat.textbox
 
+    # --- LLM APP Event Handlers ---
     video_button.click(download_ytvideo, inputs=[yturl, memorize], outputs=[video_output, examples, vsummary_output, video_title, video_memoryupload_status], show_progress=True)
     video_memoryupload_button.click(upload_data_to_supabase, inputs=[video_title, yturl], outputs=[video_memoryupload_status], show_progress=True)
 
@@ -316,7 +423,67 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
 
     reset_button.click(clearallfiles)
     reset_button.click(lambda: ["", "", "", "", "", "", "", "", "", "", "", "",  "", "", "", ""], inputs=[], outputs=[video_output, vsummary_output, video_title, video_memoryupload_status, article_output, asummary_output, article_title, article_memoryupload_status, file_output, fsummary_output, file_title, file_memoryupload_status, media_output, msummary_output, media_title, media_memoryupload_status])
-    
+
+    # --- Image Studio Event Handlers ---
+    # Generate Tab
+    enhance_btn.click(
+        lambda p: tool.prompt_enhancer(p, client),
+        inputs=[gen_prompt],
+        outputs=[gen_enhanced_prompt],
+        show_progress="Generating enhanced prompt..."
+    )
+    surprise_gen_btn.click(
+        lambda: tool.generate_surprise_prompt(client),
+        inputs=None,
+        outputs=[gen_prompt],
+        show_progress="Generating surprise prompt..."
+    )
+    clear_gen_btn.click(
+        clear_generate,
+        inputs=None,
+        outputs=[gen_prompt, gen_enhanced_prompt, gen_out, gen_size]
+    )
+    gen_ex1_btn.click(lambda: "A futuristic cityscape at sunset, synthwave style", None, gen_prompt)
+    gen_ex2_btn.click(lambda: "A golden retriever wearing a space helmet, digital art", None, gen_prompt)
+    gen_ex3_btn.click(lambda: "A giant cheeseburger resting on a mountaintop", None, gen_prompt)
+    gen_ex4_btn.click(lambda: "A dense forest painted in watercolor style", None, gen_prompt)
+    gen_btn.click(
+        ui_generate_wrapper,
+        inputs=[gen_prompt, gen_enhanced_prompt, gen_size],
+        outputs=[gen_out],
+        show_progress="Generating image..."
+    )
+
+    # Edit Tab
+    edit_enhance_btn.click(
+        lambda p: tool.prompt_enhancer(p, client),
+        inputs=[edit_prompt],
+        outputs=[edit_enhanced_prompt],
+        show_progress="Generating enhanced prompt..."
+    )
+    surprise_edit_btn.click(
+        lambda: tool.generate_surprise_prompt(client),
+        inputs=None,
+        outputs=[edit_prompt],
+        show_progress="Generating surprise prompt..."
+    )
+    clear_edit_btn.click(
+        clear_edit,
+        inputs=None,
+        outputs=[edit_img, edit_prompt, edit_enhanced_prompt, edit_out, edit_size]
+    )
+    ghibli_btn.click(lambda: "Convert the picture into Ghibli style animation", None, edit_prompt)
+    simp_btn.click(lambda: "Turn the subjects into a Simpsons character", None, edit_prompt)
+    sp_btn.click(lambda: "Turn the subjects into a South Park character", None, edit_prompt)
+    comic_btn.click(lambda: "Convert the picture into a comic book style drawing with compelling futuristic story and cool dialogues", None, edit_prompt)
+    edit_btn.click(
+        ui_edit_wrapper,
+        inputs=[edit_img, edit_prompt, edit_enhanced_prompt, edit_size],
+        outputs=[edit_out],
+        show_progress="Editing image..."
+    )
+    # --- End Image Studio Event Handlers ---
+
 
 if __name__ == '__main__':
     llmapp.launch(server_name='0.0.0.0', server_port=7860)
