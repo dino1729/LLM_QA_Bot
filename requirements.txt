@@ -69,8 +69,9 @@ pypdf
 cohere
 groq
 google.generativeai
-pinecone-client
+pinecone
 lxml_html_clean
 azure-cognitiveservices-speech
 soundfile
 sounddevice
+gpt_researcher

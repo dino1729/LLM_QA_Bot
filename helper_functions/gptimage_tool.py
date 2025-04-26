@@ -5,13 +5,14 @@ Unified image tool.
 Core logic from gptimagegen.py & gptimageedit.py preserved.
 """
 
-DEBUG_LOG = True  # Set to True to enable debug logging
+DEBUG_LOG = False  # Set to True to enable debug logging
 
 import traceback, threading, json, subprocess, base64, time, os, sys, random # Restored imports
 from queue import Queue                # Restored import
 import tempfile
 from PIL import Image
 from openai import OpenAI, AzureOpenAI # Ensure AzureOpenAI is imported
+import os # Ensure os is imported for path manipulation
 
 # -------------- Detect mode --------------
 edit_mode = len(sys.argv) > 1
@@ -222,6 +223,11 @@ def pop_funny_messages() -> list[tuple[str, str]]:
         items.append(message_queue.get())
     return items
 
+# Define the output directory relative to the script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True) # Ensure the data directory exists
+
 # ------------------ GENERATE FLOW ------------------
 # Add size parameter with default
 def run_generate(prompt: str | None = None, size: str = "1024x1024") -> str:
@@ -239,7 +245,7 @@ def run_generate(prompt: str | None = None, size: str = "1024x1024") -> str:
     if not disable_funny:
         stop_evt = spawn_funny_thread("generate", prompt, client=client)
 
-    out_path = "output_gen.png" # Define out_path before try block
+    out_path = os.path.join(DATA_DIR, "output_gen.png") # Define out_path inside DATA_DIR
 
     try:
         # print("Generating image... (this may take a while)")
@@ -296,7 +302,7 @@ def run_edit(image_path: str, prompt: str | None = None, size: str = "1024x1024"
             api_version=api_version
         )
 
-    out_path = "output_edit.png" # Define out_path before try block
+    out_path = os.path.join(DATA_DIR, "output_edit.png") # Define out_path inside DATA_DIR
 
     try:
         # ---------- curl call identical to original ----------
