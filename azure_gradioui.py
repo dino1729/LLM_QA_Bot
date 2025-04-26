@@ -360,8 +360,8 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                     scale=1
                 )
             with gr.Row():
-                enhance_btn = gr.Button("Enhance Prompt (Uses GPT)")
-                surprise_gen_btn = gr.Button("🎁 Surprise Me! (Uses GPT)")
+                enhance_btn = gr.Button("Enhance Prompt")
+                surprise_gen_btn = gr.Button("🎁 Surprise Me!")
             gen_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
             with gr.Row():
                 gen_ex1_btn = gr.Button("🌆 Synthwave City")
@@ -387,8 +387,8 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                     scale=1
                 )
             with gr.Row():
-                edit_enhance_btn = gr.Button("Enhance Prompt (Uses GPT)")
-                surprise_edit_btn = gr.Button("🎁 Surprise Me! (Uses GPT)")
+                edit_enhance_btn = gr.Button("Enhance Prompt")
+                surprise_edit_btn = gr.Button("🎁 Surprise Me!")
             edit_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
             with gr.Row():
                 ghibli_btn = gr.Button("🎨 Ghibli Style")
