@@ -11,6 +11,7 @@ __pycache__/
 include/
 gradio_cached_examples/
 playground/*txt
+playground/storage/*
 config/config.yml
 *mp3
 *mp4
