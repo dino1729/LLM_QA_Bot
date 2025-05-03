@@ -355,7 +355,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                 )
                 gen_size = gr.Dropdown(
                     label="Size",
-                    choices=["1024x1024", "1024x1792", "1792x1024"], # DALL-E 3 sizes
+                    choices=["1024x1024", "1024x1536", "1536x1024"],
                     value="1024x1024",
                     scale=1
                 )
@@ -368,7 +368,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                 gen_ex2_btn = gr.Button("🐶 Dog Astronaut")
                 gen_ex3_btn = gr.Button("🍔 Giant Burger")
                 gen_ex4_btn = gr.Button("🎨 Watercolor Forest")
-            gen_btn = gr.Button("Generate Image")
+            gen_btn = gr.Button("Generate Image", variant="primary") # Added variant
             gen_out = gr.Image(label="Generated Image", show_download_button=True)
 
         with gr.Tab("Edit"):
@@ -382,7 +382,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                 )
                 edit_size = gr.Dropdown(
                     label="Size",
-                    choices=["1024x1024"], # DALL-E 2 edit size
+                    choices=["1024x1024", "1024x1536", "1536x1024"], # Updated choices
                     value="1024x1024",
                     scale=1
                 )
@@ -395,7 +395,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
                 simp_btn = gr.Button("📺 Simpsons")
                 sp_btn = gr.Button("☃️ South Park")
                 comic_btn = gr.Button("💥 Comic Style")
-            edit_btn = gr.Button("Edit Image")
+            edit_btn = gr.Button("Edit Image", variant="primary") # Added variant
             edit_out = gr.Image(label="Edited Image", show_download_button=True)
     # --- End Image Studio Tab ---
 
