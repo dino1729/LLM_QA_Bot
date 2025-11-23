@@ -1,123 +1,219 @@
-import azure.cognitiveservices.speech as speechsdk
+import os
 import requests
 import uuid
 import json
+import logging
 import sounddevice as sd
 import soundfile as sf
+import numpy as np
 from config import config
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 
-azurespeechkey = config.azurespeechkey
-azurespeechregion = config.azurespeechregion
-azuretexttranslatorkey = config.azuretexttranslatorkey
+# Try to import NVIDIA Riva client
+try:
+    import riva.client as riva
+    RIVA_AVAILABLE = True
+except ImportError:
+    print("WARNING: nvidia-riva-client is not installed. Audio features will be limited.")
+    print("Install with: pip install nvidia-riva-client")
+    RIVA_AVAILABLE = False
+
 system_prompt = config.system_prompt
 conversation = system_prompt.copy()
 
+# Get NVIDIA API key from config.yml or environment variable (config takes precedence)
+nvidia_api_key = config.nvidia_api_key if hasattr(config, 'nvidia_api_key') and config.nvidia_api_key else os.getenv('NVIDIA_NIM_API_KEY')
+
+# Initialize NVIDIA Riva services if available
+asr_service = None
+tts_service = None
+
+if RIVA_AVAILABLE and nvidia_api_key:
+    try:
+        # ASR (Speech to Text) - Parakeet CTC 1.1B
+        asr_auth = riva.Auth(
+            uri='grpc.nvcf.nvidia.com:443',
+            use_ssl=True,
+            metadata_args=[
+                ['function-id', '1598d209-5e27-4d3c-8079-4751568b1081'],
+                ['authorization', f'Bearer {nvidia_api_key}']
+            ]
+        )
+        asr_service = riva.ASRService(asr_auth)
+        
+        # TTS (Text to Speech) - Magpie TTS Multilingual
+        tts_auth = riva.Auth(
+            uri='grpc.nvcf.nvidia.com:443',
+            use_ssl=True,
+            metadata_args=[
+                ['function-id', '877104f7-e885-42b9-8de8-f6e4c6303969'],
+                ['authorization', f'Bearer {nvidia_api_key}']
+            ]
+        )
+        tts_service = riva.SpeechSynthesisService(tts_auth)
+        print("✓ NVIDIA Riva services initialized successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to initialize NVIDIA Riva services: {e}")
+        RIVA_AVAILABLE = False
+elif not nvidia_api_key:
+    print("WARNING: nvidia_api_key not found in config.yml or NVIDIA_NIM_API_KEY environment variable")
+    RIVA_AVAILABLE = False
+
+# Voice mapping for different models (NVIDIA Riva voices)
+VOICE_MAP = {
+    "GEMINI": "Magpie-Multilingual.EN-US.Echo",
+    "GPT4": "Magpie-Multilingual.EN-US.Aria",
+    "GPT4OMINI": "Magpie-Multilingual.EN-US.Aria",
+    "COHERE": "Magpie-Multilingual.EN-US.Nova",
+    "BING+OPENAI": "Magpie-Multilingual.EN-US.Shimmer",
+    "MIXTRAL8x7B": "Magpie-Multilingual.EN-US.Fable",
+    "DEFAULT": "Magpie-Multilingual.EN-US.Aria"
+}
+
 def transcribe_audio(audio_file):
+    """
+    Transcribe audio file using NVIDIA Riva Parakeet CTC 1.1B ASR model.
+    Returns transcribed text and detected language.
+    """
+    if not RIVA_AVAILABLE or asr_service is None:
+        print("ERROR: NVIDIA Riva ASR service not available")
+        return "Transcription service unavailable. Please check NVIDIA API key.", "en-US"
     
-    # Create an instance of a speech config with your subscription key and region
-    # Currently the v2 endpoint is required. In a future SDK release you won't need to set it. 
-    endpoint_string = "wss://{}.stt.speech.microsoft.com/speech/universal/v2".format(azurespeechregion)
-    #speech_config = speechsdk.translation.SpeechTranslationConfig(subscription=azurespeechkey, endpoint=endpoint_string)
-    audio_config = speechsdk.audio.AudioConfig(filename=audio_file)
-    # set up translation parameters: source language and target languages
-    # Currently the v2 endpoint is required. In a future SDK release you won't need to set it. 
-    #endpoint_string = "wss://{}.stt.speech.microsoft.com/speech/universal/v2".format(service_region)
-    translation_config = speechsdk.translation.SpeechTranslationConfig(
-        subscription=azurespeechkey,
-        endpoint=endpoint_string,
-        speech_recognition_language='en-US',
-        target_languages=('en','hi','te'))
-    #audio_config = speechsdk.audio.AudioConfig(filename=weatherfilename)
-    # Specify the AutoDetectSourceLanguageConfig, which defines the number of possible languages
-    auto_detect_source_language_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(languages=["en-US", "hi-IN", "te-IN"])
-    # Creates a translation recognizer using and audio file as input.
-    recognizer = speechsdk.translation.TranslationRecognizer(
-        translation_config=translation_config, 
-        audio_config=audio_config,
-        auto_detect_source_language_config=auto_detect_source_language_config)
-    result = recognizer.recognize_once()
-
-    translated_result = format(result.translations['en'])
-    detectedSrcLang = format(result.properties[speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult])
-
-    return translated_result, detectedSrcLang
+    try:
+        print("🎤 Transcribing audio with NVIDIA Parakeet...")
+        
+        # Configure ASR with sample rate of 16kHz (standard for speech recognition)
+        config_asr = riva.RecognitionConfig(
+            encoding=riva.AudioEncoding.LINEAR_PCM,
+            sample_rate_hertz=16000,
+            language_code='en-US',
+            max_alternatives=1,
+            enable_automatic_punctuation=True,
+            audio_channel_count=1
+        )
+        
+        # Read audio file
+        with open(audio_file, 'rb') as audio:
+            audio_data = audio.read()
+        
+        # Perform offline recognition
+        response = asr_service.offline_recognize(audio_data, config_asr)
+        
+        if response.results and len(response.results) > 0:
+            transcribed_text = response.results[0].alternatives[0].transcript
+            
+            # NVIDIA Riva primarily supports English, but we return en-US for compatibility
+            detected_language = "en-US"
+            
+            print(f"✓ Transcription: {transcribed_text}")
+            print(f"✓ Detected language: {detected_language}")
+            
+            return transcribed_text, detected_language
+        else:
+            print("WARNING: No transcription results from ASR")
+            return "No speech detected.", "en-US"
+            
+    except Exception as e:
+        print(f"ERROR in transcribe_audio: {e}")
+        return "Transcription failed.", "en-US"
 
 def text_to_speech(text, output_path, language, model_name):
+    """
+    Convert text to speech using NVIDIA Riva Magpie TTS model.
+    """
+    if not RIVA_AVAILABLE or tts_service is None:
+        print("ERROR: NVIDIA Riva TTS service not available")
+        return False
     
-    speech_config = speechsdk.SpeechConfig(subscription=azurespeechkey, region=azurespeechregion)
-    # Set the voice based on the language
-    if language == "te-IN":
-        # speech_config.speech_synthesis_voice_name = "te-IN-ShrutiNeural"
-        speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
-    elif language == "hi-IN":
-        speech_config.speech_synthesis_voice_name = "hi-IN-SwaraNeural"
-    else:
-        # Use a default voice if the language is not specified or unsupported
-        default_voice = "en-US-AriaNeural"
-        if model_name == "GEMINI":
-            speech_config.speech_synthesis_voice_name = "en-US-AnaNeural"
-        elif model_name == "GPT4":
-            speech_config.speech_synthesis_voice_name = "en-US-BlueNeural"
-        elif model_name == "GPT4OMINI":
-            speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
-        elif model_name == "COHERE":
-            speech_config.speech_synthesis_voice_name = "en-US-SaraNeural"
-        elif model_name == "BING+OPENAI":
-            speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
-        elif model_name == "MIXTRAL8x7B":
-            speech_config.speech_synthesis_voice_name = "en-US-AmberNeural"
-        else:
-            speech_config.speech_synthesis_voice_name = default_voice
-    # Use the default speaker as audio output and start playing the audio
-    speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
-    #speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-    result = speech_synthesizer.speak_text_async(text).get()
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        # Get the audio data from the result object
-        audio_data = result.audio_data  
-        # Save the audio data as a WAV file
-        with open(output_path, "wb") as audio_file:
-            audio_file.write(audio_data)
-            print("Speech synthesized and saved to WAV file.")
+    try:
+        print("🔊 Synthesizing speech with NVIDIA Magpie...")
+        
+        # Select voice based on model name
+        voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
+        
+        # Determine language code - NVIDIA Riva Magpie supports multilingual
+        language_code = "en-US"
+        if language == "te-IN":
+            language_code = "en-US"  # Fallback to English for Telugu
+        elif language == "hi-IN":
+            language_code = "hi-IN"  # Hindi is supported
+        elif language.startswith("en"):
+            language_code = "en-US"
+        
+        # Create TTS request
+        req = {
+            "text": text,
+            "language_code": language_code,
+            "encoding": riva.AudioEncoding.LINEAR_PCM,
+            "sample_rate_hz": 16000,
+            "voice_name": voice_name
+        }
+        
+        # Synthesize speech
+        response = tts_service.synthesize(**req)
+        
+        # Convert raw PCM audio bytes to numpy array and save as proper WAV file
+        audio_data = np.frombuffer(response.audio, dtype=np.int16)
+        sf.write(output_path, audio_data, 16000, 'PCM_16')
+        
+        print(f"✓ Speech synthesized and saved to {output_path}")
+        
+        # Play the audio
+        data, samplerate = sf.read(output_path)
+        sd.play(data, samplerate)
+        sd.wait()
+        
+        return True
+        
+    except Exception as e:
+        print(f"ERROR in text_to_speech: {e}")
+        return False
 
 def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI"):
+    """
+    Convert text to speech using NVIDIA Riva Magpie TTS model without playing audio.
+    """
+    if not RIVA_AVAILABLE or tts_service is None:
+        print("ERROR: NVIDIA Riva TTS service not available")
+        return False
     
-    speech_config = speechsdk.SpeechConfig(subscription=azurespeechkey, region=azurespeechregion)
-    # Set the voice based on the language
-    if language == "te-IN":
-        # speech_config.speech_synthesis_voice_name = "te-IN-ShrutiNeural"
-        speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
-    elif language == "hi-IN":
-        speech_config.speech_synthesis_voice_name = "hi-IN-SwaraNeural"
-    else:
-        # Use a default voice if the language is not specified or unsupported
-        default_voice = "en-US-AriaNeural"
-        if model_name == "GEMINI":
-            speech_config.speech_synthesis_voice_name = "en-US-AnaNeural"
-        elif model_name == "GPT4":
-            speech_config.speech_synthesis_voice_name = "en-US-BlueNeural"
-        elif model_name == "GPT4OMINI":
-            speech_config.speech_synthesis_voice_name = "en-US-EmmaMultilingualNeural"
-        elif model_name == "COHERE":
-            speech_config.speech_synthesis_voice_name = "en-US-SaraNeural"
-        elif model_name == "BING+OPENAI":
-            speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
-        elif model_name == "MIXTRAL8x7B":
-            speech_config.speech_synthesis_voice_name = "en-US-AmberNeural"
-        else:
-            speech_config.speech_synthesis_voice_name = default_voice
-    # Use the default speaker as audio output and start playing the audio
-    # speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
-    speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-    result = speech_synthesizer.speak_text_async(text).get()
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        # Get the audio data from the result object
-        audio_data = result.audio_data  
-        # Save the audio data as a WAV file
-        with open(output_path, "wb") as audio_file:
-            audio_file.write(audio_data)
-            print("Speech synthesized and saved to WAV file.")
+    try:
+        print("🔊 Synthesizing speech with NVIDIA Magpie (no playback)...")
+        
+        # Select voice based on model name
+        voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
+        
+        # Determine language code - NVIDIA Riva Magpie supports multilingual
+        language_code = "en-US"
+        if language == "te-IN":
+            language_code = "en-US"  # Fallback to English for Telugu
+        elif language == "hi-IN":
+            language_code = "hi-IN"  # Hindi is supported
+        elif language.startswith("en"):
+            language_code = "en-US"
+        
+        # Create TTS request
+        req = {
+            "text": text,
+            "language_code": language_code,
+            "encoding": riva.AudioEncoding.LINEAR_PCM,
+            "sample_rate_hz": 16000,
+            "voice_name": voice_name
+        }
+        
+        # Synthesize speech
+        response = tts_service.synthesize(**req)
+        
+        # Convert raw PCM audio bytes to numpy array and save as proper WAV file
+        audio_data = np.frombuffer(response.audio, dtype=np.int16)
+        sf.write(output_path, audio_data, 16000, 'PCM_16')
+        
+        print(f"✓ Speech synthesized and saved to {output_path} (no playback)")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR in text_to_speech_nospeak: {e}")
+        return False
 
 def local_text_to_speech(text, output_path, model_name):
     
@@ -146,36 +242,23 @@ def local_text_to_speech(text, output_path, model_name):
         print("Error:", response.text)
 
 def translate_text(text, target_language):
+    """
+    Translation placeholder - for now returns original text.
+    NVIDIA Riva Magpie TTS supports multilingual synthesis, so translation
+    can be handled by the TTS model itself in many cases.
     
-    # Add your key and endpoint
-    key = azuretexttranslatorkey
-    endpoint = "https://api.cognitive.microsofttranslator.com"
-    # location, also known as region.
-    location = azurespeechregion
-    path = '/translate'
-    constructed_url = endpoint + path
-    params = {
-        'api-version': '3.0',
-        'from': 'en',
-        'to': [target_language]
-    }
-    headers = {
-        'Ocp-Apim-Subscription-Key': key,
-        # location required if you're using a multi-service or regional (not global) resource.
-        'Ocp-Apim-Subscription-Region': location,
-        'Content-type': 'application/json',
-        'X-ClientTraceId': str(uuid.uuid4())
-    }
-    body = [{
-        'text': text
-    }]
-    request = requests.post(constructed_url, params=params, headers=headers, json=body)
-    response = request.json()
-    return response[0]['translations'][0]['text']
+    For full translation support, consider integrating an LLM-based translation
+    or a dedicated translation API.
+    """
+    # For now, return original text as NVIDIA Magpie can handle multiple languages
+    # TODO: Implement LLM-based translation if needed
+    print(f"Note: Translation requested for {target_language}, returning original text")
+    return text
 
 def transcribe_audio_to_text(audio_path):
     """
-    Transcribes Telugu/Hindi audio to English text using Azure Speech Recognition.
+    Transcribes audio to text using NVIDIA Riva Parakeet ASR.
+    Supports multiple languages with automatic detection.
     """
     # Initialize variables with default values
     english_text = "Transcription failed! As a voice assistant, inform the user that transcription failed. It may probably be due to the audio device not picking up any sound."

@@ -1,61 +1,80 @@
-
-azure_api_key: ""
-azure_api_base: ""
-azure_chatapi_version: ""
-azure_embeddingapi_version: ""
-
-azure_gpt4_deploymentid: ""
-openai_gpt4_modelname: ""
-azure_gpt4omini_deploymentid: ""
-openai_gpt4omini_modelname: ""
-azure_embedding_deploymentid: ""
-openai_embedding_modelname: ""
-
-llama2_api_key: ""
-llama2_api_base: ""
-
-rvctts_api_base: ""
-
-# Supabase
-public_supabase_url: ""
-supabase_service_role_key: ""
-
-# Pinecone
-pinecone_api_key: ""
-pinecone_environment: ""
-
-# Bing Search
-bing_api_key: ""
-bing_endpoint: ""
-
-# PALM
+# Gemini
 google_api_key: ""
 gemini_model_name: ""
+gemini_thinkingmodel_name: ""
 
 # Cohere
 cohere_api_key: ""
+cohere_model_name: ""
 
 # Groq
 groq_api_key: ""
+groq_model_name: ""
+groq_llama_model_name: ""
+groq_mixtral_model_name: ""
 
 # weather agent
 openweather_api_key: ""
 
-azurespeechkey: ""
-azurespeechregion: ""
-azuretexttranslatorkey: ""
+# pyowm
+pyowm_api_key: ""
+
+# yahoo smtp server
+yahoo_id: ""
+yahoo_app_password: ""
+
+# LiteLLM
+litellm_base_url: ""
+litellm_api_key: ""
+litellm_fast_llm: ""
+litellm_smart_llm: ""
+litellm_strategic_llm: ""
+litellm_embedding: ""
+litellm_default_model: ""
+
+# Ollama
+ollama_base_url: ""
+ollama_fast_llm: ""
+ollama_smart_llm: ""
+ollama_strategic_llm: ""
+ollama_embedding: ""
+ollama_default_model: ""
+
+# Retriever and Firecrawl
+retriever: ""
+firecrawl_server_url: ""
+
+# Tavily (optional - for GPT Researcher web search)
+# Get your free API key from https://tavily.com
+tavily_api_key: ""
+
+# NVIDIA NIM (for Image Studio)
+nvidia_api_key: ""
+nvidia_base_url: ""
+nvidia_image_gen_url: ""
+nvidia_vision_model: ""
+nvidia_text_model: ""
+
+# OpenAI Image Generation
+openai_image_model: ""
+openai_image_enhancement_model: ""
 
 paths:
   UPLOAD_FOLDER: ""
-  BING_FOLDER: ""
+  WEB_SEARCH_FOLDER: ""
   SUMMARY_FOLDER: ""
   VECTOR_FOLDER: ""
 
 settings:
-  temperature: 0.25
-  max_tokens: 420
+  temperature: 0.0
+  max_tokens: 0
   model_name: ""
-  num_output: 1024
-  max_chunk_overlap_ratio: 0.1
-  max_input_size: 128000
-  context_window: 128000
+  num_output: 0
+  max_chunk_overlap_ratio: 0.0
+  max_input_size: 0
+  context_window: 0
+  summary_token_limit: 0
+  total_words: 0
+  curate_sources: false
+  language: ""
+  default_chatbot_model: ""

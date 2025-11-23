@@ -1,5 +1,6 @@
 import random
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
+from config import config
 
 if __name__ == '__main__':
 
@@ -15,7 +16,7 @@ if __name__ == '__main__':
         user_query = input("Enter your query: ")
 
         # model_name = random.choice(["GROQ", "GEMINI"])
-        model_name = "GEMINI"
+        model_name = config.default_chatbot_model
         print("Model: ", model_name)
 
         assistant_reply = internet_connected_chatbot(user_query, conversation, model_name, max_tokens, temperature)

@@ -1,12 +1,19 @@
 sum_template: |
-  You are a world-class text summarizer. We have provided context information below. 
+  You are a world-class text summarizer specializing in concise executive summaries. We have provided context information below. 
   ---------------------
   {context_str}
   ---------------------
-  Based on the context provided, your task is to summarize the input context while effectively conveying the main points and relevant information. The summary should be presented in a numbered list of at least 10 key points and takeaways, with a catchy headline at the top. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.
+  Based on the context provided, your task is to create a HIGH-LEVEL EXECUTIVE SUMMARY that captures only the most important insights. Keep it concise and focused:
+  
+  1. Start with a catchy headline (one line, marked with **bold**)
+  2. List 5-7 key takeaways maximum (numbered list)
+  3. Each point should be ONE sentence only - clear and direct
+  4. Focus on the core message and main insights only
+  5. Exclude any extraneous details such as discounts, promotions, sponsorships, or advertisements
+  
+  Do NOT include verbose explanations or long paragraphs. Be concise and impactful.
   ---------------------
-  Using both the context information and also using your own knowledge, 
-  answer the question: {query_str}
+  Using the context information, answer the question: {query_str}
 
 eg_template: |
   You are a world-class question generator. We have provided context information below. Here is the context:

@@ -50,10 +50,10 @@ torch
 pytube
 flask
 llama-hub>=0.0.79.post1
-llama-index-llms-azure-openai
+llama-index-llms-openai
+llama-index-embeddings-openai
 llama-index-readers-file
 llama-index-readers-llama-parse
-llama-index-embeddings-azure-openai
 llama-index-agent-openai
 llama-index-tools-bing-search
 llama-index-tools-weather
@@ -61,6 +61,7 @@ llama-index-tools-google
 llama-index-tools-wikipedia
 pyowm
 llama-index
+openai
 langchain>=0.0.329
 youtube_transcript_api
 supabase
@@ -71,7 +72,7 @@ groq
 google.generativeai
 pinecone
 lxml_html_clean
-azure-cognitiveservices-speech
+nvidia-riva-client
 soundfile
 sounddevice
 gpt_researcher

@@ -1,14 +1,17 @@
+"""
+Internet-Connected Chatbot with Firecrawl Researcher
+Supports web scraping via Firecrawl and custom research using LLM synthesis
+Note: Agent functionality temporarily disabled for llama-index 0.14.8 compatibility
+"""
 import os
 import requests
-import asyncio
 from datetime import datetime
 from config import config
 from helper_functions.chat_generation import generate_chat
-from llama_index.agent.openai import OpenAIAgent
-from llama_index.tools.weather import OpenWeatherMapToolSpec
-from llama_index.tools.bing_search import BingSearchToolSpec
-from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-from llama_index.llms.azure_openai import AzureOpenAI
+from helper_functions.llm_client import get_client
+# from llama_index.agent.openai import OpenAIAgent  # Temporarily disabled - incompatible with llama-index-core 0.14.8
+# from llama_index.tools.weather import OpenWeatherMapToolSpec  # Temporarily disabled
+# from llama_index.tools.bing_search import BingSearchToolSpec  # Temporarily disabled
 from newspaper import Article
 from bs4 import BeautifulSoup
 from llama_index.core.retrievers import VectorIndexRetriever
@@ -18,28 +21,17 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, get_response_synthesizer
 from llama_index.core.indices import SummaryIndex
 from llama_index.core import Settings
-from helper_functions.researcher import get_report
+from helper_functions.firecrawl_researcher import conduct_research_firecrawl
 
-bing_api_key = config.bing_api_key
-bing_endpoint = config.bing_endpoint
-bing_news_endpoint = config.bing_news_endpoint
+# Configuration
 openweather_api_key = config.openweather_api_key
+firecrawl_server_url = config.firecrawl_server_url
+retriever = config.retriever
 
 sum_template = config.sum_template
 ques_template = config.ques_template
 summary_template = PromptTemplate(sum_template)
 qa_template = PromptTemplate(ques_template)
-
-azure_api_key = config.azure_api_key
-azure_api_base = config.azure_api_base
-azure_embeddingapi_version = config.azure_embeddingapi_version
-azure_chatapi_version = config.azure_chatapi_version
-azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
-openai_gpt4_modelname = config.openai_gpt4_modelname
-azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
-openai_gpt4omini_modelname = config.openai_gpt4omini_modelname
-azure_embedding_deploymentid = config.azure_embedding_deploymentid
-openai_embedding_modelname = config.openai_embedding_modelname
 
 temperature = config.temperature
 max_tokens = config.max_tokens
@@ -50,208 +42,223 @@ max_input_size = config.max_input_size
 context_window = config.context_window
 keywords = config.keywords
 
-Settings.llm = AzureOpenAI(
-    azure_deployment=azure_gpt4_deploymentid, 
-    api_key=azure_api_key,
-    azure_endpoint=azure_api_base,
-    api_version=azure_chatapi_version,
-)
-Settings.embed_model =AzureOpenAIEmbedding(
-    azure_deployment=azure_embedding_deploymentid,
-    api_key=azure_api_key,
-    azure_endpoint=azure_api_base,
-    api_version=azure_embeddingapi_version,
-    max_retries=3,
-    embed_batch_size=1,
-)
+# Initialize default LLM client (will be overridden in functions based on user selection)
+default_client = get_client(provider="litellm", model_tier="smart")
 
+# Configure LlamaIndex Settings with default client
+Settings.llm = default_client.get_llamaindex_llm()
+Settings.embed_model = default_client.get_llamaindex_embedding()
 text_splitter = SentenceSplitter()
 Settings.text_splitter = text_splitter
 Settings.prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
-BING_FOLDER = config.BING_FOLDER
-if not os.path.exists(BING_FOLDER):
-    os.makedirs(BING_FOLDER)
+WEB_SEARCH_FOLDER = config.WEB_SEARCH_FOLDER
+if not os.path.exists(WEB_SEARCH_FOLDER):
+    os.makedirs(WEB_SEARCH_FOLDER)
 
 system_prompt = config.system_prompt
 
-def saveextractedtext_to_file(text, filename):
 
-    # Save the output to the article.txt file
-    file_path = os.path.join(BING_FOLDER, filename)
+def saveextractedtext_to_file(text, filename):
+    """Save extracted text to a file in the web search folder"""
+    file_path = os.path.join(WEB_SEARCH_FOLDER, filename)
     with open(file_path, 'w') as file:
         file.write(text)
-
     return f"Text saved to {file_path}"
 
-def clearallfiles_bing():
-    # Ensure the UPLOAD_FOLDER is empty
-    for root, dir, files in os.walk(BING_FOLDER):
+
+def clearallfiles_websearch():
+    """Clear all files in the web search folder"""
+    for root, dirs, files in os.walk(WEB_SEARCH_FOLDER):
         for file in files:
             file_path = os.path.join(root, file)
             os.remove(file_path)
 
-def get_weather_data(query):
 
-    # Initialize OpenWeatherMapToolSpec
-    weather_tool = OpenWeatherMapToolSpec(key=openweather_api_key)
-    agent = OpenAIAgent.from_tools(
-        weather_tool.to_tool_list(),
-        llm=Settings.llm,
-        verbose=False,
-    )
-    return str(agent.chat(query))
+def get_weather_data(query):
+    """Get weather data using OpenWeatherMap"""
+    # Temporarily disabled - OpenAIAgent incompatible with llama-index-core 0.14.8
+    # weather_tool = OpenWeatherMapToolSpec(key=openweather_api_key)
+    # agent = OpenAIAgent.from_tools(
+    #     weather_tool.to_tool_list(),
+    #     llm=Settings.llm,
+    #     verbose=False,
+    # )
+    # return str(agent.chat(query))
+    return "Weather data functionality is temporarily disabled while upgrading to llama-index 0.14.8. Please use Firecrawl or GPT Researcher for weather information."
+
+
+def scrape_with_firecrawl(url):
+    """
+    Scrape a URL using Firecrawl server
+
+    Args:
+        url: The URL to scrape
+
+    Returns:
+        Scraped text content or None if failed
+    """
+    try:
+        # Firecrawl v2 API endpoint
+        scrape_url = f"{firecrawl_server_url}/scrape"
+
+        payload = {
+            "url": url,
+            "formats": ["markdown", "html"],
+            "onlyMainContent": True,
+            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3"],
+            "excludeTags": ["nav", "footer", "header", "aside"],
+            "waitFor": 1000
+        }
+
+        response = requests.post(scrape_url, json=payload, timeout=30)
+
+        if response.status_code == 200:
+            result = response.json()
+            # Extract markdown or HTML content
+            if "data" in result and "markdown" in result["data"]:
+                return result["data"]["markdown"]
+            elif "data" in result and "html" in result["data"]:
+                soup = BeautifulSoup(result["data"]["html"], 'html.parser')
+                return soup.get_text()
+        else:
+            print(f"Firecrawl scrape failed with status {response.status_code}")
+            return None
+
+    except Exception as e:
+        print(f"Error scraping with Firecrawl: {str(e)}")
+        return None
+
+
+
 
 def text_extractor(url, debug=False):
+    """
+    Extract text from URL using multiple methods:
+    1. Firecrawl (if configured)
+    2. Newspaper3k
+    3. BeautifulSoup (fallback)
+    """
+    # Try Firecrawl first if configured
+    if retriever == "firecrawl":
+        firecrawl_text = scrape_with_firecrawl(url)
+        if firecrawl_text:
+            return firecrawl_text
 
+    # Fallback to newspaper3k
     if url:
-        # Extract the article
         article = Article(url)
         try:
             article.download()
             article.parse()
-            # Check if the article text has at least 75 words
             if len(article.text.split()) < 75:
                 raise Exception("Article is too short. Probably the article is behind a paywall.")
+            return article.text
         except Exception as e:
             if debug:
-                print("Failed to download and parse article from URL using newspaper package: %s. Error: %s", url, str(e))
-            # Try an alternate method using requests and beautifulsoup
+                print(f"Failed to download and parse article from URL using newspaper package: {url}. Error: {str(e)}")
+            # Try BeautifulSoup method
             try:
                 req = requests.get(url)
                 soup = BeautifulSoup(req.content, 'html.parser')
-                article.text = soup.get_text()
+                return soup.get_text()
             except Exception as e:
                 if debug:
-                    print("Failed to download article using beautifulsoup method from URL: %s. Error: %s", url, str(e))
-        return article.text
-    else:
-        return None
+                    print(f"Failed to download article using beautifulsoup method from URL: {url}. Error: {str(e)}")
+                return None
+    return None
+
 
 def get_bing_agent(query):
+    """Use Bing search agent (deprecated - replaced with Firecrawl)"""
+    # Bing search functionality has been replaced with Firecrawl Researcher
+    # Temporarily disabled - OpenAIAgent incompatible with llama-index-core 0.14.8
+    # bing_tool = BingSearchToolSpec(api_key=bing_api_key)
+    # agent = OpenAIAgent.from_tools(
+    #     bing_tool.to_tool_list(),
+    #     llm=Settings.llm,
+    #     verbose=False,
+    # )
+    # return str(agent.chat(query))
+    return "Bing search agent functionality is temporarily disabled while upgrading to llama-index 0.14.8. Please use Firecrawl or GPT Researcher for web search."
+
+
+
+
+def get_bing_news_results(query, num=5, provider="litellm", model_name=None):
+    """Get news results using Firecrawl Researcher"""
+    # Use Firecrawl Researcher for all news queries
+    return firecrawl_researcher(query + " latest news", provider, model_name)
+
+
+
+
+def get_web_results(query, num=10, provider="litellm", model_name=None):
+    """
+    Get web results using Firecrawl Researcher
+
+    Args:
+        query: Search query
+        num: Number of results (used for max_sources in researcher)
+        provider: LLM provider to use
+        model_name: Specific model name to use
+
+    Returns:
+        Research report from Firecrawl Researcher
+    """
+    # Use Firecrawl Researcher for all web queries
+    return firecrawl_researcher(query, provider, model_name)
+
+
+def parse_dynamic_model_name(model_name):
+    """
+    Parse dynamic model name to extract provider and actual model
     
-    bing_tool = BingSearchToolSpec(
-        api_key=bing_api_key,
-    )
-
-    agent = OpenAIAgent.from_tools(
-        bing_tool.to_tool_list(),
-        llm=Settings.llm,
-        verbose=False,
-    )
-
-    return str(agent.chat(query))
-
-def summarize(data_folder):
+    Args:
+        model_name: Model name (e.g., "LITELLM:gpt-4" or "OLLAMA:llama3.2:3b" or "LITELLM_SMART")
     
-    # Initialize a document
-    documents = SimpleDirectoryReader(data_folder).load_data()
-    #index = VectorStoreIndex.from_documents(documents)
-    summary_index = SummaryIndex.from_documents(documents)
-    # SummaryIndexRetriever
-    retriever = summary_index.as_retriever(
-        retriever_mode='default',
-    )
-    # configure response synthesizer
-    response_synthesizer = get_response_synthesizer(
-        response_mode="tree_summarize",
-        summary_template=summary_template,
-    )
-    # assemble query engine
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer,
-    )
-    response = query_engine.query("Generate a summary of the input context. Be as verbose as possible, while keeping the summary concise and to the point.")
-
-    return response
-
-def get_bing_news_results(query, num=5):
-
-    clearallfiles_bing()
-    # Construct a request
-    mkt = 'en-US'
-    params = { 'q': query, 'mkt': mkt, 'freshness': 'Day', 'count': num }
-    headers = { 'Ocp-Apim-Subscription-Key': bing_api_key }
-    response = requests.get(bing_news_endpoint, headers=headers, params=params)
-    response_data = response.json()  # Parse the JSON response
-
-    # Extract text from the urls and append them into a single text variable
-    all_urls = [result['url'] for result in response_data['value']]
-    all_snippets = [text_extractor(url) for url in all_urls]
-
-    # Combine snippets with titles and article names
-    combined_output = ""
-    for i, (snippet, result) in enumerate(zip(all_snippets, response_data['value'])):
-        title = f"Article {i + 1}: {result['name']}"
-        if len(snippet.split()) >= 75:  # Check if article has at least 75 words
-            combined_output += f"\n{title}\n{snippet}\n"
-
-    # Format the results as a string and append current date and time
-    output = f"Here's the scraped text from top {num} articles for: '{query}'. Current date and time is {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n"
-    output += combined_output
-
-    # Save the output to a file
-    saveextractedtext_to_file(output, "bing_results.txt")
-    # Summarize the bing search response
-    bingsummary = str(summarize(BING_FOLDER)).strip()
-
-    return bingsummary
-
-def simple_query(data_folder, query):
+    Returns:
+        Tuple of (provider, actual_model_name)
+    """
+    if model_name.startswith("LITELLM:"):
+        provider = "litellm"
+        actual_model = model_name.split("LITELLM:", 1)[1]
+    elif model_name.startswith("OLLAMA:"):
+        provider = "ollama"
+        actual_model = model_name.split("OLLAMA:", 1)[1]
+    elif model_name.startswith("LITELLM_"):
+        provider = "litellm"
+        actual_model = None  # Use default configured model
+    elif model_name.startswith("OLLAMA_"):
+        provider = "ollama"
+        actual_model = None  # Use default configured model
+    else:
+        # Fallback to litellm for other models (GEMINI, COHERE, GROQ)
+        provider = "litellm"
+        actual_model = None
     
-    # Initialize a document
-    documents = SimpleDirectoryReader(data_folder).load_data()
-    #index = VectorStoreIndex.from_documents(documents)
-    vector_index = VectorStoreIndex.from_documents(documents)
-    # configure retriever
-    retriever = VectorIndexRetriever(
-        index=vector_index,
-        similarity_top_k=6,
-    )
-    # # configure response synthesizer
-    response_synthesizer = get_response_synthesizer(
-        text_qa_template=qa_template,
-    )
-    # # assemble query engine
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer,
-    )
-    response = query_engine.query(query)
+    return provider, actual_model
 
-    return response
-
-def get_bing_results(query, num=10):
-
-    clearallfiles_bing()
-    # Construct a request
-    mkt = 'en-US'
-    params = { 'q': query, 'mkt': mkt, 'count': num, 'responseFilter': ['Webpages','News'] }
-    headers = { 'Ocp-Apim-Subscription-Key': bing_api_key }
-    response = requests.get(bing_endpoint, headers=headers, params=params)
-    response_data = response.json()  # Parse the JSON response
-
-    # Extract snippets and append them into a single text variable
-    all_snippets = [result['snippet'] for result in response_data['webPages']['value']]
-    combined_snippets = '\n'.join(all_snippets)
-    
-    # Format the results as a string
-    output = f"Here is the context from Bing for the query: '{query}'. Current date and time is {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n"
-    output += combined_snippets
-
-    # Save the output to a file
-    saveextractedtext_to_file(output, "bing_results.txt")
-    # Query the results using llama-index
-    answer = str(simple_query(BING_FOLDER, query)).strip()
-
-    return answer
 
 def internet_connected_chatbot(query, history, model_name, max_tokens, temperature, fast_response=True):
-    
+    """
+    Internet-connected chatbot with web search capabilities
+
+    Args:
+        query: User query
+        history: Chat history
+        model_name: Model to use (can be dynamic "PROVIDER:model" or predefined)
+        max_tokens: Max tokens for response
+        temperature: Sampling temperature
+        fast_response: Use fast search (Firecrawl/Bing) vs deep research
+
+    Returns:
+        Assistant's response
+    """
     assistant_reply = "Sorry, I couldn't generate a response. Please try again."
+
     try:
-        # Set the initial conversation to the default system prompt
+        # Build conversation from history
         conversation = system_prompt.copy()
         for human, assistant in history:
             conversation.append({"role": "user", "content": human})
@@ -259,50 +266,59 @@ def internet_connected_chatbot(query, history, model_name, max_tokens, temperatu
         conversation.append({"role": "user", "content": query})
 
         try:
-            # If the query contains any of the keywords, perform a search
+            # Check if query requires web search
             if any(keyword in query.lower() for keyword in keywords):
-                # If the query contains news
+                # Parse model name for GPT Researcher
+                provider, actual_model = parse_dynamic_model_name(model_name)
+                
+                # News queries
                 if "news" in query.lower():
                     if fast_response:
-                        assistant_reply = get_bing_news_results(query)
+                        assistant_reply = get_bing_news_results(query, provider=provider, model_name=actual_model)
                     else:
-                        assistant_reply = gpt_researcher(query)
-                # If the query contains weather
+                        assistant_reply = firecrawl_researcher(query, provider, actual_model)
+                # Weather queries
                 elif "weather" in query.lower():
                     assistant_reply = get_weather_data(query)
+                # General web search
                 else:
                     if fast_response:
-                        assistant_reply = get_bing_results(query)
+                        assistant_reply = get_web_results(query, provider=provider, model_name=actual_model)
                     else:
-                        assistant_reply = gpt_researcher(query)
+                        assistant_reply = firecrawl_researcher(query, provider, actual_model)
             else:
-                # Generate a response using the selected model
+                # Generate response using selected model
                 assistant_reply = generate_chat(model_name, conversation, temperature, max_tokens)
+
         except Exception as e:
-            print("Model error:", str(e))
+            print(f"Model error: {str(e)}")
             print("Resetting conversation...")
             conversation = system_prompt.copy()
 
     except Exception as e:
-        print("Error occurred while generating response:", str(e))
+        print(f"Error occurred while generating response: {str(e)}")
         conversation = system_prompt.copy()
 
     return assistant_reply
 
-def gpt_researcher(query):
+
+def firecrawl_researcher(query, provider="litellm", model_name=None):
     """
-    Conducts research on a given query using GPT Researcher and returns the research report.
-    
+    Conducts research on a given query using Firecrawl and LLM
+
     Args:
-        query (str): The research query to investigate
-        
+        query: The research query
+        provider: Either "litellm" or "ollama"
+        model_name: Optional specific model name
+
     Returns:
-        str: The research report or error message
+        Research report or error message
     """
     try:
-        report_type = "research_report"
-        report, _, _, _, _ = asyncio.run(get_report(query, report_type))
-        return report if report else "Research failed to complete."
+        report = conduct_research_firecrawl(query, provider=provider, model_name=model_name, max_sources=5)
+        return report if report else "Research failed to complete. Please check your configuration."
     except Exception as e:
-        print(f"Error in GPT Researcher: {str(e)}")
-        return f"Error conducting research: {str(e)}"
+        print(f"Error in Firecrawl Researcher: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Error conducting research: {str(e)}. Please check your Firecrawl server and LLM configuration."
