@@ -13,6 +13,7 @@ import tempfile
 from PIL import Image
 from openai import OpenAI, AzureOpenAI # Ensure AzureOpenAI is imported
 import os # Ensure os is imported for path manipulation
+from config import config
 
 # -------------- Detect mode --------------
 edit_mode = len(sys.argv) > 1
@@ -47,10 +48,10 @@ def _ensure_png(path: str) -> str:
 
 # -------------- Prompt Enhancement --------------
 def prompt_enhancer(original_prompt: str, client) -> str:
+    """Uses configured model to enhance the user's prompt for image generation."""
     if DEBUG_LOG:
         print(f"[DEBUG] Entered prompt_enhancer with original_prompt: {original_prompt}")
         print(f"[DEBUG] Client type: {type(client)}")
-    """Uses GPT-4o to enhance the user's prompt for image generation."""
     if DEBUG_LOG:
         print(f"[Enhancer] Original prompt: {original_prompt}")
     system_message = """You are an expert prompt engineer specializing in crafting detailed and effective prompts for AI image generation models. Enhance the user's input prompt to be more descriptive, vivid, and specific, maximizing the potential for a high-quality, relevant image. Consider adding details about style, composition, lighting, mood, and specific objects or characters mentioned. Keep the core subject matter intact. Respond only with the enhanced prompt, no preamble.
@@ -73,7 +74,7 @@ def prompt_enhancer(original_prompt: str, client) -> str:
         if DEBUG_LOG:
             print("[DEBUG] Sending request to client.chat.completions.create")
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=config.openai_image_enhancement_model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": original_prompt}
@@ -103,7 +104,7 @@ def prompt_enhancer(original_prompt: str, client) -> str:
 
 # NEW Function to generate a surprising prompt
 def generate_surprise_prompt(client) -> str:
-    """Uses GPT-4o to generate a surprising and creative image prompt."""
+    """Uses configured model to generate a surprising and creative image prompt."""
     if DEBUG_LOG:
         print("[DEBUG] Entered generate_surprise_prompt")
         print(f"[DEBUG] Client type: {type(client)}")
@@ -112,7 +113,7 @@ def generate_surprise_prompt(client) -> str:
         if DEBUG_LOG:
             print("[DEBUG] Sending request to client.chat.completions.create for surprise prompt")
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=config.openai_image_enhancement_model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": "Generate a surprising image prompt."}
@@ -194,7 +195,7 @@ def spawn_funny_thread(mode: str, prompt: str, *, client=None,
             turn = history + [{"role": "system", "content": _persona(speaker)}]
             try:
                 chat = local_client.chat.completions.create(
-                    model="gpt-4o",
+                    model=config.openai_image_enhancement_model,
                     messages=turn,
                     max_tokens=100,
                     temperature=0.75
@@ -251,7 +252,7 @@ def run_generate(prompt: str | None = None, size: str = "1024x1024") -> str:
         # print("Generating image... (this may take a while)")
         t0 = time.time()
         # Use the provided prompt directly and the size parameter
-        img = client.images.generate(model="gpt-image-1", prompt=prompt, n=1, size=size) # Pass size here
+        img = client.images.generate(model=config.openai_image_model, prompt=prompt, n=1, size=size) # Pass size here
         # print(f"Image generation completed in {time.time()-t0:.2f}s")
 
         image_bytes = base64.b64decode(img.data[0].b64_json)
@@ -348,6 +349,89 @@ def run_edit(image_path: str, prompt: str | None = None, size: str = "1024x1024"
             stop_evt.set() # Ensure thread is stopped only if started
 
     return out_path
+
+# ------------------ UNIFIED INTERFACE (OpenAI + NVIDIA) ------------------
+def run_generate_unified(prompt: str | None = None, size: str = "1024x1024", provider: str = "openai") -> str:
+    """
+    Unified interface for image generation supporting both OpenAI and NVIDIA.
+    
+    Args:
+        prompt: The text prompt for image generation
+        size: Image size (default: "1024x1024")
+        provider: "openai" or "nvidia" (default: "openai")
+    
+    Returns:
+        Path to the generated image
+    """
+    if provider.lower() == "nvidia":
+        from helper_functions.nvidia_image_gen import run_generate_nvidia
+        return run_generate_nvidia(prompt, size)
+    else:
+        return run_generate(prompt, size)
+
+
+def run_edit_unified(image_path: str, prompt: str | None = None, size: str = "1024x1024", provider: str = "openai") -> str:
+    """
+    Unified interface for image editing supporting both OpenAI and NVIDIA.
+    
+    Args:
+        image_path: Path to the input image
+        prompt: The edit prompt
+        size: Output image size
+        provider: "openai" or "nvidia" (default: "openai")
+    
+    Returns:
+        Path to the edited image
+    """
+    if provider.lower() == "nvidia":
+        from helper_functions.nvidia_image_gen import run_edit_nvidia
+        return run_edit_nvidia(image_path, prompt, size)
+    else:
+        return run_edit(image_path, prompt, size)
+
+
+def prompt_enhancer_unified(original_prompt: str, provider: str = "openai") -> str:
+    """
+    Unified interface for prompt enhancement supporting both OpenAI and NVIDIA.
+    
+    Args:
+        original_prompt: The original prompt to enhance
+        provider: "openai" or "nvidia" (default: "openai")
+    
+    Returns:
+        Enhanced prompt
+    """
+    if provider.lower() == "nvidia":
+        from helper_functions.nvidia_image_gen import prompt_enhancer_nvidia
+        return prompt_enhancer_nvidia(original_prompt)
+    else:
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_API_BASE")
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        return prompt_enhancer(original_prompt, client)
+
+
+def generate_surprise_prompt_unified(provider: str = "openai") -> str:
+    """
+    Unified interface for surprise prompt generation supporting both OpenAI and NVIDIA.
+    
+    Args:
+        provider: "openai" or "nvidia" (default: "openai")
+    
+    Returns:
+        Surprise prompt
+    """
+    if provider.lower() == "nvidia":
+        from helper_functions.nvidia_image_gen import generate_surprise_prompt_nvidia
+        return generate_surprise_prompt_nvidia()
+    else:
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_API_BASE")
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        return generate_surprise_prompt(client)
+
 
 # ------------------ MAIN ------------------
 if __name__ == "__main__":

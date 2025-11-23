@@ -25,3 +25,5 @@ config/config.yml
 used_personalities.txt
 used_topics.txt
 *png
+venv/
+.coverage

@@ -1,57 +1,114 @@
-# Import necessary libraries
+"""
+Chat Generation Module
+Supports multiple LLM providers: LiteLLM, Ollama, Gemini, Cohere, and Groq
+"""
 import cohere
-import google.generativeai as palm
 import google.generativeai as genai
 from groq import Groq
-from openai import AzureOpenAI as OpenAIAzure
-from openai import OpenAI
 from config import config
+from helper_functions.llm_client import get_client
 
+# API Keys
 cohere_api_key = config.cohere_api_key
+cohere_model_name = config.cohere_model_name
 google_api_key = config.google_api_key
 gemini_model_name = config.gemini_model_name
 gemini_thinkingmodel_name = config.gemini_thinkingmodel_name
-
 groq_api_key = config.groq_api_key
-azure_api_key = config.azure_api_key
-azure_api_base = config.azure_api_base
-azure_chatapi_version = config.azure_chatapi_version
-azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
-azure_gpt4omini_deploymentid = config.azure_gpt4omini_deploymentid
-llama2_api_key = config.llama2_api_key
-llama2_api_base = config.llama2_api_base
+groq_model_name = config.groq_model_name
+groq_llama_model_name = config.groq_llama_model_name
+groq_mixtral_model_name = config.groq_mixtral_model_name
+
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
+    """
+    Generate chat completion using the specified model
 
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
-    if model_name == "COHERE":
+    Args:
+        model_name: Name of the model provider/type (can be predefined or dynamic "PROVIDER:model_name")
+        conversation: List of message dictionaries
+        temperature: Sampling temperature
+        max_tokens: Maximum tokens to generate
 
+    Returns:
+        Generated text response
+    """
+    
+    # Check if this is a dynamic model name with provider prefix (e.g., "LITELLM:deepseek-v3.1" or "OLLAMA:granite4:3b")
+    if model_name.startswith("LITELLM:"):
+        # Extract the actual model name after the prefix
+        actual_model = model_name.split("LITELLM:", 1)[1]
+        # Use LiteLLM with the specific model
+        from openai import OpenAI
+        client = OpenAI(
+            base_url=config.litellm_base_url,
+            api_key=config.litellm_api_key
+        )
+        response = client.chat.completions.create(
+            model=actual_model,
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message.content
+    
+    elif model_name.startswith("OLLAMA:"):
+        # Extract the actual model name after the prefix
+        actual_model = model_name.split("OLLAMA:", 1)[1]
+        # Use Ollama with the specific model
+        from openai import OpenAI
+        client = OpenAI(
+            base_url=config.ollama_base_url,
+            api_key="ollama"  # Ollama doesn't need a real API key
+        )
+        response = client.chat.completions.create(
+            model=actual_model,
+            messages=conversation,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message.content
+
+    # LiteLLM models (predefined tiers)
+    elif model_name == "LITELLM_FAST":
+        client = get_client(provider="litellm", model_tier="fast")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    elif model_name == "LITELLM_SMART":
+        client = get_client(provider="litellm", model_tier="smart")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    elif model_name == "LITELLM_STRATEGIC":
+        client = get_client(provider="litellm", model_tier="strategic")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    # Ollama models (predefined tiers)
+    elif model_name == "OLLAMA_FAST":
+        client = get_client(provider="ollama", model_tier="fast")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    elif model_name == "OLLAMA_SMART":
+        client = get_client(provider="ollama", model_tier="smart")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    elif model_name == "OLLAMA_STRATEGIC":
+        client = get_client(provider="ollama", model_tier="strategic")
+        return client.chat_completion(conversation, temperature, max_tokens)
+
+    # Cohere
+    elif model_name == "COHERE":
         co = cohere.Client(cohere_api_key)
         response = co.chat(
-            model='command-r-08-2024',
+            model=cohere_model_name,
             message=str(conversation).replace("'", '"'),
             temperature=temperature,
             max_tokens=max_tokens,
             connectors=[{"id": "web-search"}]
         )
         return response.text
-    
-    elif model_name == "PALM":
 
-        palm.configure(api_key=google_api_key)
-        response = palm.chat(
-            model="models/chat-bison-001",
-            messages=str(conversation).replace("'", '"'),
-            temperature=temperature,
-        )
-        return response.last
-    
+    # Gemini models
     elif model_name == "GEMINI":
-    
         genai.configure(api_key=google_api_key)
         generation_config = {
             "temperature": temperature,
@@ -59,12 +116,14 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             "top_p": 0.9,
             "top_k": 1,
         }
-        gemini = genai.GenerativeModel(model_name= gemini_model_name, generation_config= generation_config)
+        gemini = genai.GenerativeModel(
+            model_name=gemini_model_name,
+            generation_config=generation_config
+        )
         response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
 
     elif model_name == "GEMINI_THINKING":
-    
         genai.configure(api_key=google_api_key)
         generation_config = {
             "temperature": temperature,
@@ -72,57 +131,18 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             "top_p": 0.9,
             "top_k": 1,
         }
-        gemini = genai.GenerativeModel(model_name= gemini_thinkingmodel_name, generation_config= generation_config)
+        gemini = genai.GenerativeModel(
+            model_name=gemini_thinkingmodel_name,
+            generation_config=generation_config
+        )
         response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
-    
-    elif model_name == "GPT4":
 
-        response = client.chat.completions.create(
-            model=azure_gpt4_deploymentid,
-            messages=conversation,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=0.9,
-            frequency_penalty=0.6,
-            presence_penalty=0.1
-        )
-        return response.choices[0].message.content
-    
-    elif model_name == "GPT35TURBO":
-
-        response = client.chat.completions.create(
-            model=azure_gpt4omini_deploymentid,
-            messages=conversation,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=0.9,
-            frequency_penalty=0.6,
-            presence_penalty=0.1
-        )
-        return response.choices[0].message.content
-    
-    elif model_name == "MIXTRAL8x7B":
-
-        local_client = OpenAI(
-            api_key=llama2_api_key,
-            base_url=llama2_api_base,
-        )
-        response = local_client.chat.completions.create(
-            model="mixtral8x7b",
-            messages=conversation,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content
-
+    # Groq
     elif model_name == "GROQ":
-
-        groq_client = Groq(
-            api_key=groq_api_key,
-        )
+        groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
-            model="deepseek-r1-distill-llama-70b",
+            model=groq_model_name,
             messages=conversation,
             temperature=temperature,
             max_completion_tokens=max_tokens,
@@ -131,12 +151,9 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         return response.choices[0].message.content
 
     elif model_name == "GROQ_LLAMA":
-
-        groq_client = Groq(
-            api_key=groq_api_key,
-        )
+        groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
+            model=groq_llama_model_name,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -145,14 +162,11 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             presence_penalty=0.1
         )
         return response.choices[0].message.content
-    
-    elif model_name == "GROQ_MIXTRAL":
 
-        groq_client = Groq(
-            api_key=groq_api_key,
-        )
+    elif model_name == "GROQ_MIXTRAL":
+        groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model=groq_mixtral_model_name,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -163,4 +177,4 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         return response.choices[0].message.content
 
     else:
-        return "Invalid model name"
+        return f"Invalid model name: {model_name}. Please choose from: LITELLM_FAST, LITELLM_SMART, LITELLM_STRATEGIC, OLLAMA_FAST, OLLAMA_SMART, OLLAMA_STRATEGIC, COHERE, GEMINI, GEMINI_THINKING, GROQ, GROQ_LLAMA, GROQ_MIXTRAL"

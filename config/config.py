@@ -8,56 +8,67 @@ config_dir = os.path.join(".", "config")
 with open(os.path.join(config_dir, "config.yml"), "r") as f:
     config_yaml = yaml.safe_load(f)
 
-# load .env config
-config_env = dotenv.dotenv_values(os.path.join(config_dir, ".env"))
+# load .env config (if exists)
+env_path = os.path.join(config_dir, ".env")
+if os.path.exists(env_path):
+    config_env = dotenv.dotenv_values(env_path)
+else:
+    config_env = {}
 
-# config parameters
-azure_api_base = config_yaml["azure_api_base"]
-azure_api_key = config_yaml["azure_api_key"]
-azure_chatapi_version = config_yaml["azure_chatapi_version"]
-azure_embeddingapi_version = config_yaml["azure_embeddingapi_version"]
+# API Keys
+cohere_api_key = config_yaml.get("cohere_api_key", "")
+cohere_model_name = config_yaml.get("cohere_model_name", "command-r-08-2024")
+google_api_key = config_yaml.get("google_api_key", "")
+gemini_model_name = config_yaml.get("gemini_model_name", "")
+gemini_thinkingmodel_name = config_yaml.get("gemini_thinkingmodel_name", "")
+groq_api_key = config_yaml.get("groq_api_key", "")
+groq_model_name = config_yaml.get("groq_model_name", "deepseek-r1-distill-llama-70b")
+groq_llama_model_name = config_yaml.get("groq_llama_model_name", "llama3-70b-8192")
+groq_mixtral_model_name = config_yaml.get("groq_mixtral_model_name", "mixtral-8x7b-32768")
 
-azure_gpt4_deploymentid = config_yaml["azure_gpt4_deploymentid"]
-openai_gpt4_modelname = config_yaml["openai_gpt4_modelname"]
-azure_gpt4omini_deploymentid = config_yaml["azure_gpt4omini_deploymentid"]
-openai_gpt4omini_modelname = config_yaml["openai_gpt4omini_modelname"]
-azure_embedding_deploymentid = config_yaml["azure_embedding_deploymentid"]
-openai_embedding_modelname = config_yaml["openai_embedding_modelname"]
+# LiteLLM Configuration
+litellm_base_url = config_yaml.get("litellm_base_url", "")
+litellm_api_key = config_yaml.get("litellm_api_key", "")
+litellm_fast_llm = config_yaml.get("litellm_fast_llm", "")
+litellm_smart_llm = config_yaml.get("litellm_smart_llm", "")
+litellm_strategic_llm = config_yaml.get("litellm_strategic_llm", "")
+litellm_embedding = config_yaml.get("litellm_embedding", "")
+litellm_default_model = config_yaml.get("litellm_default_model", "gpt-4")
 
-llama2_api_key = config_yaml["llama2_api_key"]
-llama2_api_base = config_yaml["llama2_api_base"]
+# Ollama Configuration
+ollama_base_url = config_yaml.get("ollama_base_url", "")
+ollama_fast_llm = config_yaml.get("ollama_fast_llm", "")
+ollama_smart_llm = config_yaml.get("ollama_smart_llm", "")
+ollama_strategic_llm = config_yaml.get("ollama_strategic_llm", "")
+ollama_embedding = config_yaml.get("ollama_embedding", "")
+ollama_default_model = config_yaml.get("ollama_default_model", "llama2")
 
-rvctts_api_base = config_yaml["rvctts_api_base"]
+# Retriever Configuration
+retriever = config_yaml.get("retriever", "")
+firecrawl_server_url = config_yaml.get("firecrawl_server_url", "")
+tavily_api_key = config_yaml.get("tavily_api_key", "")
 
-public_supabase_url = config_yaml["public_supabase_url"]
-supabase_service_role_key = config_yaml["supabase_service_role_key"]
+# NVIDIA NIM Configuration (for Image Studio)
+nvidia_api_key = config_yaml.get("nvidia_api_key", "")
+nvidia_base_url = config_yaml.get("nvidia_base_url", "")
+nvidia_image_gen_url = config_yaml.get("nvidia_image_gen_url", "")
+nvidia_vision_model = config_yaml.get("nvidia_vision_model", "")
+nvidia_text_model = config_yaml.get("nvidia_text_model", "")
 
-pinecone_api_key = config_yaml["pinecone_api_key"]
-pinecone_environment = config_yaml["pinecone_environment"]
+# OpenAI Image Generation Configuration
+openai_image_model = config_yaml.get("openai_image_model", "gpt-image-1")
+openai_image_enhancement_model = config_yaml.get("openai_image_enhancement_model", "gpt-4o")
 
-cohere_api_key = config_yaml["cohere_api_key"]
-google_api_key = config_yaml["google_api_key"]
-gemini_model_name = config_yaml["gemini_model_name"]
-gemini_thinkingmodel_name = config_yaml["gemini_thinkingmodel_name"]
+# Weather and other services
+openweather_api_key = config_yaml.get("openweather_api_key", "")
+pyowm_api_key = config_yaml.get("pyowm_api_key", "")
 
-groq_api_key = config_yaml["groq_api_key"]
-
-bing_api_key = config_yaml["bing_api_key"]
-bing_endpoint = config_yaml["bing_endpoint"] + "/v7.0/search"
-bing_news_endpoint = config_yaml["bing_endpoint"] + "/v7.0/news/search"
-
-azurespeechkey = config_yaml["azurespeechkey"]
-azurespeechregion = config_yaml["azurespeechregion"]
-azuretexttranslatorkey = config_yaml["azuretexttranslatorkey"]
-
-openweather_api_key = config_yaml["openweather_api_key"]
-
-yahoo_id = config_yaml["yahoo_id"]
-yahoo_app_password = config_yaml["yahoo_app_password"]
-pyowm_api_key = config_yaml["pyowm_api_key"]
+# Email configuration
+yahoo_id = config_yaml.get("yahoo_id", "")
+yahoo_app_password = config_yaml.get("yahoo_app_password", "")
 
 UPLOAD_FOLDER = config_yaml['paths']['UPLOAD_FOLDER']
-BING_FOLDER = config_yaml['paths']['BING_FOLDER']
+WEB_SEARCH_FOLDER = config_yaml['paths']['WEB_SEARCH_FOLDER']
 SUMMARY_FOLDER = config_yaml['paths']['SUMMARY_FOLDER']
 VECTOR_FOLDER = config_yaml['paths']['VECTOR_FOLDER']
 
@@ -68,6 +79,7 @@ num_output = config_yaml['settings']['num_output']
 max_chunk_overlap_ratio = config_yaml['settings']['max_chunk_overlap_ratio']
 max_input_size = config_yaml['settings']['max_input_size']
 context_window = config_yaml['settings']['context_window']
+default_chatbot_model = config_yaml['settings'].get('default_chatbot_model', 'GEMINI')
 
 # Assuming config_dir is already defined as shown in your existing config.py
 prompts_file_path = os.path.join(config_dir, "prompts.yml")
