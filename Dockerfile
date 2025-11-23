@@ -1,27 +1,27 @@
-FROM python:3.11.4
+FROM python:3.11-slim
 
-RUN \
-    set -eux; \
-    apt-get update; \
-    DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-    python3-pip \
-    build-essential \
-    python3-venv \
-    ffmpeg \
-    git \
-    ; \
-    rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install -U pip && pip3 install -U wheel && pip3 install -U setuptools==59.5.0
-COPY ./requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt && rm -r /tmp/requirements.txt
-
-# Copy the rest of the application code
-COPY . /app/
 WORKDIR /app
 
-# Expose the port that Gradio uses (default is 7860)
+# Copy requirements first for better layer caching
+COPY requirements.txt .
+
+# Install dependencies and cleanup in single layer to reduce image size
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        git \
+        build-essential && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get purge -y --auto-remove build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /root/.cache /tmp/*
+
+# Copy application code
+COPY . .
+
+# Expose Gradio port
 EXPOSE 7860
 
-# Command to run your Gradio app when the container starts
-CMD ["python", "azure_gradioui.py"]
+# Run the application
+CMD ["python", "gradio_ui_full.py"]

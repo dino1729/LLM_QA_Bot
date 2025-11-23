@@ -1,68 +1,175 @@
 # LLM_QA_Bot
 
-LLM_QA_Bot is a powerful and versatile bot that can answer questions related to various types of content. Whether you have uploaded files, articles, YouTube videos, audio files or even want to chat with AI models, LLM_QA_Bot has got you covered! 
-
-There's also a memory palace feature now to help you remember the content you've analyzed with this app. "Memorize" checkbox feature has been added to let the user choose whether they want to save the content to their memory palace or not.
-
-# Features
-
-# Content Analysis
-Upload your files or provide links to articles/YouTube videos, and let LLM_QA_Bot work its magic! It will analyze the content and provide you with detailed insights and information.
+LLM_QA_Bot is a multi-modal research and productivity workspace built with Gradio, LlamaIndex, and a provider-agnostic LLM client. It ingests documents, articles, media links, and YouTube videos, writes summaries to local indexes, and layers on a toolbelt that spans a Memory Palace, multi-provider chat, Holy Book guidance, planning utilities, and image generation.
 
 ![LLM UI](./screenshots/ui.png)
 
-Example of Ray Dalio's LinkedIn article analysis:
+## Table of Contents
+- [Overview](#overview)
+- [Feature Highlights](#feature-highlights)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Configuration Reference](#configuration-reference)
+- [Running the App](#running-the-app)
+- [Typical Workflows](#typical-workflows)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Related Projects](#related-projects)
+- [License](#license)
+
+## Overview
+LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, paste a link, or point to a video; the bot extracts transcripts or text, chunkifies content through LlamaIndex, builds local vector/summary stores, and surfaces actionable answers through conversational agents. The Memory Palace feature can persist what you analyze into Supabase for long-term personal search, while the integrated chat tabs let you pivot between Azure OpenAI, Gemini, Cohere, Groq, LiteLLM, and local Ollama deployments. Additional planners, generators, and a Bhavagad Gita chatbot extend the workspace beyond Q&A.
+
+## Feature Highlights
+
+### Content and Media Analysis
+- Drag-and-drop PDFs, text files, DOCX, images, or audio, or paste article and YouTube URLs.
+- Automatically downloads transcripts (or the full video when needed), summarizes the material, and generates example questions.
+- Maintains local `vector_index` and `summary_index` folders so follow-up questions are answered instantly.
 
 ![LLM Article Analysis](./screenshots/articleanalysis.png)
-
-Example of Steve Jobs's efficiency interview video analysis:
-
 ![LLM Video Analysis](./screenshots/stevejobsvideoanalysis.png)
 
-# Memory Palace
-LLM_QA_Bot comes with a memory palace feature. You can choose to save the analyzed content to your memory palace for easy access and reference later. The app indexes the content and stores it in a Supabase database. You can then search for the content in your memory palace and access it whenever you want. 
+### Memory Palace
+- Use the Memorize checkbox to push curated content into a Supabase-backed Memory Palace for long-term recall.
+- Search the Memory Palace via semantic similarity (with Azure/OpenAI embeddings) and stream the response back into the UI.
+- Companion Memory Palace app: https://github.com/dino1729/mymemorypalace
 
-Here is the app for the Memory Palace: https://github.com/dino1729/mymemorypalace
-
-# Chat with LLMs
-LLM_QA_Bot has integrated support for various AI models and services. You can chat with Azure OpenAI, perform Bing searches for the latest news updates, utilize Google palm, Cohere, and even run local AI models for local inferencing.
+### Multi-provider Chat and Live Search
+- Swap between Azure OpenAI, Gemini, Cohere, Groq (Llama/Mixtral), LiteLLM, or local Ollama tiers for chat completions.
+- Trigger Firecrawl/Tavily-powered browsing to ground the conversation with fresh web data or Bing news headlines.
 
 ![LLM Chat](./screenshots/palm.png)
-
 ![LLM Latest News](./screenshots/news.png)
 
-# Holy Book Chatbot
-If you seek wisdom from the holy book, LLM_QA_Bot has you covered. It now includes a Pinecone database with Bhagavad Gita embeddings. You can access the database to get gyan (knowledge) from the holy book.
+### Holy Book Chatbot
+- Query a Pinecone database seeded with Bhagavad Gita embeddings for spiritual guidance.
+- Responses combine retrieved verses with the active LLM for grounded commentary.
 
 ![LLM Gita](./screenshots/gita.png)
 
-# Random Food Cravings Generator
-Feeling hungry but can't decide what to eat? LLM_QA_Bot can help! It includes a random food cravings generator that suggests delicious food options to satisfy your cravings.
+### Everyday Agents
+- Random Food Cravings generator suggests something new to eat.
+- Trip Planner builds day-by-day itineraries for any city.
+- Weather hooks (OpenWeather/PyOWM) keep plans realistic.
+- Image Studio (OpenAI Image / NVIDIA NIM) supports prompt-to-image and edit workflows.
 
 ![LLM Cravings generator](./screenshots/cravings.png)
-
-# Trip Planner
-Planning a trip? LLM_QA_Bot is here to assist you. It now includes a trip planner feature that can help you plan your next adventure.
-
 ![LLM Trip Planner](./screenshots/cityplanner.png)
 
-# Setup
-To use LLM_QA_Bot, follow these steps:
+## Architecture
+- **Interface**: Gradio apps in `azure_gradioui.py` (Azure-focused) and `gradio_ui_full.py` (full provider switchboard).
+- **Content processing**: `helper_functions/analyzers.py` orchestrates Whisper, pytube, LlamaIndex, and the unified LLM client.
+- **Vector storage**: Local folders (`UPLOAD_FOLDER`, `SUMMARY_FOLDER`, `VECTOR_FOLDER`) hold raw uploads and persisted indexes.
+- **Memory Palace**: `helper_functions/query_supabasememory.py` streams Supabase RPC results via Azure embeddings.
+- **LLM routing**: `helper_functions/llm_client.py` selects LiteLLM, Ollama, Gemini, Cohere, Groq, or native OpenAI clients.
+- **Aux tools**: Trip planner, food planner, query agents, and image utilities live under `helper_functions/`.
+- **Testing**: Over 150 pytest cases (see `tests/`) cover analyzers, chat generation, Firecrawl, planners, and Supabase flows.
 
-Install all the required packages mentioned in the requirements.txt file.
+## Prerequisites
+- Python 3.10+ (virtual environments recommended).
+- `ffmpeg` installed and on your PATH (required for moviepy/Whisper).
+- Access tokens for the providers you plan to enable (OpenAI/Azure, Gemini, Cohere, Groq, LiteLLM proxy, Ollama, Tavily, Firecrawl, Supabase, OpenWeather, etc.).
+- Optional: NVIDIA NIM credentials for the image studio tab, and a running Supabase project with the `mp_search` RPC if you intend to use the Memory Palace sync.
 
-Next, fill in the API keys and other details mentioned in the config/config.example.yml file and rename it to config.yml.
+## Setup
+1. Clone and enter the repository:
+   ```bash
+   git clone https://github.com/dino1729/LLM_QA_Bot.git
+   cd LLM_QA_Bot
+   ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows use .venv\\Scripts\\activate
+   ```
+3. Install dependencies (GPU-specific extras such as `whisper` or `supabase` are already listed):
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Copy the configuration template and provide real values:
+   ```bash
+   cp config/config.example.yml config/config.yml
+   ```
+5. (Optional) Add a `config/.env` file for secrets you do not want checked into version control.
+6. Update `config/prompts.yml` if you want to customize summarization or question templates.
+7. Ensure the directories referenced in `paths` exist or leave them blank to let the app create them automatically.
 
-Finally, run the app using the following command:
+## Configuration Reference
+All runtime settings live in `config/config.yml`. The most important sections are:
 
+| Section | Keys (examples) | Purpose |
+| --- | --- | --- |
+| Gemini / Cohere / Groq | `google_api_key`, `cohere_api_key`, `groq_api_key`, `groq_model_name`, etc. | Enables alternative LLM backends. |
+| LiteLLM | `litellm_base_url`, `litellm_api_key`, `litellm_fast_llm`, `litellm_smart_llm`, `litellm_strategic_llm`, `litellm_embedding` | Route chat, document Q&A, and embeddings through a LiteLLM gateway. |
+| Ollama | `ollama_base_url`, tier-specific defaults | Point the UI to local models. |
+| Retriever / Firecrawl / Tavily | `retriever`, `firecrawl_server_url`, `tavily_api_key` | Power web research and ingestion. |
+| Image generation | `nvidia_*`, `openai_image_model`, `openai_image_enhancement_model` | Configure the Image Studio tab. |
+| Weather / Email | `openweather_api_key`, `pyowm_api_key`, `yahoo_id`, `yahoo_app_password` | Used by the planner and notification helpers. |
+| Memory Palace | `supabase_service_role_key`, `public_supabase_url`, or `supabase_url`/`supabase_key` via `.env` | Required to push or query saved memories. |
+| Paths | `UPLOAD_FOLDER`, `WEB_SEARCH_FOLDER`, `SUMMARY_FOLDER`, `VECTOR_FOLDER` | File system locations for temporary assets and indexes. |
+| Settings | `temperature`, `max_tokens`, `model_name`, `context_window`, `default_chatbot_model`, etc. | LlamaIndex prompt/helper defaults. |
+
+`config/prompts.yml` stores the templates for summary, example generation, and QA. Adjust these to enforce tone, length, or metadata policies. When using OpenAI for image operations, also set the `OPENAI_API_KEY` and optionally `OPENAI_API_BASE` environment variables so the SDK in `gptimage_tool` can authenticate.
+
+## Running the App
+### Local Gradio UI (Azure-focused layout)
 ```bash
 python azure_gradioui.py
 ```
 
-# Instruction set up Docker container:
+### Local Gradio UI (Full provider switchboard)
+```bash
+python gradio_ui_full.py
+```
 
+### Docker
 ```bash
 docker build -t llmqabot .
 docker run --restart always -p 7860:7860 --name llmqabot llmqabot
 ```
+Mount a volume for the `paths` directories if you want to persist indexes or uploads between container restarts.
+
+## Typical Workflows
+### Analyze a document, article, or video
+1. Open the "Content Analysis" tab and upload files or paste a URL/YouTube link.
+2. Choose whether to run in lite mode (transcript only) or allow full downloads.
+3. Review the generated summary and suggested follow-up questions.
+4. Ask additional questions against the freshly-built vector store without reprocessing the source.
+
+### Grow and query the Memory Palace
+1. Check the "Memorize" box before or after analysis to store the document in Supabase.
+2. Use the Memory Palace tab to run semantic searches across everything you have saved.
+3. Streamed responses show which memories were retrieved so you can cite or revisit them later.
+
+### Chat, research, and plan
+1. Switch to the Chat tab to pick Azure, Gemini, Cohere, Groq, LiteLLM, or Ollama models.
+2. Enable Firecrawl/Tavily to blend real-time search with the LLM response for breaking news or research tasks.
+3. Hop into the Holy Book, Trip Planner, Food Planner, or Weather tabs for specialized agents that share the same context window.
+
+### Generate or edit images
+1. Provide a prompt (or let the enhanced prompt helper rewrite it) in the Image Studio tab.
+2. Use the Generate workflow for brand-new images or the Edit workflow with an uploaded file.
+3. Configure output size and provider (OpenAI Images or NVIDIA NIM) based on the credentials you supplied.
+
+## Testing
+- Activate your virtual environment and run `pytest tests -v` for the full suite.
+- See `tests/README.md` for focused commands, coverage reporting, and pytest tips (e.g., `pytest tests --cov=helper_functions --cov-report=term-missing`).
+- Tests rely on the fixtures in `tests/conftest.py` to mock Supabase, OpenAI, Firecrawl, NVIDIA services, and temporary folders, so they are safe to run without hitting external APIs.
+
+## Troubleshooting
+- **ffmpeg not found**: install it via your package manager (`brew install ffmpeg`, `sudo apt install ffmpeg`, etc.) so Whisper/moviepy can handle audio extraction.
+- **Embeddings or chat fail to load**: confirm the corresponding API keys are present in `config/config.yml` or `config/.env`, and restart the app after editing the file.
+- **Vector index errors**: delete the folders configured in `paths` (or click the Clear button in the UI) to force a rebuild.
+- **Supabase RPC complaints**: ensure the `mp_search` stored procedure exists in your Supabase project and that the service role key has permission to execute it.
+- **Docker GPU/volume needs**: add `--gpus all` if you expect to run Whisper locally, and mount host folders so uploads and indexes are persisted.
+
+## Related Projects
+- Memory Palace UI: https://github.com/dino1729/mymemorypalace
+- Firecrawl Researcher samples: see `test_firecrawl_researcher.py` for mocked usage patterns.
+
+## License
+LLM_QA_Bot is released under the [MIT License](./LICENSE).
+
 ![Alt](https://repobeats.axiom.co/api/embed/1549a965f82a760a1ec07652a8debb95b9599fd3.svg "Repobeats analytics image")
