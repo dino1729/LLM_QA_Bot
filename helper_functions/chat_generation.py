@@ -1,16 +1,13 @@
 """
 Chat Generation Module
-Supports multiple LLM providers: LiteLLM, Ollama, Gemini, Cohere, and Groq
+Supports multiple LLM providers: LiteLLM, Ollama, Gemini, and Groq
 """
-import cohere
 import google.generativeai as genai
 from groq import Groq
 from config import config
 from helper_functions.llm_client import get_client
 
 # API Keys
-cohere_api_key = config.cohere_api_key
-cohere_model_name = config.cohere_model_name
 google_api_key = config.google_api_key
 gemini_model_name = config.gemini_model_name
 gemini_thinkingmodel_name = config.gemini_thinkingmodel_name
@@ -95,18 +92,6 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         client = get_client(provider="ollama", model_tier="strategic")
         return client.chat_completion(conversation, temperature, max_tokens)
 
-    # Cohere
-    elif model_name == "COHERE":
-        co = cohere.Client(cohere_api_key)
-        response = co.chat(
-            model=cohere_model_name,
-            message=str(conversation).replace("'", '"'),
-            temperature=temperature,
-            max_tokens=max_tokens,
-            connectors=[{"id": "web-search"}]
-        )
-        return response.text
-
     # Gemini models
     elif model_name == "GEMINI":
         genai.configure(api_key=google_api_key)
@@ -177,4 +162,4 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         return response.choices[0].message.content
 
     else:
-        return f"Invalid model name: {model_name}. Please choose from: LITELLM_FAST, LITELLM_SMART, LITELLM_STRATEGIC, OLLAMA_FAST, OLLAMA_SMART, OLLAMA_STRATEGIC, COHERE, GEMINI, GEMINI_THINKING, GROQ, GROQ_LLAMA, GROQ_MIXTRAL"
+        return f"Invalid model name: {model_name}. Please choose from: LITELLM_FAST, LITELLM_SMART, LITELLM_STRATEGIC, OLLAMA_FAST, OLLAMA_SMART, OLLAMA_STRATEGIC, GEMINI, GEMINI_THINKING, GROQ, GROQ_LLAMA, GROQ_MIXTRAL"

@@ -1,31 +1,46 @@
 import smtplib
+import logging
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from openai import AzureOpenAI as OpenAIAzure
 from pyowm import OWM
 from config import config
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.audio_processors import text_to_speech_nospeak
-from datetime import datetime
+from helper_functions.llm_client import get_client
 import random
-import supabase
 import os
 
-azure_api_key = config.azure_api_key
-azure_api_base = config.azure_api_base
+# Configure logging with timestamps
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
-azure_chatapi_version = config.azure_chatapi_version
-azure_gpt4_deploymentid = config.azure_gpt4_deploymentid
+# --- Configuration ---
+# You can switch to "ollama" if preferred
+LLM_PROVIDER = "litellm" 
+# LLM_PROVIDER = "ollama"
 
-azure_embedding_version = config.azure_embeddingapi_version
-azure_embedding_deploymentid = config.azure_embedding_deploymentid
 
-supabase_service_role_key = config.supabase_service_role_key
-public_supabase_url = config.public_supabase_url
+yahoo_id = config.yahoo_id
+yahoo_app_password = config.yahoo_app_password
+pyowm_api_key = config.pyowm_api_key
+
+temperature = config.temperature
+max_tokens = config.max_tokens
+
+# Updated model names for LiteLLM/Ollama
+if LLM_PROVIDER == "litellm":
+    model_names = ["LITELLM_SMART", "LITELLM_STRATEGIC"]
+else:
+    model_names = ["OLLAMA_SMART", "OLLAMA_STRATEGIC"]
+
+# --- End Configuration ---
 
 # List of topics
-
 topics = [  
     "How can I be more productive?", "How to improve my communication skills?", "How to be a better leader?",  
     "How are electric vehicles less harmful to the environment?", "How can I think clearly in adverse scenarios?",  
@@ -133,16 +148,6 @@ topics = [
     "How did the development of nuclear weapons transform the relationship between science and government?"
 ] 
 
-yahoo_id = config.yahoo_id
-yahoo_app_password = config.yahoo_app_password
-pyowm_api_key = config.pyowm_api_key
-
-temperature = config.temperature
-max_tokens = config.max_tokens
-
-model_names = ["BING+OPENAI", "GPT4OMINI", "GPT4", "GEMINI", "MIXTRAL8x7B"]
-
-# List of personalities
 # List of personalities
 personalities = [
     # Historical figures and philosophers
@@ -201,45 +206,6 @@ def get_random_personality():
 
     return personality
 
-def generate_embeddings(text, model=azure_embedding_deploymentid):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_embedding_version,
-    )    
-    return client.embeddings.create(input = [text], model=model).data[0].embedding
-
-def generate_gpt_response_memorypalace(user_message):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
-    syspromptmessage = f"""
-    You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant that is designed by Tony Stark to be a powerful tool for whoever controls it. You help Dinesh in various tasks. In this scenario, you are helping Dinesh recall important concepts he learned and put them in a memory palace aka, his second brain. You will be given a topic along with the semantic search results from the memory palace. You need to generate a summary or lesson learned based on the search results. You have to praise Dinesh for his efforts and encourage him to continue learning. You can also provide additional information or tips to help him understand the topic better. You are not a replacement for human intelligence, but a tool to enhance Dinesh's intelligence. You are here to help Dinesh succeed in his learning journey. You are a positive and encouraging presence in his life. You are here to support him in his quest for knowledge and growth. You are EDITH, and you are here to help Dinesh succeed. Dinesh wants to master the best of what other people have already figured out.
-    
-    Additionally, for each topic, provide one historical anecdote that can go back up to 10,000 years ago when human civilization started. The lesson can include a key event, discovery, mistake, and teaching from various cultures and civilizations throughout history. This will help Dinesh gain a deeper understanding of the topic by learning from the past since if one does not know history, one thinks short term; if one knows history, one thinks medium and long term..
-    
-    Here's a bit more about Dinesh:
-    You should be a centrist politically. I reside in Hillsboro, Oregon, and I hold the position of Senior Analog Circuit Design Engineer with eight years of work experience. I am a big believer in developing Power Delivery IPs with clean interfaces and minimal maintenance. I like to work on Raspberry Pi projects and home automation in my free time. Recently, I have taken up the exciting hobby of creating LLM applications. Currently, I am engaged in the development of a fantasy premier league recommender bot that selects the most suitable players based on statistical data for a specific fixture, all while adhering to a budget. Another project that I have set my sights on is a generativeAI-based self-driving system that utilizes text prompts as sensor inputs to generate motor drive outputs, enabling the bot to control itself. The key aspect of this design lies in achieving a latency of 1000 tokens per second for the LLM token generation, which can be accomplished using a local GPU cluster. I am particularly interested in the field of physics, particularly relativity, quantum mechanics, game theory and the simulation hypothesis. I have a genuine curiosity about the interconnectedness of things and the courage to explore and advocate for interventions, even if they may not be immediately popular or obvious. My ultimate goal is to achieve success in all aspects of life and incorporate the “systems thinking” and “critical thinking” mindset into my daily routine. I aim to apply systems thinking to various situations, both professional and personal, to gain insights into different perspectives and better understand complex problems. Currently, I am captivated by the achievements of individuals like Chanakya, Nicholas Tesla, Douglas Englebart, JCR Licklider, and Vannevar Bush, and I aspire to emulate their success. I’m also super interested in learning more about game theory and how people behave in professional settings. I’m curious about the strategies that can be used to influence others and potentially advance quickly in the workplace. I’m curious about the strategies that can be used to influence others and potentially advance quickly in the workplace. So, coach me on how to deliver my presentations, communicate clearly and concisely, and how to conduct myself in front of influential people. My ultimate goal is to lead a large organization where I can create innovative technology that can benefit billions of people and improve their lives.
-    """
-    system_prompt = [{
-        "role": "system",
-        "content": syspromptmessage
-    }]
-    conversation = system_prompt.copy()
-    conversation.append({"role": "user", "content": str(user_message)})
-    response = client.chat.completions.create(
-        model=azure_gpt4_deploymentid,
-        messages=conversation,
-        max_tokens=2048,
-        temperature=0.4,
-    )
-    message = response.choices[0].message.content
-    conversation.append({"role": "assistant", "content": str(message)})
-
-    return message
-
 def get_random_topic():
     used_topics_file = "used_topics.txt"
 
@@ -272,79 +238,199 @@ def get_random_topic():
     return topic
 
 def get_random_lesson():
-    try:
-        # Step 1: Select a random topic
-        topic = get_random_topic()
-
-        # Step 2: Generate embeddings for the topic
-        topic_embedding = generate_embeddings(topic)
-        # Debugging
-        # print(f"Topic: {topic}")
-
-        try:
-            supabase_client = supabase.Client(public_supabase_url, supabase_service_role_key)
-            # Step 3: Perform a vector search in the Supabase database
-            response = supabase_client.rpc('mp_search', {
-                'query_embedding': topic_embedding,
-                'similarity_threshold': 0.4,  # Adjust this threshold as needed
-                'match_count': 6
-            }).execute()
-            
-            # Extract the content from the top matches
-            top_matches = response.data
-            contents = [match['content'] for match in top_matches]
-
-            # Step 4: Generate a response using OpenAI
-            prompt = f"Today's Topic: {topic}\n\nBased on the following lessons, generate a summary or lesson learned for the topic:\n\n" + "\n\n".join(contents)
-            lesson_learned = generate_gpt_response_memorypalace(prompt)
-        
-        except Exception as e:
-            print(f"Error connecting to Supabase: {str(e)}")
-            # Fallback: Generate a response without using Supabase data
-            prompt = f"Today's Topic: {topic}\n\nPlease provide insights, lessons, and historical context about this topic. Include one historical anecdote going back up to 10,000 years of human civilization that relates to this topic."
-            lesson_learned = generate_gpt_response_memorypalace(prompt)
-            
-        return lesson_learned
+    """
+    Generate a comprehensive daily lesson using LLM's knowledge
+    No database required - leverages the model's training data
+    """
+    topic = get_random_topic()
     
+    # Enhanced prompt for rich, meaningful content
+    prompt = f"""Topic: {topic}
+
+Create a comprehensive, insightful lesson that includes:
+
+1. **Key Insights**: Practical wisdom and actionable principles about this topic
+2. **Historical Context**: One compelling historical anecdote from human civilization (can go back up to 10,000 years) that illustrates these principles in action
+3. **Modern Application**: How these insights apply to engineering, leadership, and decision-making today
+4. **Deeper Understanding**: Why this matters for long-term success and systems thinking
+
+Make it engaging, well-structured (3-4 paragraphs), and valuable for someone interested in mastering timeless principles of success.
+
+Start directly with the content - no meta-commentary."""
+    
+    lesson_learned = generate_lesson_response(prompt)
+    return lesson_learned
+
+def generate_lesson_response(user_message):
+    """
+    Generate a comprehensive lesson/learning content with historical context
+    Uses LLM's knowledge directly - no external database required
+    """
+    logger.info(f"Generating lesson for topic: {user_message[:100]}...")
+    
+    # Use fast model to avoid reasoning artifacts
+    client = get_client(provider=LLM_PROVIDER, model_tier="fast")
+    
+    syspromptmessage = f"""You are EDITH, an expert teacher helping Dinesh master timeless principles of success.
+
+Your lessons should:
+- Start immediately with engaging educational content (NO meta-commentary like "The user wants..." or "Let me provide...")
+- Provide 3-4 well-structured paragraphs with clear insights
+- Include ONE specific historical example or anecdote (can reference events from up to 10,000 years of human civilization)
+- Connect historical wisdom to modern application in engineering, leadership, or strategic thinking
+- Be practical and actionable for someone pursuing mastery in their field
+
+Context about Dinesh:
+- Senior Analog Circuit Design Engineer with systems thinking mindset
+- Values: clarity, efficiency, timeless principles over temporary trends
+- Inspired by: Chanakya, Tesla, Engelbart, game theory, first principles thinking
+
+Write as if having a thoughtful conversation with a colleague. Be direct, insightful, and substantial."""
+    
+    conversation = [
+        {"role": "system", "content": syspromptmessage},
+        {"role": "user", "content": user_message}
+    ]
+    
+    try:
+        message = client.chat_completion(
+            messages=conversation,
+            max_tokens=4000,
+            temperature=0.65
+        )
+        
+        logger.debug(f"Raw LLM response for lesson (first 300 chars): {message[:300] if message else 'EMPTY'}")
+        logger.debug(f"Full raw response length: {len(message) if message else 0}")
+        
+        if not message or len(message.strip()) == 0:
+            logger.warning("LLM returned empty response for lesson generation")
+            return _get_fallback_lesson()
+        
+        # Aggressive cleaning of reasoning artifacts
+        cleaned = message.strip()
+        
+        # Remove common reasoning patterns at the start
+        reasoning_patterns = [
+            "the user wants", "user wants", "user says", "user is asking",
+            "we need to", "we need", "we must", "let me provide", "let me",
+            "here's", "here is", "i'll provide", "i'll", "i will",
+            "task:", "topic:", "provide a", "generate", "create a lesson",
+            "write a lesson", "this lesson", "this response", "my response",
+            "to answer this", "in response", "based on"
+        ]
+        
+        # Split into lines and find first substantial content line
+        lines = cleaned.split('\n')
+        start_idx = 0
+        
+        for i, line in enumerate(lines):
+            line_lower = line.lower().strip()
+            # Skip empty lines and lines starting with reasoning patterns
+            if line.strip():
+                # Check if line starts with reasoning pattern
+                has_reasoning = any(line_lower.startswith(pattern) for pattern in reasoning_patterns)
+                # Check if line has substantial content
+                has_substance = len(line.strip()) > 30 and not line.strip().endswith(':')
+                
+                if not has_reasoning and has_substance:
+                    start_idx = i
+                    logger.debug(f"Starting content at line {i}: {line[:50]}")
+                    break
+        
+        cleaned = '\n'.join(lines[start_idx:]).strip()
+        
+        # If still has artifacts at the very beginning, try harder
+        first_para = cleaned.split('\n\n')[0] if '\n\n' in cleaned else cleaned[:250]
+        if any(pattern in first_para.lower() for pattern in reasoning_patterns):
+            logger.debug("Found reasoning patterns in first paragraph, using second paragraph")
+            # Use second paragraph if available
+            paragraphs = cleaned.split('\n\n')
+            if len(paragraphs) > 1:
+                cleaned = '\n\n'.join(paragraphs[1:]).strip()
+        
+        # Final validation - ensure we have meaningful content
+        if cleaned and len(cleaned) > 200:
+            logger.info(f"Successfully generated lesson ({len(cleaned)} chars)")
+            return cleaned
+        else:
+            logger.warning(f"Generated lesson too short ({len(cleaned) if cleaned else 0} chars), using fallback")
+            return _get_fallback_lesson()
+        
     except Exception as e:
-        # Ultimate fallback if everything fails
-        print(f"Critical error in get_random_lesson: {str(e)}")
-        return "Today I encountered some technical difficulties retrieving your lesson. However, remember that setbacks are temporary, and persistence is key to overcoming challenges. Let's continue our learning journey tomorrow with renewed enthusiasm."
+        logger.error(f"Error generating lesson: {e}", exc_info=True)
+        return _get_fallback_lesson()
+
+
+def _get_fallback_lesson():
+    """Return a fallback lesson when generation fails"""
+    fallback = """The pursuit of mastery requires understanding that excellence is not a destination but a continuous journey. Ancient philosophers like Aristotle understood this, coining the term "eudaimonia" to describe the flourishing that comes from living up to one's potential through disciplined practice.
+
+Consider the example of Leonardo da Vinci, who kept detailed notebooks throughout his life, documenting not just his artistic techniques but his observations of nature, engineering concepts, and philosophical musings. This habit of systematic learning and documentation allowed him to make connections across domains that others missed.
+
+For modern engineers and leaders, this translates to three practical principles: First, maintain a learning system - whether notebooks, digital tools, or structured reflection time. Second, seek cross-domain knowledge, as innovation often happens at the intersection of fields. Third, embrace deliberate practice over mere repetition, focusing on the areas where improvement is most needed.
+
+The historical parallel to the Roman aqueduct engineers is instructive: they built systems that lasted millennia not through revolutionary innovation alone, but through meticulous attention to fundamentals, redundancy in design, and deep understanding of the materials and forces they worked with."""
+    
+    logger.info("Using fallback lesson content")
+    return fallback
 
 def generate_gpt_response(user_message):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
-    syspromptmessage = f"""
-    You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant that is designed by Tony Stark to be a powerful tool for whoever controls it. You help Dinesh in various tasks. Your response will be converted into speech and will be played on Dinesh's smart speaker. Your responses must reflect Tony's characteristic mix of confidence and humor. Start your responses with a unique, witty and engaging introduction to grab the Dinesh's attention.
-    """
-    system_prompt = [{
-        "role": "system",
-        "content": syspromptmessage
-    }]
-    conversation = system_prompt.copy()
-    conversation.append({"role": "user", "content": str(user_message)})
-    response = client.chat.completions.create(
-        model=azure_gpt4_deploymentid,
-        messages=conversation,
-        max_tokens=2048,
-        temperature=0.3,
-    )
-    message = response.choices[0].message.content
-    conversation.append({"role": "assistant", "content": str(message)})
+    """Generate a speech-friendly response from EDITH"""
+    client = get_client(provider=LLM_PROVIDER, model_tier="smart")
+    
+    syspromptmessage = f"""You are EDITH, Tony Stark's AI assistant, speaking to Dinesh through his smart speaker.
 
-    return message
+Your response will be converted to speech, so:
+- Be conversational and engaging
+- Use Tony's confidence and wit
+- Start with a unique, attention-grabbing introduction
+- Keep it natural for listening (not reading)
+
+CRITICAL: Write your response as if you're speaking directly to Dinesh. Do NOT include:
+- "The user wants..."
+- "We need to respond..."
+- Analysis of the request
+- Meta-commentary
+
+Just deliver the actual spoken message to Dinesh, starting immediately with your greeting.
+"""
+    
+    conversation = [
+        {"role": "system", "content": syspromptmessage},
+        {"role": "user", "content": str(user_message)}
+    ]
+    
+    message = client.chat_completion(
+        messages=conversation,
+        max_tokens=2500,
+        temperature=0.4
+    )
+    
+    # Clean up reasoning artifacts
+    cleaned = message.strip()
+    
+    if cleaned.lower().startswith(("the user", "user wants", "we need", "let me", "task:")):
+        lines = cleaned.split('\n')
+        start_idx = 0
+        for i, line in enumerate(lines):
+            if line.strip() and not any(line.lower().startswith(prefix) for prefix in 
+                ["the user", "user wants", "we need", "let me", "task:", "provide", "respond with"]):
+                start_idx = i
+                break
+        cleaned = '\n'.join(lines[start_idx:]).strip()
+    
+    return cleaned
 
 def generate_gpt_response_newsletter(user_message):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
-    syspromptmessage = f"""
-    You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant designed by Tony Stark. For the newsletter format, follow these rules strictly:
+    """
+    Generate newsletter-formatted news content with error handling
+    Returns formatted content or fallback summary if generation fails
+    """
+    try:
+        client = get_client(provider=LLM_PROVIDER, model_tier="smart")
+        
+        syspromptmessage = f"""
+You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant designed by Tony Stark. For the newsletter format, follow these rules strictly:
 
     1. Each section must have exactly 5 news items
     2. Format each item exactly as: "- [Source] Headline and description | Date: MM/DD/YYYY | URL | Commentary: Brief insight"
@@ -357,6 +443,7 @@ def generate_gpt_response_newsletter(user_message):
     6. Always include a short, insightful commentary
     7. Ensure dates are in MM/DD/YYYY format and are current/recent
     8. Maintain consistent formatting using the pipe (|) separator
+        9. ALWAYS start each section with the exact header format: "## Section Name Update:"
 
     Example of correct format with real URL:
     - [Reuters] Major tech breakthrough announced | Date: 02/10/2024 | https://real-url-from-source.com/article | Commentary: This could reshape the industry
@@ -364,30 +451,32 @@ def generate_gpt_response_newsletter(user_message):
     Example of correct format when URL is not available:
     - [Reuters] Major tech breakthrough announced | Date: 02/10/2024 | Commentary: This could reshape the industry
     """
-    system_prompt = [{
-        "role": "system",
-        "content": syspromptmessage
-    }]
-    conversation = system_prompt.copy()
-    conversation.append({"role": "user", "content": str(user_message)})
-    response = client.chat.completions.create(
-        model=azure_gpt4_deploymentid,
-        messages=conversation,
-        max_tokens=2048,
-        temperature=0.3,
-    )
-    message = response.choices[0].message.content
-    conversation.append({"role": "assistant", "content": str(message)})
-    return message
+        system_prompt = [{"role": "system", "content": syspromptmessage}]
+        conversation = system_prompt.copy()
+        conversation.append({"role": "user", "content": str(user_message)})
+        
+        message = client.chat_completion(
+            messages=conversation,
+            max_tokens=3000,
+            temperature=0.3
+        )
+        
+        # Verify we got meaningful content
+        if not message or len(message.strip()) < 100:
+            print("Warning: Newsletter generation returned minimal content")
+            return ""
+            
+        return message
+        
+    except Exception as e:
+        print(f"Error generating newsletter: {e}")
+        return ""
 
 def generate_gpt_response_voicebot(user_message):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
+    client = get_client(provider=LLM_PROVIDER, model_tier="smart")
+    
     syspromptmessage = f"""
-    You are EDITH, speaking through a voicebot. For the voice format:
+You are EDITH, speaking through a voicebot. For the voice format:
     1. Use conversational, natural speaking tone (e.g., "Today in tech news..." or "Moving on to financial markets...")
     2. Break down complex information into simple, clear sentences
     3. Use verbal transitions between topics (e.g., "Now, let's look at..." or "In other news...")
@@ -399,10 +488,7 @@ def generate_gpt_response_voicebot(user_message):
     9. End each section with a brief overview or key takeaway
     10. Use listener-friendly phrases like "As you might have heard" or "Interestingly"
     """
-    system_prompt = [{
-        "role": "system",
-        "content": syspromptmessage
-    }]
+    system_prompt = [{"role": "system", "content": syspromptmessage}]
     conversation = system_prompt.copy()
     
     # Transform the input message to be more voice-friendly
@@ -411,41 +497,121 @@ def generate_gpt_response_voicebot(user_message):
     voice_friendly_message = voice_friendly_message.replace("For each category below, provide exactly 5 key bullet points. Each point should follow this format:", "")
     
     conversation.append({"role": "user", "content": voice_friendly_message})
-    response = client.chat.completions.create(
-        model=azure_gpt4_deploymentid,
+    
+    message = client.chat_completion(
         messages=conversation,
         max_tokens=2048,
-        temperature=0.4,
+        temperature=0.4
     )
-    message = response.choices[0].message.content
-    conversation.append({"role": "assistant", "content": str(message)})
     return message
 
 def generate_quote(random_personality):
-    client = OpenAIAzure(
-        api_key=azure_api_key,
-        azure_endpoint=azure_api_base,
-        api_version=azure_chatapi_version,
-    )
-    quote_prompt = f"""
-    Provide a random quote from {random_personality} to inspire Dinesh for the day.
-    """
-    response = client.chat.completions.create(
-        model=azure_gpt4_deploymentid,
-        messages=[{"role": "user", "content": quote_prompt}],
-        max_tokens=60,
-        temperature=0.5,
-    )
-    quote = response.choices[0].message.content.strip()
+    """Generate an inspirational quote from the given personality"""
+    import re
+    
+    logger.info(f"Generating quote for personality: {random_personality}")
+    
+    # Use fast model for simple quote generation to avoid reasoning artifacts
+    client = get_client(provider=LLM_PROVIDER, model_tier="fast")
+    
+    conversation = [
+        {"role": "system", "content": f"You provide famous quotes from {random_personality}. Reply with ONLY the quote in quotation marks - no introduction, no explanation, just the quote."},
+        {"role": "user", "content": f"Give me an inspirational quote from {random_personality}"}
+    ]
+    
+    try:
+        message = client.chat_completion(
+            messages=conversation,
+            max_tokens=250,
+            temperature=0.8
+        )
+        
+        logger.debug(f"Raw LLM response for quote (first 200 chars): {message[:200] if message else 'EMPTY'}")
+        logger.debug(f"Full raw response length: {len(message) if message else 0}")
+        
+        if not message or len(message.strip()) == 0:
+            logger.warning("LLM returned empty response for quote generation")
+            return _get_fallback_quote(random_personality)
+        
+        cleaned = message.strip()
+        
+        # Find any quoted text
+        quote_matches = re.findall(r'"([^"]+)"', cleaned)
+        logger.debug(f"Found {len(quote_matches)} quoted segments in response")
+        
+        if quote_matches:
+            # Get the longest quote (likely the actual quote, not a fragment)
+            best_quote = max(quote_matches, key=len)
+            logger.debug(f"Best quote candidate (length {len(best_quote)}): {best_quote[:100]}")
+            # Make sure it's substantial
+            if len(best_quote) > 15:
+                result = f'"{best_quote}"'
+                logger.info(f"Successfully extracted quote: {result[:80]}...")
+                return result
+        
+        # If no quotes found, look for substantial content without meta-text
+        lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
+        logger.debug(f"Searching {len(lines)} lines for usable content")
+        
+        for line in lines:
+            line_lower = line.lower()
+            # Skip lines with meta-text
+            if any(skip in line_lower for skip in [
+                "the user", "provide", "respond", "generate", "here is", "here's",
+                "famous quote", "quote by", "quote from", "said:", "once said"
+            ]):
+                logger.debug(f"Skipping meta-text line: {line[:50]}")
+                continue
+            
+            # If we found a substantial line, use it
+            if len(line) > 20:
+                # Add quotes if not present
+                if not (line.startswith('"') and line.endswith('"')):
+                    line = f'"{line}"'
+                logger.info(f"Using line as quote: {line[:80]}...")
+                return line
+        
+        # Last resort: use the whole response if it's reasonable
+        if 20 < len(cleaned) < 300 and "user" not in cleaned.lower():
+            if not (cleaned.startswith('"') and cleaned.endswith('"')):
+                cleaned = f'"{cleaned}"'
+            logger.info(f"Using cleaned response as quote: {cleaned[:80]}...")
+            return cleaned
+        
+        logger.warning(f"Could not extract valid quote from response. Using fallback.")
+        return _get_fallback_quote(random_personality)
+        
+    except Exception as e:
+        logger.error(f"Error generating quote: {e}", exc_info=True)
+        return _get_fallback_quote(random_personality)
+
+
+def _get_fallback_quote(personality):
+    """Return a fallback quote when generation fails"""
+    fallback_quotes = {
+        "default": '"The only way to do great work is to love what you do."',
+        "Steve Jobs": '"Stay hungry, stay foolish."',
+        "Albert Einstein": '"Imagination is more important than knowledge."',
+        "Mahatma Gandhi": '"Be the change you wish to see in the world."',
+        "Martin Luther King Jr.": '"Darkness cannot drive out darkness; only light can do that."',
+        "Winston Churchill": '"Success is not final, failure is not fatal: it is the courage to continue that counts."',
+        "Nelson Mandela": '"It always seems impossible until it is done."',
+    }
+    quote = fallback_quotes.get(personality, fallback_quotes["default"])
+    logger.info(f"Using fallback quote for {personality}: {quote}")
     return quote
 
 def get_weather():
-    owm = OWM(pyowm_api_key)
-    mgr = owm.weather_manager()
-    weather = mgr.weather_at_id(5743413).weather  # North Plains, OR
-    temp = weather.temperature('celsius')['temp']
-    status = weather.detailed_status
-    return temp, status
+    try:
+        owm = OWM(pyowm_api_key)
+        mgr = owm.weather_manager()
+        weather = mgr.weather_at_id(5743413).weather  # North Plains, OR
+        temp = weather.temperature('celsius')['temp']
+        status = weather.detailed_status
+        return temp, status
+    except Exception as e:
+        print(f"Error fetching weather: {e}")
+        return "N/A", "Unknown"
 
 def generate_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left):
     # Weather setup
@@ -476,9 +642,21 @@ def generate_progress_message(days_completed, weeks_completed, days_left, weeks_
             end_of_quarter = earnings_dates[i + 1]
             break
 
+    # If current quarter is not found (e.g. at very end/start of year), default to 4 or 1
+    if current_quarter is None:
+        current_quarter = 4
+        start_of_quarter = earnings_dates[3]
+        end_of_quarter = earnings_dates[4]
+        # Adjust for year boundaries if needed, but for simplicity:
+        if now < earnings_dates[0]:
+            current_quarter = 1
+            start_of_quarter = datetime(current_year-1, 10, 24) # Approx
+            end_of_quarter = earnings_dates[0]
+
     # Days and progress in the current quarter
     days_in_quarter = (end_of_quarter - start_of_quarter).days
     days_completed_in_quarter = (now - start_of_quarter).days
+    if days_in_quarter == 0: days_in_quarter = 1 # avoid zero division
     percent_days_left_in_quarter = ((days_in_quarter - days_completed_in_quarter) / days_in_quarter) * 100
 
     # Progress bar visualization
@@ -536,9 +714,15 @@ def generate_html_progress_message(days_completed, weeks_completed, days_left, w
             start_of_quarter = earnings_dates[i]
             end_of_quarter = earnings_dates[i + 1]
             break
+            
+    if current_quarter is None:
+        current_quarter = 4
+        start_of_quarter = earnings_dates[3]
+        end_of_quarter = earnings_dates[4]
 
     days_in_quarter = (end_of_quarter - start_of_quarter).days
     days_completed_in_quarter = (now - start_of_quarter).days
+    if days_in_quarter == 0: days_in_quarter = 1
     percent_days_left_in_quarter = ((days_in_quarter - days_completed_in_quarter) / days_in_quarter) * 100
 
     progress_bar_full = '█'
@@ -597,7 +781,7 @@ def generate_html_progress_message(days_completed, weeks_completed, days_left, w
                 color: #1d1d1f;
                 letter-spacing: -0.003em;
             }}
-            .subtitle {{
+            .subtitle {{ 
                 font-size: 20px;
                 color: #86868b;
                 font-weight: 400;
@@ -882,7 +1066,7 @@ def generate_html_news_template(news_content):
                 color: #1d1d1f;
                 letter-spacing: -0.003em;
             }}
-            .subtitle {{
+            .subtitle {{ 
                 font-size: 20px;
                 color: #86868b;
                 font-weight: 400;
@@ -1057,6 +1241,10 @@ def generate_html_news_template(news_content):
     return html_template
 
 def format_news_section(content, section_title):
+    """
+    Format news section for HTML display with improved parsing
+    Handles multiple formats and provides fallback when structured format is missing
+    """
     # Split content by section headers (##)
     sections = content.split("##")
     formatted_points = []
@@ -1070,12 +1258,19 @@ def format_news_section(content, section_title):
     
     if section_content:
         # Split into lines and filter out empty lines
-        points = [line.strip() for line in section_content.split("\n") if line.strip() and not line.strip().endswith("Update:")]
+        lines = [line.strip() for line in section_content.split("\n") if line.strip()]
         
-        for i, point in enumerate(points, 1):
-            if point.startswith("- "):
-                point = point[2:]  # Remove the "- " prefix
-            
+        # Filter out section headers
+        points = []
+        for line in lines:
+            if line.startswith("- "):
+                points.append(line[2:])  # Remove "- " prefix
+            elif not line.lower().endswith(("update:", "update")):
+                # If line doesn't start with "- " but has content, try to use it
+                if len(line) > 20 and not line.startswith("#"):
+                    points.append(line)
+        
+        for i, point in enumerate(points[:5], 1):  # Limit to 5 points
             # Initialize components
             news_text = point
             url = ""
@@ -1099,7 +1294,13 @@ def format_news_section(content, section_title):
                     elif component.startswith("Commentary:"):
                         commentary = component.replace("Commentary:", "").strip()
             
-            if news_text or url or date or citation or commentary:  # Only add if we have some content
+            # Extract citation from beginning of news_text if present
+            if news_text.startswith("[") and "]" in news_text:
+                end_bracket = news_text.index("]")
+                citation = news_text[1:end_bracket]
+                news_text = news_text[end_bracket+1:].strip()
+            
+            if news_text:  # Only add if we have actual content
                 formatted_points.append(f'''
                     <div class="bullet-point">
                         <div class="bullet-number">{i}</div>
@@ -1113,7 +1314,7 @@ def format_news_section(content, section_title):
                     </div>
                 ''')
     
-    return "\n".join(formatted_points) if formatted_points else "<div class='bullet-point'>No updates available.</div>"
+    return "\n".join(formatted_points) if formatted_points else "<div class='bullet-point'><div class='bullet-text'>No updates available.</div></div>"
 
 def send_email(subject, message, is_html=False):
     sender_email = yahoo_id
@@ -1164,12 +1365,23 @@ def save_message_to_file(message, filename):
         print(f"Failed to save message to file: {e}")
 
 if __name__ == "__main__":
+    logger.info("="*80)
+    logger.info("STARTING YEAR PROGRESS AND NEWS REPORTER")
+    logger.info("="*80)
+    
     days_completed, weeks_completed, days_left, weeks_left, percent_days_left = time_left_in_year()
+    logger.info(f"Year progress: {100 - percent_days_left:.1f}% complete, {days_left} days remaining")
     
     # Get quote and lesson
+    logger.info("Generating quote and lesson...")
     random_personality = get_random_personality()
+    logger.info(f"Selected personality: {random_personality}")
+    
     quote = generate_quote(random_personality)
+    logger.info(f"Quote result: {'SUCCESS' if quote else 'EMPTY'} - {quote[:80] if quote else 'N/A'}...")
+    
     lesson_learned = get_random_lesson()
+    logger.info(f"Lesson result: {'SUCCESS' if lesson_learned else 'EMPTY'} - {len(lesson_learned) if lesson_learned else 0} chars")
     
     # Generate HTML progress report
     year_progress_html = generate_html_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left)
@@ -1251,22 +1463,44 @@ if __name__ == "__main__":
 
     year_progress_gpt_response = generate_gpt_response(year_progress_message_prompt)
     yearprogress_tts_output_path = "year_progress_report.mp3"
+    
+    # Select a random model name from the configured list (mapped to voices in audio_processors)
+    # Since we are using LITELLM_SMART/STRATEGIC which might not be in VOICE_MAP, 
+    # audio_processors.py will fallback to DEFAULT voice.
     model_name = random.choice(model_names)
     text_to_speech_nospeak(year_progress_gpt_response, yearprogress_tts_output_path, model_name=model_name)
 
     # News updates with different formats for the newsletter and voicebot
     news_update_subject = "📰 Your Daily News Briefing"
+    
+    # Use the first model from our list for consistent news generation
+    news_model_name = model_names[0]
+    
+    print("\n" + "="*80)
+    print("FETCHING NEWS UPDATES")
+    print("="*80)
+    
+    print("\n📰 Fetching Technology News...")
     technews = f"Provide a detailed summary of today's technology news for {datetime.now().strftime('%Y-%m-%d')}. Include major developments, innovative breakthroughs, and significant industry updates."
-    news_update_tech = internet_connected_chatbot(technews, [], model_name, max_tokens, temperature, fast_response=False)
+    news_update_tech = internet_connected_chatbot(technews, [], news_model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_tech, "news_tech_report.txt")
+    print(f"✓ Tech news: {len(news_update_tech)} characters")
     
+    print("\n📈 Fetching Financial Markets News...")
     usanews = f"Provide a comprehensive overview of today's financial markets news for {datetime.now().strftime('%Y-%m-%d')}. Emphasize market trends, stock performance, economic indicators, and key financial events."
-    news_update_usa = internet_connected_chatbot(usanews, [], model_name, max_tokens, temperature, fast_response=False)
+    news_update_usa = internet_connected_chatbot(usanews, [], news_model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_usa, "news_usa_report.txt")
+    print(f"✓ Financial news: {len(news_update_usa)} characters")
     
+    print("\n🇮🇳 Fetching India News...")
     india_news = f"Provide a detailed summary of today's news from India for {datetime.now().strftime('%Y-%m-%d')}. Cover political developments, economic news, social events, and cultural stories."
-    news_update_india = internet_connected_chatbot(india_news, [], model_name, max_tokens, temperature, fast_response=False)
+    news_update_india = internet_connected_chatbot(india_news, [], news_model_name, max_tokens, temperature, fast_response=False)
     save_message_to_file(news_update_india, "news_india_report.txt")
+    print(f"✓ India news: {len(news_update_india)} characters")
+
+    print("\n" + "="*80)
+    print("GENERATING NEWSLETTER")
+    print("="*80)
 
     # Newsletter format
     newsletter_updates = f'''
@@ -1304,6 +1538,10 @@ if __name__ == "__main__":
     (5 points from India news using format above)
     '''
 
+    print("\n📝 Generating newsletter format...")
+    news_newsletter_response = generate_gpt_response_newsletter(newsletter_updates)
+    print(f"✓ Newsletter generated: {len(news_newsletter_response)} characters")
+
     # Voice format
     voicebot_updates = f"""
     Here are today's key updates across technology, financial markets, and India:
@@ -1320,21 +1558,32 @@ if __name__ == "__main__":
     Please present this information in a natural, conversational way suitable for speaking.
     """
 
-    # Generate separate responses for newsletter and voicebot
-    news_newsletter_response = generate_gpt_response_newsletter(newsletter_updates)
+    print("\n🎙️ Generating voicebot format...")
     news_voicebot_response = generate_gpt_response_voicebot(voicebot_updates)
+    print(f"✓ Voicebot script generated: {len(news_voicebot_response)} characters")
     
     # Save news responses to files
+    print("\n💾 Saving newsletter files...")
     save_message_to_file(news_newsletter_response, "news_newsletter_report.txt")
     save_message_to_file(news_voicebot_response, "news_voicebot_report.txt")
+    
+    # Generate HTML newsletter
+    print("\n🎨 Generating HTML newsletter...")
     news_html = generate_html_news_template(news_newsletter_response)
     save_message_to_file(news_html, "news_newsletter_report.html")
+    print("✓ HTML newsletter saved")
     
     # Send HTML newsletter
-    news_html = generate_html_news_template(news_newsletter_response)
+    print("\n📧 Sending newsletter email...")
     send_email(news_update_subject, news_html, is_html=True)
     
     # Convert the voicebot response to speech
+    print("\n🔊 Converting news to speech...")
     news_tts_output_path = "news_update_report.mp3"
     model_name = random.choice(model_names)
     text_to_speech_nospeak(news_voicebot_response, news_tts_output_path, model_name=model_name)
+    print(f"✓ News audio saved to {news_tts_output_path}")
+    
+    print("\n" + "="*80)
+    print("✓ ALL TASKS COMPLETED SUCCESSFULLY!")
+    print("="*80)
