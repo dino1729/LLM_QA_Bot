@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import uuid
 import json
@@ -8,6 +9,15 @@ import soundfile as sf
 import numpy as np
 from config import config
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# NVIDIA Magpie TTS limits
+# Note: The TTS service internally expands text, so we use conservative limits
+# Actual limit is 2000, but we use 1200 to leave buffer for internal expansion
+MAX_CHARS_PER_REQUEST = 1200
+MAX_CHARS_PER_SENTENCE = 350
 
 # Try to import NVIDIA Riva client
 try:
@@ -64,9 +74,14 @@ VOICE_MAP = {
     "GEMINI": "Magpie-Multilingual.EN-US.Echo",
     "GPT4": "Magpie-Multilingual.EN-US.Aria",
     "GPT4OMINI": "Magpie-Multilingual.EN-US.Aria",
-    "COHERE": "Magpie-Multilingual.EN-US.Nova",
+    "RIVA_ARIA_VOICE": "Magpie-Multilingual.EN-US.Aria",
     "BING+OPENAI": "Magpie-Multilingual.EN-US.Shimmer",
     "MIXTRAL8x7B": "Magpie-Multilingual.EN-US.Fable",
+    # LiteLLM/Ollama models will fall back to DEFAULT
+    "LITELLM_SMART": "Magpie-Multilingual.EN-US.Aria",
+    "LITELLM_STRATEGIC": "Magpie-Multilingual.EN-US.Echo",
+    "OLLAMA_SMART": "Magpie-Multilingual.EN-US.Aria",
+    "OLLAMA_STRATEGIC": "Magpie-Multilingual.EN-US.Echo",
     "DEFAULT": "Magpie-Multilingual.EN-US.Aria"
 }
 
@@ -116,6 +131,129 @@ def transcribe_audio(audio_file):
     except Exception as e:
         print(f"ERROR in transcribe_audio: {e}")
         return "Transcription failed.", "en-US"
+
+def chunk_text_for_tts(text, max_sentence_length=MAX_CHARS_PER_SENTENCE, max_chunk_length=MAX_CHARS_PER_REQUEST):
+    """
+    Split text into chunks suitable for NVIDIA Magpie TTS.
+    
+    NVIDIA Magpie TTS has two limits:
+    - Max 2000 characters total per request
+    - Max 400 characters per sentence
+    
+    This function:
+    1. Splits text into sentences
+    2. Breaks long sentences at punctuation/word boundaries
+    3. Groups sentences into chunks up to max_chunk_length
+    
+    Returns:
+        List of text chunks, each suitable for a single TTS request
+    """
+    if not text or len(text.strip()) == 0:
+        logger.warning("Empty text provided for TTS chunking")
+        return []
+    
+    logger.debug(f"Chunking text of {len(text)} characters for TTS")
+    
+    # Split into sentences using regex
+    # Handles: periods, question marks, exclamation points, semicolons
+    sentence_pattern = r'(?<=[.!?;])\s+'
+    sentences = re.split(sentence_pattern, text.strip())
+    
+    logger.debug(f"Split into {len(sentences)} initial sentences")
+    
+    # Process each sentence to ensure it's under the limit
+    processed_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+            
+        if len(sentence) <= max_sentence_length:
+            processed_sentences.append(sentence)
+        else:
+            # Break long sentences at commas or other natural break points
+            sub_sentences = _break_long_sentence(sentence, max_sentence_length)
+            processed_sentences.extend(sub_sentences)
+    
+    logger.debug(f"After processing: {len(processed_sentences)} sentences")
+    
+    # Group sentences into chunks under max_chunk_length
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    
+    for sentence in processed_sentences:
+        sentence_len = len(sentence)
+        # Only add space if this isn't the first sentence in the chunk
+        if current_chunk:
+            sentence_len += 1  # +1 for space between sentences
+        
+        if current_length + sentence_len <= max_chunk_length:
+            current_chunk.append(sentence)
+            current_length += sentence_len
+        else:
+            # Save current chunk and start new one
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+            current_chunk = [sentence]
+            current_length = len(sentence)
+    
+    # Don't forget the last chunk
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    logger.info(f"Created {len(chunks)} TTS chunks from {len(text)} chars of text")
+    for i, chunk in enumerate(chunks):
+        logger.debug(f"Chunk {i+1}: {len(chunk)} chars")
+    
+    return chunks
+
+
+def _break_long_sentence(sentence, max_length):
+    """
+    Break a long sentence into smaller parts at natural break points.
+    
+    Tries to break at:
+    1. Commas
+    2. Conjunctions (and, or, but)
+    3. Word boundaries (last resort)
+    """
+    if len(sentence) <= max_length:
+        return [sentence]
+    
+    parts = []
+    remaining = sentence
+    
+    while len(remaining) > max_length:
+        # Find the best break point within max_length
+        break_point = max_length
+        
+        # Try to break at comma
+        comma_pos = remaining[:max_length].rfind(',')
+        if comma_pos > max_length // 2:  # Only if comma is in latter half
+            break_point = comma_pos + 1
+        else:
+            # Try to break at conjunction
+            for conj in [' and ', ' or ', ' but ', ' which ', ' that ']:
+                conj_pos = remaining[:max_length].rfind(conj)
+                if conj_pos > max_length // 2:
+                    break_point = conj_pos
+                    break
+            else:
+                # Break at last space
+                space_pos = remaining[:max_length].rfind(' ')
+                if space_pos > 0:
+                    break_point = space_pos
+        
+        parts.append(remaining[:break_point].strip())
+        remaining = remaining[break_point:].strip()
+    
+    if remaining:
+        parts.append(remaining)
+    
+    logger.debug(f"Broke long sentence ({len(sentence)} chars) into {len(parts)} parts")
+    return parts
+
 
 def text_to_speech(text, output_path, language, model_name):
     """
@@ -172,16 +310,24 @@ def text_to_speech(text, output_path, language, model_name):
 def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI"):
     """
     Convert text to speech using NVIDIA Riva Magpie TTS model without playing audio.
+    
+    Handles long text by:
+    1. Chunking text into segments respecting TTS limits (2000 chars total, 400 per sentence)
+    2. Synthesizing each chunk separately
+    3. Concatenating audio output
     """
     if not RIVA_AVAILABLE or tts_service is None:
+        logger.error("NVIDIA Riva TTS service not available")
         print("ERROR: NVIDIA Riva TTS service not available")
         return False
     
     try:
+        logger.info(f"🔊 Synthesizing speech for {len(text)} characters of text")
         print("🔊 Synthesizing speech with NVIDIA Magpie (no playback)...")
         
         # Select voice based on model name
         voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
+        logger.debug(f"Using voice: {voice_name}")
         
         # Determine language code - NVIDIA Riva Magpie supports multilingual
         language_code = "en-US"
@@ -192,26 +338,65 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
         elif language.startswith("en"):
             language_code = "en-US"
         
-        # Create TTS request
-        req = {
-            "text": text,
-            "language_code": language_code,
-            "encoding": riva.AudioEncoding.LINEAR_PCM,
-            "sample_rate_hz": 16000,
-            "voice_name": voice_name
-        }
+        # Chunk the text to respect TTS limits
+        chunks = chunk_text_for_tts(text)
         
-        # Synthesize speech
-        response = tts_service.synthesize(**req)
+        if not chunks:
+            logger.warning("No text chunks to synthesize")
+            return False
         
-        # Convert raw PCM audio bytes to numpy array and save as proper WAV file
-        audio_data = np.frombuffer(response.audio, dtype=np.int16)
-        sf.write(output_path, audio_data, 16000, 'PCM_16')
+        logger.info(f"Processing {len(chunks)} text chunks for TTS")
         
-        print(f"✓ Speech synthesized and saved to {output_path} (no playback)")
+        # Synthesize each chunk and collect audio data
+        all_audio_data = []
+        
+        for i, chunk in enumerate(chunks):
+            logger.debug(f"Synthesizing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
+            
+            # Create TTS request for this chunk
+            req = {
+                "text": chunk,
+                "language_code": language_code,
+                "encoding": riva.AudioEncoding.LINEAR_PCM,
+                "sample_rate_hz": 16000,
+                "voice_name": voice_name
+            }
+            
+            # Synthesize speech for this chunk
+            response = tts_service.synthesize(**req)
+            
+            # Convert raw PCM audio bytes to numpy array
+            chunk_audio = np.frombuffer(response.audio, dtype=np.int16)
+            all_audio_data.append(chunk_audio)
+            
+            logger.debug(f"Chunk {i+1} synthesized: {len(chunk_audio)} samples")
+        
+        # Concatenate all audio chunks
+        if len(all_audio_data) > 1:
+            # Add small silence (0.3 seconds) between chunks for natural pauses
+            silence = np.zeros(int(16000 * 0.3), dtype=np.int16)
+            combined_audio = []
+            for i, audio in enumerate(all_audio_data):
+                combined_audio.append(audio)
+                if i < len(all_audio_data) - 1:
+                    combined_audio.append(silence)
+            final_audio = np.concatenate(combined_audio)
+        else:
+            final_audio = all_audio_data[0]
+        
+        # Save the combined audio as WAV format
+        # Note: Even if output_path ends in .mp3, we save as WAV (most players handle this)
+        # For proper MP3 encoding, additional libraries like pydub would be needed
+        actual_output = output_path.replace('.mp3', '.wav') if output_path.endswith('.mp3') else output_path
+        sf.write(actual_output, final_audio, 16000, subtype='PCM_16')
+        
+        duration_seconds = len(final_audio) / 16000
+        logger.info(f"✓ Speech synthesized: {duration_seconds:.1f}s audio saved to {actual_output}")
+        print(f"✓ Speech synthesized and saved to {actual_output} (no playback)")
         return True
         
     except Exception as e:
+        logger.error(f"ERROR in text_to_speech_nospeak: {e}", exc_info=True)
         print(f"ERROR in text_to_speech_nospeak: {e}")
         return False
 

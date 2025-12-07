@@ -16,8 +16,6 @@ else:
     config_env = {}
 
 # API Keys
-cohere_api_key = config_yaml.get("cohere_api_key", "")
-cohere_model_name = config_yaml.get("cohere_model_name", "command-r-08-2024")
 google_api_key = config_yaml.get("google_api_key", "")
 gemini_model_name = config_yaml.get("gemini_model_name", "")
 gemini_thinkingmodel_name = config_yaml.get("gemini_thinkingmodel_name", "")
@@ -45,7 +43,7 @@ ollama_default_model = config_yaml.get("ollama_default_model", "llama2")
 
 # Retriever Configuration
 retriever = config_yaml.get("retriever", "")
-firecrawl_server_url = config_yaml.get("firecrawl_server_url", "")
+firecrawl_server_url = config_yaml.get("firecrawl_server_url", "http://localhost:3002")
 tavily_api_key = config_yaml.get("tavily_api_key", "")
 
 # NVIDIA NIM Configuration (for Image Studio)

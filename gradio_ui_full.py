@@ -1,6 +1,6 @@
 """
 LLM QA Bot - Full Featured Gradio UI
-Supports LiteLLM, Ollama, Gemini, Cohere, and Groq with Firecrawl integration
+Supports LiteLLM, Ollama, Gemini, and Groq with Firecrawl integration
 """
 
 import os
@@ -47,7 +47,6 @@ MODEL_CHOICES = [
     "OLLAMA_STRATEGIC",
     "GEMINI",
     "GEMINI_THINKING",
-    "COHERE",
     "GROQ",
     "GROQ_LLAMA",
     "GROQ_MIXTRAL"
@@ -86,7 +85,7 @@ def parse_model_name(model_name):
         # Simplified option: use fast model for summary/example generation
         return "ollama", "fast"
     else:
-        # For other models (GEMINI, COHERE, GROQ), use the default
+        # For other models (GEMINI, GROQ), use the default
         return "litellm", "fast"
 
 

@@ -301,7 +301,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
         gr.ChatInterface(
             internet_connected_chatbot,
             additional_inputs=[
-                gr.Radio(label="Model", choices=["GROQ", "GPT4", "GEMINI_THINKING", "COHERE"], value="GROQ"),
+                gr.Radio(label="Model", choices=["GROQ", "GPT4", "GEMINI_THINKING"], value="GROQ"),
                 gr.Slider(10, 8680, value=4840, label = "Max Output Tokens"),
                 gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
             ],
@@ -323,7 +323,7 @@ with gr.Blocks(theme='davehornik/Tealy',fill_height=True) as llmapp:
             gitachat = gr.ChatInterface(
                 gita_answer,
                 additional_inputs=[
-                    gr.Radio(label="Model", choices=["COHERE", "GEMINI", "GPT4", "GPT35TURBO", "MIXTRAL8x7B"], value="GPT35TURBO"),
+                    gr.Radio(label="Model", choices=["GEMINI", "GPT4", "GPT35TURBO", "MIXTRAL8x7B"], value="GPT35TURBO"),
                     gr.Slider(10, 1680, value=840, label = "Max Output Tokens"),
                     gr.Slider(0.1, 0.9, value=0.5, label = "Temperature"),
                 ],

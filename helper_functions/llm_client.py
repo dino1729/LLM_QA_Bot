@@ -285,7 +285,16 @@ class UnifiedLLMClient:
             max_tokens=max_tokens,
             **kwargs
         )
-        return response.choices[0].message.content
+        
+        # Handle reasoning models (o1, o3, gpt-oss-120b, deepseek-r1) that return content in reasoning_content field
+        message = response.choices[0].message
+        content = message.content
+        
+        # If content is empty, try reasoning_content field
+        if not content and hasattr(message, 'reasoning_content') and message.reasoning_content:
+            content = message.reasoning_content
+        
+        return content if content else ""
 
     def get_embedding(self, text, input_type="passage"):
         """

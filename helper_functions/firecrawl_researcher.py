@@ -171,7 +171,7 @@ def conduct_research_firecrawl(query, provider="litellm", model_name=None, max_s
                 })
             
             # Stop if we have enough good sources
-            if len(scraped_contents) >= 3:
+            if len(scraped_contents) >= max_sources:
                 break
         
         if not scraped_contents:
