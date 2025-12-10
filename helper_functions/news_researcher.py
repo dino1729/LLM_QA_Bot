@@ -14,11 +14,19 @@ Aggregator Sources (for trending topic discovery):
 
 Model configuration is read from config.yml (litellm_fast_llm, litellm_smart_llm, litellm_strategic_llm).
 This approach ensures high-quality, well-reasoned news summaries with optimal performance.
+
+Performance Optimizations:
+- Async/await with aiohttp for parallel URL scraping
+- Aggressive timeouts (15s scrape, 10s connect) with max 1 retry
+- URL tracking to prevent redundant scraping
+- Semaphore-limited concurrent connections (max 5)
 """
+import asyncio
+import aiohttp
 import requests
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 from bs4 import BeautifulSoup
 from config import config
 from helper_functions.llm_client import get_client
@@ -27,6 +35,13 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 firecrawl_server_url = config.firecrawl_server_url
+
+# Async performance tuning constants (aggressive timeouts for speed)
+SCRAPE_TIMEOUT = 15  # Reduced from 30s - aggressive timeout
+CONNECT_TIMEOUT = 10  # Connection establishment timeout
+SEARCH_TIMEOUT = 90   # Search API timeout (searches take longer)
+MAX_RETRIES = 1       # Reduced from 2 - fail fast
+MAX_CONCURRENT_SCRAPES = 5  # Semaphore limit for parallel scraping
 
 # Category-specific query sets for diverse topic coverage
 CATEGORY_QUERIES = {
@@ -90,6 +105,146 @@ def scrape_with_firecrawl(url: str, max_age: int = 0, timeout: int = 30) -> Opti
     except Exception as e:
         logger.error(f"Error scraping {url} with Firecrawl: {str(e)}")
         return None
+
+
+async def scrape_with_firecrawl_async(
+    session: aiohttp.ClientSession,
+    url: str,
+    scraped_urls: Set[str],
+    max_age: int = 0,
+    timeout: int = SCRAPE_TIMEOUT
+) -> Optional[Dict[str, str]]:
+    """
+    Async version: Scrape a URL using Firecrawl server with URL tracking
+    
+    Args:
+        session: aiohttp ClientSession for connection pooling
+        url: The URL to scrape
+        scraped_urls: Set of already-scraped URLs to avoid duplicates
+        max_age: Cache age in milliseconds (0 = always fresh)
+        timeout: Request timeout in seconds (default: 15s aggressive)
+    
+    Returns:
+        Dict with {url, content, success} or None if already scraped/failed
+    """
+    # Skip if already attempted (prevents redundant scraping)
+    if url in scraped_urls:
+        logger.debug(f"Skipping already-scraped URL: {url[:60]}...")
+        return None
+    
+    # Mark as attempted immediately (even before trying)
+    scraped_urls.add(url)
+    
+    try:
+        scrape_url = f"{firecrawl_server_url}/scrape"
+        
+        payload = {
+            "url": url,
+            "formats": ["markdown"],
+            "onlyMainContent": True,
+            "maxAge": max_age,
+            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3", "time"],
+            "excludeTags": ["nav", "footer", "header", "aside", "script", "style"],
+            "waitFor": 1000,
+            "timeout": timeout * 1000
+        }
+        
+        # Use aggressive timeouts
+        client_timeout = aiohttp.ClientTimeout(
+            total=timeout,
+            connect=CONNECT_TIMEOUT
+        )
+        
+        async with session.post(scrape_url, json=payload, timeout=client_timeout) as response:
+            if response.status == 200:
+                result = await response.json()
+                if "data" in result and "markdown" in result["data"]:
+                    content = result["data"]["markdown"]
+                    if content and len(content) > 100:
+                        logger.debug(f"Successfully scraped {url[:60]}... ({len(content)} chars)")
+                        return {
+                            "url": url,
+                            "content": content,
+                            "success": True
+                        }
+            else:
+                logger.warning(f"Firecrawl async scrape failed for {url[:60]}: status {response.status}")
+        
+        return {"url": url, "content": "", "success": False}
+        
+    except asyncio.TimeoutError:
+        logger.warning(f"Async scrape timeout ({timeout}s) for {url[:60]}...")
+        return {"url": url, "content": "", "success": False}
+    except Exception as e:
+        logger.error(f"Async error scraping {url[:60]}: {str(e)}")
+        return {"url": url, "content": "", "success": False}
+
+
+async def scrape_urls_parallel(
+    session: aiohttp.ClientSession,
+    urls: List[str],
+    scraped_urls: Set[str],
+    semaphore: asyncio.Semaphore,
+    max_age: int = 0,
+    max_retries: int = MAX_RETRIES
+) -> List[Dict[str, str]]:
+    """
+    Scrape multiple URLs in parallel with semaphore-limited concurrency
+    
+    Args:
+        session: aiohttp ClientSession
+        urls: List of URLs to scrape
+        scraped_urls: Set tracking already-scraped URLs (modified in place)
+        semaphore: Asyncio semaphore to limit concurrent connections
+        max_age: Cache age in milliseconds
+        max_retries: Max retry attempts per URL (default: 1)
+    
+    Returns:
+        List of successfully scraped results with content
+    """
+    async def scrape_with_semaphore(url: str) -> Optional[Dict[str, str]]:
+        """Wrapper to enforce semaphore limit on each scrape"""
+        async with semaphore:
+            # Try scraping with optional retry
+            for attempt in range(max_retries + 1):
+                result = await scrape_with_firecrawl_async(
+                    session, url, scraped_urls, max_age=max_age
+                )
+                
+                # If scraped_urls already had this URL, result is None (skip)
+                if result is None:
+                    return None
+                
+                # Success - return result
+                if result.get("success") and result.get("content"):
+                    return result
+                
+                # Failed - retry if we have attempts left
+                if attempt < max_retries:
+                    logger.debug(f"Retry {attempt + 1}/{max_retries} for {url[:50]}...")
+                    # Remove from tracked set to allow retry
+                    scraped_urls.discard(url)
+                    await asyncio.sleep(0.5)  # Brief delay before retry
+            
+            return result  # Return last attempt result (even if failed)
+    
+    # Launch all scrapes in parallel (semaphore limits actual concurrency)
+    logger.info(f"Parallel scraping {len(urls)} URLs (max {MAX_CONCURRENT_SCRAPES} concurrent)...")
+    
+    tasks = [scrape_with_semaphore(url) for url in urls]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Filter successful results with content
+    successful = []
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Parallel scrape exception: {result}")
+            continue
+        if result and result.get("success") and result.get("content"):
+            successful.append(result)
+    
+    logger.info(f"Parallel scraping complete: {len(successful)}/{len(urls)} successful")
+    return successful
 
 
 def scrape_aggregator_headlines(aggregator: str = "tldr") -> List[Dict[str, str]]:
@@ -428,6 +583,133 @@ def search_fresh_sources_firecrawl(query: str, limit: int = 5, timeout: int = 12
 # DuckDuckGo fallback removed per user request - Firecrawl only
 
 
+async def search_fresh_sources_firecrawl_async(
+    session: aiohttp.ClientSession,
+    query: str,
+    scraped_urls: Set[str],
+    semaphore: asyncio.Semaphore,
+    limit: int = 5,
+    timeout: int = SEARCH_TIMEOUT
+) -> List[Dict[str, str]]:
+    """
+    Async version: Search for fresh news sources using Firecrawl v2 search API
+    with parallel URL scraping for discovered results.
+    
+    Args:
+        session: aiohttp ClientSession
+        query: Search query
+        scraped_urls: Set tracking already-scraped URLs (prevents redundant work)
+        semaphore: Semaphore for limiting concurrent scrapes
+        limit: Maximum number of results
+        timeout: Search API timeout in seconds (default: 90s)
+    
+    Returns:
+        List of search results with {title, url, description, date, markdown, source}
+    """
+    try:
+        search_url = f"{firecrawl_server_url}/search"
+        today_date = datetime.now().strftime('%B %d, %Y')
+        
+        payload = {
+            "query": f"{query} {today_date} latest breaking news today",
+            "limit": limit,
+            "scrapeOptions": {
+                "formats": ["markdown"],
+                "onlyMainContent": True,
+                "maxAge": 0  # Always fetch fresh data
+            }
+        }
+        
+        logger.info(f"Async searching Firecrawl for: {query} (timeout: {timeout}s)")
+        
+        client_timeout = aiohttp.ClientTimeout(total=timeout, connect=CONNECT_TIMEOUT)
+        
+        async with session.post(search_url, json=payload, timeout=client_timeout) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"Firecrawl async search failed: status {response.status} - {error_text[:200]}")
+                return []
+            
+            result = await response.json()
+            
+            # Parse search results from Firecrawl response
+            search_results = []
+            if "data" in result:
+                if isinstance(result["data"], dict) and "web" in result["data"]:
+                    search_results = result["data"]["web"]
+                elif isinstance(result["data"], list):
+                    search_results = result["data"]
+            
+            logger.info(f"Firecrawl async returned {len(search_results)} search results")
+            
+            if not search_results:
+                return []
+            
+            # Extract URLs to scrape (filter out already-scraped ones)
+            urls_to_scrape = []
+            url_to_item = {}
+            for item in search_results[:limit]:
+                url = item.get('url', '')
+                if url and url not in scraped_urls:
+                    urls_to_scrape.append(url)
+                    url_to_item[url] = item
+            
+            logger.info(f"Scraping {len(urls_to_scrape)} new URLs in parallel...")
+            
+            # Parallel scrape all URLs
+            scrape_results = await scrape_urls_parallel(
+                session, urls_to_scrape, scraped_urls, semaphore, max_age=0
+            )
+            
+            # Build results list with scraped content
+            results = []
+            scraped_content = {r["url"]: r["content"] for r in scrape_results}
+            
+            for item in search_results[:limit]:
+                url = item.get('url', '')
+                if not url:
+                    continue
+                
+                markdown_content = scraped_content.get(url, '')
+                
+                # Validate freshness markers if we have content
+                is_fresh = False
+                if markdown_content and len(markdown_content) > 100:
+                    today_markers = [
+                        datetime.now().strftime('%B %d'),
+                        datetime.now().strftime('%b %d'),
+                        datetime.now().strftime('%d %B'),
+                        'today', 'breaking', 'just now', 'hours ago', 'latest'
+                    ]
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime('%B %d')
+                    today_markers.append(yesterday)
+                    
+                    content_preview = markdown_content[:500].lower()
+                    is_fresh = any(marker.lower() in content_preview for marker in today_markers)
+                
+                # Accept source if: has fresh markers, or is in first 2 results, or has content
+                if is_fresh or len(results) < 2 or (markdown_content and len(markdown_content) > 100):
+                    results.append({
+                        'title': item.get('title', 'Untitled'),
+                        'url': url,
+                        'description': item.get('description', '')[:300],
+                        'markdown': markdown_content[:1500] if markdown_content else '',
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'source': extract_source_name(url),
+                        'freshness_validated': is_fresh
+                    })
+            
+            logger.info(f"Async search complete: {len(results)} sources from '{query}'")
+            return results
+            
+    except asyncio.TimeoutError:
+        logger.error(f"Async search timeout ({timeout}s) for query: {query}")
+        return []
+    except Exception as e:
+        logger.error(f"Async search error for '{query}': {str(e)}")
+        return []
+
+
 def extract_source_name(url: str) -> str:
     """Extract clean source name from URL"""
     try:
@@ -440,7 +722,7 @@ def extract_source_name(url: str) -> str:
         return "Unknown"
 
 
-def gather_daily_news(
+async def gather_daily_news_async(
     category: str,
     max_sources: int = 5,
     aggregator_limit: int = 1,
@@ -448,12 +730,18 @@ def gather_daily_news(
     provider: str = "litellm"
 ) -> str:
     """
-    Main orchestrator: Gather fresh daily news for a category
+    Async orchestrator: Gather fresh daily news for a category using parallel scraping.
+    
+    This is the performance-optimized version that uses:
+    - Async HTTP requests with aiohttp
+    - Parallel URL scraping with semaphore-limited concurrency
+    - URL tracking to prevent redundant scraping
+    - Aggressive timeouts (15s) for fast failure
     
     Strategy:
-    1. Scrape 1-2 headlines from aggregators (topic discovery)
+    1. Scrape 1-2 headlines from aggregators (topic discovery) - sync for simplicity
     2. Extract keywords from those headlines
-    3. Search for 3-4 fresh original sources
+    3. Search for fresh original sources with parallel scraping
     4. Synthesize into comprehensive news summary
     
     Args:
@@ -466,18 +754,23 @@ def gather_daily_news(
     Returns:
         Comprehensive news summary as markdown string
     """
-    logger.info(f"="*80)
-    logger.info(f"GATHERING DAILY NEWS: {category.upper()}")
-    logger.info(f"="*80)
+    import random
+    import time
+    
+    start_time = time.time()
+    
+    logger.info("="*80)
+    logger.info(f"GATHERING DAILY NEWS (ASYNC): {category.upper()}")
+    logger.info("="*80)
     
     all_sources = []
+    keywords = []
     
-    # Step 1: Get trending topics from aggregators (if tech/financial)
+    # Step 1: Get trending topics from aggregators (sync - not performance critical)
+    # Aggregator scraping is kept sync as it's a single URL and caching helps
     if category in ["technology", "financial"]:
-        logger.info(f"Step 1: Scraping aggregator for trending topics...")
+        logger.info("Step 1: Scraping aggregator for trending topics...")
         
-        # Rotate through aggregators for diversity: tldr, bensbites, smol
-        import random
         aggregators = ["tldr", "smol", "bensbites"] if category == "technology" else ["tldr"]
         aggregator = random.choice(aggregators)
         
@@ -486,102 +779,132 @@ def gather_daily_news(
             headlines = scrape_aggregator_headlines(aggregator)
             
             if headlines:
-                # Add 1 aggregator headline max
                 all_sources.extend(headlines[:aggregator_limit])
                 
-                # Step 2: Extract keywords for targeted search
-                logger.info(f"Step 2: Extracting keywords from headlines...")
+                logger.info("Step 2: Extracting keywords from headlines...")
                 keywords = extract_keywords_from_headlines(headlines, provider)
             else:
                 logger.warning("No headlines from aggregator, using category-based search")
-                keywords = []
-        else:
-            keywords = []
-    else:
-        keywords = []
     
-    # Step 3: Search for fresh original sources using diverse queries
-    logger.info(f"Step 3: Searching for fresh original sources with diverse queries...")
+    # Step 3: Async search and parallel scraping
+    logger.info("Step 3: Searching for fresh sources with PARALLEL scraping...")
     
-    # Build search queries with today's date for freshness
-    today_str = datetime.now().strftime('%B %d %Y')  # e.g., "December 9 2025"
+    # Build search queries
+    today_str = datetime.now().strftime('%B %d %Y')
     search_queries = []
     
-    # Use diverse category-specific queries from CATEGORY_QUERIES
     if category in CATEGORY_QUERIES:
-        # Add all diverse queries for the category with today's date
         base_queries = CATEGORY_QUERIES[category]
         search_queries.extend([f"{query} {today_str}" for query in base_queries])
         logger.info(f"Using {len(base_queries)} diverse queries for {category}")
     else:
-        # Fallback for unknown categories
         search_queries = [f"{category} news {today_str}"]
     
-    # Optionally add 1-2 keyword-based queries if we have them from aggregators
     if keywords:
-        search_queries[:0] = [f"{kw} {today_str}" for kw in keywords[:1]]  # Add at start
-        logger.info(f"Added keyword-based query from aggregator trending topics")
+        search_queries[:0] = [f"{kw} {today_str}" for kw in keywords[:1]]
+        logger.info("Added keyword-based query from aggregator trending topics")
     
-    # Search for fresh sources - aim for 3 sources per query
-    sources_per_query = 3  # Fixed at 3 to get good diversity
-    temp_sources = []  # Collect all before dedup
+    # Track all scraped URLs across queries to prevent redundant work
+    scraped_urls: Set[str] = set()
+    temp_sources: List[Dict] = []
+    sources_per_query = 3
     
-    for query_idx, query in enumerate(search_queries):
-        # Use Firecrawl search with optimized timeout
-        # First query: normal timeout, subsequent queries: extended timeout
-        query_timeout = 120 if query_idx == 0 else 150
-        
-        logger.info(f"Query {query_idx+1}/{len(search_queries)}: {query}")
-        
-        try:
-            results = search_fresh_sources_firecrawl(query, limit=sources_per_query, timeout=query_timeout)
-        except Exception as e:
-            logger.error(f"Firecrawl search failed for '{query}': {e}")
-            results = []
-            continue  # Skip to next query instead of processing empty results
-        
-        # Scrape content from search results and add to temp collection
-        for result in results:
-            # If we don't have markdown content yet, scrape it
-            if not result.get('markdown') or len(result.get('markdown', '')) < 100:
-                logger.info(f"Scraping content from: {result['url'][:60]}...")
-                try:
-                    content = scrape_with_firecrawl(result['url'], max_age=0, timeout=20)
-                    if content:
-                        result['markdown'] = content[:2000]  # Limit content
-                except Exception as e:
-                    logger.warning(f"Failed to scrape {result['url']}: {e}")
+    # Create aiohttp session with connection pooling
+    connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_SCRAPES, limit_per_host=3)
+    timeout = aiohttp.ClientTimeout(total=SEARCH_TIMEOUT, connect=CONNECT_TIMEOUT)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCRAPES)
+    
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        for query_idx, query in enumerate(search_queries):
+            logger.info(f"Query {query_idx + 1}/{len(search_queries)}: {query}")
             
-            # Only add if we have meaningful content
-            if result.get('markdown') and len(result['markdown']) > 100:
-                temp_sources.append({
-                    'title': result['title'],
-                    'url': result['url'],
-                    'description': result.get('description', ''),
-                    'content': result['markdown'],
-                    'date': result.get('date', datetime.now().strftime('%Y-%m-%d')),
-                    'source': result['source'],
-                    'is_aggregator': False
-                })
+            try:
+                results = await search_fresh_sources_firecrawl_async(
+                    session=session,
+                    query=query,
+                    scraped_urls=scraped_urls,
+                    semaphore=semaphore,
+                    limit=sources_per_query
+                )
+            except Exception as e:
+                logger.error(f"Async search failed for '{query}': {e}")
+                continue
+            
+            # Add results with content to temp collection
+            for result in results:
+                markdown = result.get('markdown', '')
+                if markdown and len(markdown) > 100:
+                    temp_sources.append({
+                        'title': result['title'],
+                        'url': result['url'],
+                        'description': result.get('description', ''),
+                        'content': markdown,
+                        'date': result.get('date', datetime.now().strftime('%Y-%m-%d')),
+                        'source': result['source'],
+                        'is_aggregator': False
+                    })
     
-    # Deduplicate sources from multiple queries
-    logger.info(f"Collected {len(temp_sources)} sources from {len(search_queries)} diverse queries")
+    # Deduplicate and finalize
+    logger.info(f"Collected {len(temp_sources)} sources from {len(search_queries)} queries")
     unique_sources = deduplicate_sources(temp_sources)
     
-    # Add unique sources to all_sources, respecting max_sources limit
     remaining_slots = max_sources - len(all_sources)
     all_sources.extend(unique_sources[:remaining_slots])
     
-    logger.info(f"Gathered {len(all_sources)} total sources ({sum(1 for s in all_sources if s.get('is_aggregator', True))} from aggregators)")
+    elapsed = time.time() - start_time
+    logger.info(f"Gathered {len(all_sources)} total sources in {elapsed:.1f}s")
+    logger.info(f"Scraped URLs tracked: {len(scraped_urls)} (prevented redundant scraping)")
     
     if not all_sources:
         logger.error("No sources found! Returning error message.")
         return f"Unable to gather news for {category}. Please check your internet connection or try again later."
     
-    # Step 4: Synthesize news summary using LLM
-    logger.info(f"Step 4: Synthesizing news summary with LLM...")
+    # Step 4: Synthesize news summary using LLM (sync - LLM calls are already optimized)
+    logger.info("Step 4: Synthesizing news summary with LLM...")
     
     return synthesize_news_report(all_sources, category, provider)
+
+
+def gather_daily_news(
+    category: str,
+    max_sources: int = 5,
+    aggregator_limit: int = 1,
+    freshness_hours: int = 24,
+    provider: str = "litellm"
+) -> str:
+    """
+    Sync wrapper: Gather fresh daily news for a category.
+    
+    This is a synchronous wrapper around gather_daily_news_async() for backward
+    compatibility. It uses asyncio.run() to execute the async version.
+    
+    Performance optimizations in the async version:
+    - Parallel URL scraping with aiohttp (up to 5 concurrent)
+    - Aggressive 15s timeouts (down from 30s)
+    - URL tracking prevents redundant scraping
+    - Max 1 retry per URL (down from 2)
+    
+    Args:
+        category: "technology", "financial", or "india"
+        max_sources: Maximum total sources to gather
+        aggregator_limit: Max headlines to take from aggregators (1-2)
+        freshness_hours: How recent news should be (24 = last day)
+        provider: LLM provider for synthesis
+    
+    Returns:
+        Comprehensive news summary as markdown string
+    """
+    # Use asyncio.run() to execute the async version
+    # This handles event loop creation and cleanup automatically
+    return asyncio.run(
+        gather_daily_news_async(
+            category=category,
+            max_sources=max_sources,
+            aggregator_limit=aggregator_limit,
+            freshness_hours=freshness_hours,
+            provider=provider
+        )
+    )
 
 
 def deduplicate_sources(sources: List[Dict]) -> List[Dict]:

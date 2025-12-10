@@ -24,6 +24,7 @@ git+https://github.com/openai/whisper.git
 pyparsing
 newspaper3k
 requests
+aiohttp
 selenium
 beautifulsoup4
 ffmpeg-python

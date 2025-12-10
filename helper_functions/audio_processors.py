@@ -76,19 +76,22 @@ elif not nvidia_api_key:
     RIVA_AVAILABLE = False
 
 # Voice mapping for different models (NVIDIA Riva voices)
+# NOTE: NVIDIA's cloud-hosted Magpie TTS service does not support custom voice names.
+# The previous voice names (e.g., "Magpie-Multilingual.EN-US.Echo") were invalid and caused
+# "subvoice requested not found" errors. Setting to None lets the service use its default voice.
+# If NVIDIA adds voice support in the future, update these values with valid voice identifiers.
 VOICE_MAP = {
-    "GEMINI": "Magpie-Multilingual.EN-US.Echo",
-    "GPT4": "Magpie-Multilingual.EN-US.Aria",
-    "GPT4OMINI": "Magpie-Multilingual.EN-US.Aria",
-    "RIVA_ARIA_VOICE": "Magpie-Multilingual.EN-US.Aria",
-    "BING+OPENAI": "Magpie-Multilingual.EN-US.Shimmer",
-    "MIXTRAL8x7B": "Magpie-Multilingual.EN-US.Fable",
-    # LiteLLM/Ollama models will fall back to DEFAULT
-    "LITELLM_SMART": "Magpie-Multilingual.EN-US.Aria",
-    "LITELLM_STRATEGIC": "Magpie-Multilingual.EN-US.Echo",
-    "OLLAMA_SMART": "Magpie-Multilingual.EN-US.Aria",
-    "OLLAMA_STRATEGIC": "Magpie-Multilingual.EN-US.Echo",
-    "DEFAULT": "Magpie-Multilingual.EN-US.Aria"
+    "GEMINI": None,
+    "GPT4": None,
+    "GPT4OMINI": None,
+    "RIVA_ARIA_VOICE": None,
+    "BING+OPENAI": None,
+    "MIXTRAL8x7B": None,
+    "LITELLM_SMART": None,
+    "LITELLM_STRATEGIC": None,
+    "OLLAMA_SMART": None,
+    "OLLAMA_STRATEGIC": None,
+    "DEFAULT": None
 }
 
 
@@ -295,7 +298,7 @@ def text_to_speech(text, output_path, language, model_name):
     try:
         print("🔊 Synthesizing speech with NVIDIA Magpie...")
         
-        # Select voice based on model name
+        # Select voice based on model name (None = use service default)
         voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
         
         # Determine language code - NVIDIA Riva Magpie supports multilingual
@@ -307,14 +310,15 @@ def text_to_speech(text, output_path, language, model_name):
         elif language.startswith("en"):
             language_code = "en-US"
         
-        # Create TTS request
+        # Create TTS request (only include voice_name if specified)
         req = {
             "text": text,
             "language_code": language_code,
             "encoding": riva.AudioEncoding.LINEAR_PCM,
             "sample_rate_hz": 16000,
-            "voice_name": voice_name
         }
+        if voice_name:
+            req["voice_name"] = voice_name
         
         # Retry logic for TTS synthesis with timeout
         max_retries = 3
@@ -385,9 +389,9 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
         logger.info(f"🔊 Synthesizing speech for {len(text)} characters of text")
         print("🔊 Synthesizing speech with NVIDIA Magpie (no playback)...")
         
-        # Select voice based on model name
+        # Select voice based on model name (None = use service default)
         voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
-        logger.debug(f"Using voice: {voice_name}")
+        logger.debug(f"Using voice: {voice_name if voice_name else 'default'}")
         
         # Determine language code - NVIDIA Riva Magpie supports multilingual
         language_code = "en-US"
@@ -413,14 +417,15 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
         for i, chunk in enumerate(chunks):
             logger.debug(f"Synthesizing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
             
-            # Create TTS request for this chunk
+            # Create TTS request for this chunk (only include voice_name if specified)
             req = {
                 "text": chunk,
                 "language_code": language_code,
                 "encoding": riva.AudioEncoding.LINEAR_PCM,
                 "sample_rate_hz": 16000,
-                "voice_name": voice_name
             }
+            if voice_name:
+                req["voice_name"] = voice_name
             
             # Retry logic for TTS synthesis with timeout
             max_retries = 3
