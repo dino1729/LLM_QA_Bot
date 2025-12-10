@@ -4,6 +4,9 @@ import requests
 import uuid
 import json
 import logging
+import time
+import signal
+from contextlib import contextmanager
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
@@ -22,11 +25,14 @@ MAX_CHARS_PER_SENTENCE = 350
 # Try to import NVIDIA Riva client
 try:
     import riva.client as riva
+    import grpc
     RIVA_AVAILABLE = True
 except ImportError:
     print("WARNING: nvidia-riva-client is not installed. Audio features will be limited.")
     print("Install with: pip install nvidia-riva-client")
     RIVA_AVAILABLE = False
+    riva = None
+    grpc = None
 
 system_prompt = config.system_prompt
 conversation = system_prompt.copy()
@@ -84,6 +90,29 @@ VOICE_MAP = {
     "OLLAMA_STRATEGIC": "Magpie-Multilingual.EN-US.Echo",
     "DEFAULT": "Magpie-Multilingual.EN-US.Aria"
 }
+
+
+class TimeoutException(Exception):
+    """Custom exception for timeout"""
+    pass
+
+
+@contextmanager
+def time_limit(seconds):
+    """
+    Context manager for setting a timeout on a block of code.
+    Note: Only works on Unix-based systems.
+    """
+    def signal_handler(signum, frame):
+        raise TimeoutException("Operation timed out")
+    
+    # Set the signal handler
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)  # Disable the alarm
 
 def transcribe_audio(audio_file):
     """
@@ -287,21 +316,52 @@ def text_to_speech(text, output_path, language, model_name):
             "voice_name": voice_name
         }
         
-        # Synthesize speech
-        response = tts_service.synthesize(**req)
+        # Retry logic for TTS synthesis with timeout
+        max_retries = 3
+        retry_delay = 2
         
-        # Convert raw PCM audio bytes to numpy array and save as proper WAV file
-        audio_data = np.frombuffer(response.audio, dtype=np.int16)
-        sf.write(output_path, audio_data, 16000, 'PCM_16')
+        for attempt in range(max_retries):
+            try:
+                # Synthesize speech with timeout (30 seconds)
+                with time_limit(30):
+                    response = tts_service.synthesize(**req)
+                
+                # Convert raw PCM audio bytes to numpy array and save as proper WAV file
+                audio_data = np.frombuffer(response.audio, dtype=np.int16)
+                sf.write(output_path, audio_data, 16000, 'PCM_16')
+                
+                print(f"✓ Speech synthesized and saved to {output_path}")
+                
+                # Play the audio
+                data, samplerate = sf.read(output_path)
+                sd.play(data, samplerate)
+                sd.wait()
+                
+                return True
+                
+            except TimeoutException:
+                print(f"⚠️ TTS timeout, attempt {attempt+1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"ERROR: TTS synthesis timed out after {max_retries} attempts")
+                    return False
+            except grpc.RpcError as e:
+                print(f"⚠️ gRPC error, attempt {attempt+1}/{max_retries}: {e.code()}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"ERROR: TTS synthesis failed after {max_retries} attempts")
+                    return False
+            except Exception as e:
+                print(f"⚠️ Error in TTS, attempt {attempt+1}/{max_retries}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"ERROR in text_to_speech: {e}")
+                    return False
         
-        print(f"✓ Speech synthesized and saved to {output_path}")
-        
-        # Play the audio
-        data, samplerate = sf.read(output_path)
-        sd.play(data, samplerate)
-        sd.wait()
-        
-        return True
+        return False
         
     except Exception as e:
         print(f"ERROR in text_to_speech: {e}")
@@ -362,14 +422,59 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
                 "voice_name": voice_name
             }
             
-            # Synthesize speech for this chunk
-            response = tts_service.synthesize(**req)
+            # Retry logic for TTS synthesis with timeout
+            max_retries = 3
+            retry_delay = 2
             
-            # Convert raw PCM audio bytes to numpy array
-            chunk_audio = np.frombuffer(response.audio, dtype=np.int16)
-            all_audio_data.append(chunk_audio)
-            
-            logger.debug(f"Chunk {i+1} synthesized: {len(chunk_audio)} samples")
+            for attempt in range(max_retries):
+                try:
+                    # Synthesize speech for this chunk with timeout (30 seconds)
+                    with time_limit(30):
+                        response = tts_service.synthesize(**req)
+                    
+                    # Convert raw PCM audio bytes to numpy array
+                    chunk_audio = np.frombuffer(response.audio, dtype=np.int16)
+                    all_audio_data.append(chunk_audio)
+                    
+                    logger.debug(f"Chunk {i+1} synthesized: {len(chunk_audio)} samples")
+                    break  # Success, exit retry loop
+                    
+                except TimeoutException:
+                    logger.warning(f"TTS timeout on chunk {i+1}, attempt {attempt+1}/{max_retries}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"Chunk {i+1} timed out after {max_retries} attempts")
+                        # Generate silent audio for failed chunk to maintain continuity
+                        chunk_duration = len(chunk) * 0.08  # Rough estimate: 0.08s per char
+                        silent_audio = np.zeros(int(16000 * chunk_duration), dtype=np.int16)
+                        all_audio_data.append(silent_audio)
+                        logger.warning(f"Inserted silence for failed chunk {i+1}")
+                        break
+                except grpc.RpcError as e:
+                    logger.warning(f"gRPC error on chunk {i+1}, attempt {attempt+1}/{max_retries}: {e.code()} - {e.details()}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        # Final attempt failed, skip this chunk or fail
+                        logger.error(f"Failed to synthesize chunk {i+1} after {max_retries} attempts")
+                        # Generate silent audio for failed chunk to maintain continuity
+                        chunk_duration = len(chunk) * 0.08  # Rough estimate: 0.08s per char
+                        silent_audio = np.zeros(int(16000 * chunk_duration), dtype=np.int16)
+                        all_audio_data.append(silent_audio)
+                        logger.warning(f"Inserted silence for failed chunk {i+1}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Unexpected error on chunk {i+1}, attempt {attempt+1}/{max_retries}: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"Failed to synthesize chunk {i+1} after {max_retries} attempts")
+                        chunk_duration = len(chunk) * 0.08
+                        silent_audio = np.zeros(int(16000 * chunk_duration), dtype=np.int16)
+                        all_audio_data.append(silent_audio)
+                        logger.warning(f"Inserted silence for failed chunk {i+1}")
+                        break
         
         # Concatenate all audio chunks
         if len(all_audio_data) > 1:
