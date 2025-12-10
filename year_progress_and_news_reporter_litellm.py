@@ -8,6 +8,7 @@ from config import config
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.audio_processors import text_to_speech_nospeak
 from helper_functions.llm_client import get_client
+from helper_functions.news_researcher import gather_daily_news
 import random
 import os
 
@@ -1480,21 +1481,42 @@ if __name__ == "__main__":
     print("FETCHING NEWS UPDATES")
     print("="*80)
     
+    # Determine provider from model name
+    if LLM_PROVIDER == "litellm":
+        news_provider = "litellm"
+    else:
+        news_provider = "ollama"
+    
     print("\n📰 Fetching Technology News...")
-    technews = f"Provide a detailed summary of today's technology news for {datetime.now().strftime('%Y-%m-%d')}. Include major developments, innovative breakthroughs, and significant industry updates."
-    news_update_tech = internet_connected_chatbot(technews, [], news_model_name, max_tokens, temperature, fast_response=False)
+    news_update_tech = gather_daily_news(
+        category="technology",
+        max_sources=10,  # Increased from 5 for better diversity
+        aggregator_limit=1,
+        freshness_hours=24,
+        provider=news_provider
+    )
     save_message_to_file(news_update_tech, "news_tech_report.txt")
     print(f"✓ Tech news: {len(news_update_tech)} characters")
     
     print("\n📈 Fetching Financial Markets News...")
-    usanews = f"Provide a comprehensive overview of today's financial markets news for {datetime.now().strftime('%Y-%m-%d')}. Emphasize market trends, stock performance, economic indicators, and key financial events."
-    news_update_usa = internet_connected_chatbot(usanews, [], news_model_name, max_tokens, temperature, fast_response=False)
+    news_update_usa = gather_daily_news(
+        category="financial",
+        max_sources=10,  # Increased from 5 for better diversity
+        aggregator_limit=1,
+        freshness_hours=24,
+        provider=news_provider
+    )
     save_message_to_file(news_update_usa, "news_usa_report.txt")
     print(f"✓ Financial news: {len(news_update_usa)} characters")
     
     print("\n🇮🇳 Fetching India News...")
-    india_news = f"Provide a detailed summary of today's news from India for {datetime.now().strftime('%Y-%m-%d')}. Cover political developments, economic news, social events, and cultural stories."
-    news_update_india = internet_connected_chatbot(india_news, [], news_model_name, max_tokens, temperature, fast_response=False)
+    news_update_india = gather_daily_news(
+        category="india",
+        max_sources=10,  # Increased from 5 for better diversity
+        aggregator_limit=0,  # No aggregator for India news
+        freshness_hours=24,
+        provider=news_provider
+    )
     save_message_to_file(news_update_india, "news_india_report.txt")
     print(f"✓ India news: {len(news_update_india)} characters")
 
