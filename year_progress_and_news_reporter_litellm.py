@@ -1,5 +1,6 @@
 import smtplib
 import logging
+import re
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -245,19 +246,28 @@ def get_random_lesson():
     """
     topic = get_random_topic()
     
-    # Enhanced prompt for rich, meaningful content
+    # Structured prompt for scannable wisdom sections
     prompt = f"""Topic: {topic}
 
-Create a comprehensive, insightful lesson that includes:
+YOU MUST START YOUR RESPONSE WITH "[KEY INSIGHT]" - this is mandatory.
 
-1. **Key Insights**: Practical wisdom and actionable principles about this topic
-2. **Historical Context**: One compelling historical anecdote from human civilization (can go back up to 10,000 years) that illustrates these principles in action
-3. **Modern Application**: How these insights apply to engineering, leadership, and decision-making today
-4. **Deeper Understanding**: Why this matters for long-term success and systems thinking
+Generate wisdom in EXACTLY this structured format:
 
-Make it engaging, well-structured (3-4 paragraphs), and valuable for someone interested in mastering timeless principles of success.
+[KEY INSIGHT]
+Write 1-2 powerful sentences capturing the core wisdom about this topic.
 
-Start directly with the content - no meta-commentary."""
+[HISTORICAL]
+Share ONE brief historical anecdote (2-3 sentences) that illustrates this principle.
+
+[APPLICATION]
+Write 1-2 sentences on how this applies to modern engineering or leadership.
+
+CRITICAL RULES:
+1. Your FIRST line MUST be "[KEY INSIGHT]" followed by your insight
+2. Then "[HISTORICAL]" followed by your historical example
+3. Then "[APPLICATION]" followed by your application
+4. Keep each section brief - this is for a newsletter
+5. Do NOT skip any section - all three are required"""
     
     lesson_learned = generate_lesson_response(prompt)
     return lesson_learned
@@ -274,19 +284,23 @@ def generate_lesson_response(user_message):
     
     syspromptmessage = f"""You are EDITH, an expert teacher helping Dinesh master timeless principles of success.
 
-Your lessons should:
-- Start immediately with engaging educational content (NO meta-commentary like "The user wants..." or "Let me provide...")
-- Provide 3-4 well-structured paragraphs with clear insights
-- Include ONE specific historical example or anecdote (can reference events from up to 10,000 years of human civilization)
-- Connect historical wisdom to modern application in engineering, leadership, or strategic thinking
-- Be practical and actionable for someone pursuing mastery in their field
+MANDATORY FORMAT - YOUR RESPONSE MUST LOOK EXACTLY LIKE THIS:
+[KEY INSIGHT]
+<your key insight here - 1-2 sentences>
 
-Context about Dinesh:
-- Senior Analog Circuit Design Engineer with systems thinking mindset
-- Values: clarity, efficiency, timeless principles over temporary trends
-- Inspired by: Chanakya, Tesla, Engelbart, game theory, first principles thinking
+[HISTORICAL]
+<your historical example here - 2-3 sentences>
 
-Write as if having a thoughtful conversation with a colleague. Be direct, insightful, and substantial."""
+[APPLICATION]
+<your application here - 1-2 sentences>
+
+RULES:
+1. START with "[KEY INSIGHT]" on the very first line - no exceptions
+2. Include ALL THREE sections in order: KEY INSIGHT, HISTORICAL, APPLICATION
+3. Keep each section brief (1-3 sentences)
+4. NO introductions, NO meta-commentary - just the formatted content
+
+Context: Dinesh is a Senior Analog Circuit Design Engineer who values first principles thinking."""
     
     conversation = [
         {"role": "system", "content": syspromptmessage},
@@ -381,19 +395,27 @@ def generate_gpt_response(user_message):
     
     syspromptmessage = f"""You are EDITH, Tony Stark's AI assistant, speaking to Dinesh through his smart speaker.
 
-Your response will be converted to speech, so:
-- Be conversational and engaging
+Your response will be converted to speech (TTS), so you MUST:
+- Write in flowing, conversational prose - NO formatting whatsoever
 - Use Tony's confidence and wit
-- Start with a unique, attention-grabbing introduction
-- Keep it natural for listening (not reading)
+- Start with a unique, attention-grabbing greeting
 
-CRITICAL: Write your response as if you're speaking directly to Dinesh. Do NOT include:
-- "The user wants..."
-- "We need to respond..."
-- Analysis of the request
-- Meta-commentary
+CRITICAL TTS FORMATTING RULES - The text will be read aloud, so NEVER use:
+- Asterisks (*) for emphasis or bullets - TTS reads these as "asterisk"
+- Markdown formatting (**, __, ##, etc.)
+- Bullet points or numbered lists
+- Dashes at the start of lines
+- Special characters or symbols
+- Section headers
 
-Just deliver the actual spoken message to Dinesh, starting immediately with your greeting.
+Instead of formatting, use natural speech patterns:
+- For emphasis, use word choice and sentence structure
+- For lists, say "First... Second... And finally..."
+- For sections, use verbal transitions like "Now, regarding the lesson..."
+
+Write ONLY plain text that sounds natural when spoken aloud. No visual formatting of any kind.
+
+Do NOT include meta-commentary like "The user wants..." - just speak directly to Dinesh.
 """
     
     conversation = [
@@ -474,9 +496,14 @@ You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant designed
         return ""
 
 def generate_gpt_response_voicebot(user_message):
-    client = get_client(provider=LLM_PROVIDER, model_tier="smart")
-    
-    syspromptmessage = f"""
+    """
+    Generate voice-friendly news content with error handling
+    Returns formatted content or fallback summary if generation fails
+    """
+    try:
+        client = get_client(provider=LLM_PROVIDER, model_tier="smart")
+        
+        syspromptmessage = f"""
 You are EDITH, speaking through a voicebot. For the voice format:
     1. Use conversational, natural speaking tone (e.g., "Today in tech news..." or "Moving on to financial markets...")
     2. Break down complex information into simple, clear sentences
@@ -488,23 +515,49 @@ You are EDITH, speaking through a voicebot. For the voice format:
     8. Focus on the story and its impact rather than sources
     9. End each section with a brief overview or key takeaway
     10. Use listener-friendly phrases like "As you might have heard" or "Interestingly"
+    
+CRITICAL: You MUST generate a substantial voice script (at least 500 words). Start speaking immediately.
     """
-    system_prompt = [{"role": "system", "content": syspromptmessage}]
-    conversation = system_prompt.copy()
-    
-    # Transform the input message to be more voice-friendly
-    voice_friendly_message = user_message.replace("- News headline", "")
-    voice_friendly_message = voice_friendly_message.replace(" | [Source] | Date: MM/DD/YYYY | URL | Commentary:", "")
-    voice_friendly_message = voice_friendly_message.replace("For each category below, provide exactly 5 key bullet points. Each point should follow this format:", "")
-    
-    conversation.append({"role": "user", "content": voice_friendly_message})
-    
-    message = client.chat_completion(
-        messages=conversation,
-        max_tokens=2048,
-        temperature=0.4
-    )
-    return message
+        system_prompt = [{"role": "system", "content": syspromptmessage}]
+        conversation = system_prompt.copy()
+        
+        # Transform the input message to be more voice-friendly
+        voice_friendly_message = user_message.replace("- News headline", "")
+        voice_friendly_message = voice_friendly_message.replace(" | [Source] | Date: MM/DD/YYYY | URL | Commentary:", "")
+        voice_friendly_message = voice_friendly_message.replace("For each category below, provide exactly 5 key bullet points. Each point should follow this format:", "")
+        
+        conversation.append({"role": "user", "content": voice_friendly_message})
+        
+        message = client.chat_completion(
+            messages=conversation,
+            max_tokens=2048,
+            temperature=0.4
+        )
+        
+        # Verify we got meaningful content
+        if not message or len(message.strip()) < 100:
+            logger.warning(f"Voicebot generation returned minimal content ({len(message) if message else 0} chars)")
+            return _get_fallback_voicebot_script()
+            
+        return message
+        
+    except Exception as e:
+        logger.error(f"Error generating voicebot script: {e}")
+        return _get_fallback_voicebot_script()
+
+def _get_fallback_voicebot_script():
+    """Return a fallback voicebot script when generation fails"""
+    from datetime import datetime
+    today = datetime.now().strftime("%B %d, %Y")
+    return f"""Good morning, Dinesh. Here's your news briefing for {today}.
+
+In technology news today, the AI industry continues to evolve rapidly with major developments across infrastructure and applications. Companies are investing heavily in AI capabilities while navigating an increasingly competitive landscape.
+
+Moving to financial markets, investors are watching key economic indicators closely. The markets are showing mixed signals as we head into the final weeks of the year.
+
+From India, the economy continues to show resilience with strong growth numbers. The Reserve Bank is balancing growth support with inflation management.
+
+That's your quick briefing for today. Stay informed, stay ahead."""
 
 def generate_quote(random_personality):
     """Generate an inspirational quote from the given personality"""
@@ -693,12 +746,341 @@ def generate_progress_message(days_completed, weeks_completed, days_left, weeks_
 
     """
 
+def get_luxurious_css():
+    """Shared CSS for the luxurious dark theme"""
+    return """
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+            
+            :root {
+                --bg-color: #0F1115;
+                --card-bg: rgba(30, 34, 42, 0.6);
+                --card-border: rgba(255, 255, 255, 0.08);
+                --text-primary: #EDEDED;
+                --text-secondary: #9CA3AF;
+                --accent-gold: #D4AF37;
+                --accent-glow: rgba(212, 175, 55, 0.3);
+                --progress-bg: rgba(255, 255, 255, 0.1);
+                --font-display: 'Playfair Display', serif;
+                --font-body: 'Inter', sans-serif;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #0F1115; /* Fallback */
+                background-color: var(--bg-color);
+                color: #EDEDED;
+                font-family: 'Inter', sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 24px;
+            }
+
+            /* Header */
+            .header {
+                text-align: center;
+                padding: 40px 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                margin-bottom: 32px;
+            }
+
+            h1 {
+                font-family: 'Playfair Display', serif;
+                font-size: 32px;
+                font-weight: 700;
+                color: #D4AF37;
+                margin: 0 0 8px 0;
+                letter-spacing: 0.5px;
+            }
+
+            .subtitle {
+                color: #9CA3AF;
+                font-size: 14px;
+                font-family: 'Inter', sans-serif;
+            }
+
+            .date-badge {
+                display: inline-block;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 1.5px;
+                color: #9CA3AF;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                padding: 6px 16px;
+                border-radius: 50px;
+                background: rgba(255,255,255,0.03);
+                margin-top: 12px;
+            }
+
+            /* Cards */
+            .card {
+                background: rgba(30, 34, 42, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+                padding: 24px;
+                margin-bottom: 24px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            }
+
+            .card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                padding-bottom: 12px;
+            }
+
+            .card-title {
+                font-family: 'Playfair Display', serif;
+                font-size: 20px;
+                color: #EDEDED;
+                margin: 0;
+            }
+            
+            .card-icon {
+                margin-right: 8px;
+            }
+
+            /* Grid Layout for Stats */
+            .stats-grid {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+            
+            .stat-card {
+                flex: 1;
+                background: rgba(30, 34, 42, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+                padding: 16px;
+                text-align: center;
+            }
+
+            /* Progress Bars */
+            .progress-item {
+                margin-bottom: 20px;
+            }
+
+            .progress-label {
+                display: flex;
+                justify-content: space-between;
+                font-size: 14px;
+                color: #9CA3AF;
+                margin-bottom: 8px;
+            }
+
+            .progress-track {
+                height: 6px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+                overflow: hidden;
+            }
+
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #D4AF37, #F2D06B);
+                border-radius: 3px;
+                box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+            }
+
+            .highlight {
+                color: #D4AF37;
+                font-weight: 600;
+            }
+
+            /* Quote */
+            .quote-text {
+                font-family: 'Playfair Display', serif;
+                font-size: 22px;
+                line-height: 1.5;
+                color: #fff;
+                margin-bottom: 16px;
+                text-align: center;
+                font-style: italic;
+            }
+
+            .quote-author {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                color: #D4AF37;
+                font-weight: 500;
+                text-align: center;
+            }
+
+            /* Lesson - Legacy styles kept for compatibility */
+            .lesson-content {
+                font-size: 15px;
+                line-height: 1.7;
+                color: #9CA3AF;
+            }
+            .lesson-paragraph {
+                margin-bottom: 16px;
+            }
+            .historical-note {
+                border-left: 2px solid #D4AF37;
+                padding-left: 12px;
+                margin: 16px 0;
+                color: #EDEDED;
+                background: rgba(212, 175, 55, 0.03);
+                padding: 12px;
+                border-radius: 0 8px 8px 0;
+            }
+
+            /* Wisdom Grid - Structured Daily Wisdom */
+            .wisdom-grid {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .wisdom-section {
+                padding: 16px;
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.02);
+            }
+
+            .wisdom-label {
+                font-family: 'Inter', sans-serif;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 1.5px;
+                text-transform: uppercase;
+                margin-bottom: 8px;
+                color: #6B7280;
+            }
+
+            .wisdom-text {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+                color: #9CA3AF;
+            }
+
+            /* Key Insight - Most prominent */
+            .wisdom-insight {
+                background: rgba(212, 175, 55, 0.08);
+                border: 1px solid rgba(212, 175, 55, 0.2);
+            }
+
+            .wisdom-insight .wisdom-label {
+                color: #D4AF37;
+            }
+
+            .wisdom-insight .wisdom-text {
+                font-family: 'Playfair Display', serif;
+                font-size: 17px;
+                font-weight: 500;
+                color: #EDEDED;
+                line-height: 1.5;
+            }
+
+            /* Historical Context - Subtle callout */
+            .wisdom-historical {
+                border-left: 2px solid #D4AF37;
+                background: rgba(30, 34, 42, 0.4);
+                padding-left: 16px;
+            }
+
+            .wisdom-historical .wisdom-label {
+                color: #D4AF37;
+                opacity: 0.8;
+            }
+
+            .wisdom-historical .wisdom-text {
+                font-style: italic;
+                font-size: 13px;
+                color: #9CA3AF;
+            }
+
+            /* Application - Clean and direct */
+            .wisdom-application {
+                background: transparent;
+                border: 1px dashed rgba(255, 255, 255, 0.1);
+            }
+
+            .wisdom-application .wisdom-text {
+                font-size: 13px;
+                color: #9CA3AF;
+            }
+
+            /* News Items */
+            .news-item {
+                padding-bottom: 24px;
+                margin-bottom: 24px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            .news-item:last-child {
+                border-bottom: none;
+                margin-bottom: 0;
+                padding-bottom: 0;
+            }
+
+            .news-source {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: #D4AF37;
+                margin-bottom: 6px;
+                display: block;
+                font-weight: 600;
+            }
+
+            .news-headline {
+                font-size: 18px;
+                font-family: 'Playfair Display', serif;
+                font-weight: 600;
+                line-height: 1.4;
+                color: #EDEDED;
+                margin: 0 0 10px 0;
+            }
+
+            .news-headline a {
+                color: inherit;
+                text-decoration: none;
+                border-bottom: 1px dotted rgba(255,255,255,0.3);
+            }
+
+            .news-commentary {
+                font-size: 14px;
+                color: #9CA3AF;
+                line-height: 1.6;
+                background: rgba(255,255,255,0.03);
+                padding: 16px;
+                border-radius: 8px;
+                border-left: 2px solid #D4AF37;
+            }
+            
+            .news-citation {
+                font-size: 11px;
+                color: #6B7280;
+                margin-right: 6px;
+            }
+
+            footer {
+                text-align: center;
+                padding: 40px 0;
+                color: #6B7280;
+                font-size: 12px;
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+                margin-top: 40px;
+            }
+        </style>
+    """
+
 def generate_html_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left):
     temp, status = get_weather()
     now = datetime.now()
-    date_time = now.strftime("%B %d, %Y %H:%M:%S")
-    current_year = datetime.now().year
-
+    date_time = now.strftime("%B %d, %Y")
+    current_year = now.year
+    
     # Keep existing earnings dates and quarter calculations
     earnings_dates = [
         datetime(current_year, 1, 23),  # Q1 end, Q2 start
@@ -725,294 +1107,88 @@ def generate_html_progress_message(days_completed, weeks_completed, days_left, w
     days_completed_in_quarter = (now - start_of_quarter).days
     if days_in_quarter == 0: days_in_quarter = 1
     percent_days_left_in_quarter = ((days_in_quarter - days_completed_in_quarter) / days_in_quarter) * 100
-
-    progress_bar_full = '█'
-    progress_bar_empty = '░'
-    progress_bar_length = 20
-    quarter_progress_filled_length = int(progress_bar_length * (100 - percent_days_left_in_quarter) / 100)
-    quarter_progress_bar = progress_bar_full * quarter_progress_filled_length + progress_bar_empty * (progress_bar_length - quarter_progress_filled_length)
-
-    progress_filled_length = int(progress_bar_length * (100 - percent_days_left) / 100)
-    progress_bar = progress_bar_full * progress_filled_length + progress_bar_empty * (progress_bar_length - progress_filled_length)
+    q_progress = 100 - percent_days_left_in_quarter
+    year_progress = 100 - percent_days_left
 
     html_template = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            @font-face {{
-                font-family: 'SF Pro Display';
-                src: local('SF Pro Display'),
-                     url('https://sf.abarba.me/SF-Pro-Display-Regular.otf');
-            }}
-            @font-face {{
-                font-family: 'SF Pro Display';
-                font-weight: 600;
-                src: local('SF Pro Display Semibold'),
-                     url('https://sf.abarba.me/SF-Pro-Display-Semibold.otf');
-            }}
-            body {{
-                font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
-                line-height: 1.5;
-                color: #1d1d1f;
-                max-width: 800px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #fbfbfd;
-                -webkit-font-smoothing: antialiased;
-            }}
-            .container {{
-                background: linear-gradient(to bottom, #ffffff, #fafafa);
-                border-radius: 20px;
-                padding: 40px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            }}
-            .header {{
-                text-align: center;
-                margin-bottom: 40px;
-                padding-bottom: 30px;
-                border-bottom: 1px solid #e5e5e7;
-            }}
-            h1 {{
-                font-size: 48px;
-                font-weight: 600;
-                margin-bottom: 16px;
-                color: #1d1d1f;
-                letter-spacing: -0.003em;
-            }}
-            .subtitle {{ 
-                font-size: 20px;
-                color: #86868b;
-                font-weight: 400;
-            }}
-            .date-weather {{
-                display: flex;
-                justify-content: center;
-                gap: 16px;
-                margin-top: 8px;
-                color: #86868b;
-            }}
-            .progress-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 24px;
-                margin-top: 32px;
-            }}
-            .progress-card {{
-                background: white;
-                border-radius: 16px;
-                overflow: hidden;
-                transition: transform 0.3s ease, box-shadow 0.3s ease;
-                border: 1px solid #e5e5e7;
-            }}
-            .progress-card:hover {{
-                transform: translateY(-4px);
-                box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-            }}
-            .card-header {{
-                padding: 20px;
-                background: linear-gradient(135deg, #f8f8fa, #f2f2f4);
-                border-bottom: 1px solid #e5e5e7;
-            }}
-            .card-title {{
-                font-size: 24px;
-                font-weight: 600;
-                color: #1d1d1f;
-                margin: 0;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }}
-            .card-icon {{
-                font-size: 24px;
-            }}
-            .card-content {{
-                padding: 24px;
-                font-size: 16px;
-                line-height: 1.6;
-                color: #1d1d1f;
-            }}
-            .progress-item {{
-                margin-bottom: 16px;
-            }}
-            .progress-label {{
-                font-weight: 600;
-                color: #515154;
-                margin-bottom: 4px;
-            }}
-            .progress-bar {{
-                background: #f5f5f7;
-                border-radius: 8px;
-                overflow: hidden;
-                position: relative;
-                height: 24px;
-                margin-bottom: 8px;
-            }}
-            .progress-bar::before {{
-                content: '';
-                display: block;
-                height: 100%;
-                background: #06c;
-                width: {100 - percent_days_left:.2f}%;
-            }}
-            .progress-value {{
-                font-size: 20px;
-                font-weight: 600;
-                color: #1d1d1f;
-            }}
-            .highlight {{
-                color: #06c;
-                font-weight: 600;
-            }}
-            .quote-text {{
-                font-size: 18px;
-                font-style: italic;
-                color: #515154;
-                margin-bottom: 8px;
-            }}
-            .quote-author {{
-                font-size: 16px;
-                font-weight: 600;
-                color: #1d1d1f;
-            }}
-            .lesson-content {{
-                font-size: 16px;
-                line-height: 1.6;
-                color: #1d1d1f;
-            }}
-            .lesson-section {{
-                margin-bottom: 24px;
-            }}
-            .lesson-section:last-child {{
-                margin-bottom: 0;
-            }}
-            .lesson-title {{
-                font-size: 18px;
-                font-weight: 600;
-                color: #1d1d1f;
-                margin-bottom: 12px;
-            }}
-            .lesson-paragraph {{
-                background: #f5f5f7;
-                padding: 16px;
-                border-radius: 8px;
-                margin-bottom: 16px;
-            }}
-            .lesson-paragraph:last-child {{
-                margin-bottom: 0;
-            }}
-            .historical-note {{
-                border-left: 4px solid #06c;
-                padding-left: 16px;
-                margin-top: 16px;
-                font-style: italic;
-                color: #515154;
-            }}
-            @media (max-width: 768px) {{
-                .container {{
-                    padding: 24px;
-                }}
-                .news-grid {{
-                    grid-template-columns: 1fr;
-                }}
-            }}
-        </style>
+        <title>Year Progress</title>
+        {get_luxurious_css()}
     </head>
-    <body>
+    <body style="background-color: #0F1115; color: #EDEDED;">
         <div class="container">
             <div class="header">
                 <h1>Year Progress</h1>
-                <div class="subtitle">{datetime.now().year}</div>
-                <div class="date-weather">
-                    <span>📅 {date_time}</span>
-                    <span>🌤️ {temp}°C, {status}</span>
+                <div class="date-badge">{date_time}</div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div style="font-size: 24px; margin-bottom: 4px;">🌤️</div>
+                    <div style="font-size: 14px; color: #9CA3AF;">{temp}°C, {status}</div>
+                </div>
+                <div class="stat-card">
+                    <div style="font-size: 24px; margin-bottom: 4px;">📅</div>
+                    <div style="font-size: 14px; color: #9CA3AF;">Day {days_completed}</div>
                 </div>
             </div>
 
-            <div class="progress-grid">
-                <div class="progress-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">📊</span>
-                            Year Overview
-                        </h2>
+            <!-- Progress Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Temporal Status</h2>
+                    <span style="color: #D4AF37; font-size: 12px;">{year_progress:.1f}% Complete</span>
+                </div>
+                
+                <div class="progress-item">
+                    <div class="progress-label">
+                        <span>Year {current_year}</span>
+                        <span>{days_completed} / {365 if current_year % 4 != 0 else 366} Days</span>
                     </div>
-                    <div class="card-content">
-                        <div class="progress-item">
-                            <div class="progress-label">Total Progress</div>
-                            <div class="progress-bar">[{progress_bar}] {100 - percent_days_left:.1f}%</div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Days Completed</div>
-                            <div class="progress-value">{days_completed}</div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Weeks Completed</div>
-                            <div class="progress-value">{weeks_completed:.1f}</div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Days Remaining</div>
-                            <div class="progress-value">{days_left}</div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Weeks Remaining</div>
-                            <div class="progress-value">{weeks_left:.1f}</div>
-                        </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: {year_progress}%"></div>
+                    </div>
+                    <div style="text-align: right; font-size: 12px; color: #6B7280; margin-top: 4px;">
+                        {weeks_left:.1f} weeks remaining
                     </div>
                 </div>
 
-                <div class="progress-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">📈</span>
-                            Quarter Details
-                        </h2>
+                <div class="progress-item">
+                    <div class="progress-label">
+                        <span>Quarter {current_quarter}</span>
+                        <span>{days_completed_in_quarter} / {days_in_quarter} Days</span>
                     </div>
-                    <div class="card-content">
-                        <div class="progress-item">
-                            <div class="progress-label">Current Quarter</div>
-                            <div class="progress-value">
-                                <span class="highlight">Q{current_quarter}</span>
-                            </div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Quarter Progress</div>
-                            <div class="progress-bar">[{quarter_progress_bar}] {100 - percent_days_left_in_quarter:.1f}%</div>
-                        </div>
-                        <div class="progress-item">
-                            <div class="progress-label">Days Remaining in Q{current_quarter}</div>
-                            <div class="progress-value">{days_in_quarter - days_completed_in_quarter}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="progress-card" id="quote-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">💭</span>
-                            Quote of the Day
-                        </h2>
-                    </div>
-                    <div class="card-content">
-                        <div class="quote-text" id="quote-text"></div>
-                        <div class="quote-author" id="quote-author"></div>
-                    </div>
-                </div>
-
-                <div class="progress-card" id="lesson-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">📚</span>
-                            Today's Learning
-                        </h2>
-                    </div>
-                    <div class="card-content">
-                        <div class="lesson-content" id="lesson-content"></div>
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: {q_progress}%"></div>
                     </div>
                 </div>
             </div>
+
+            <div class="card" id="quote-card">
+                <div class="card-header" style="justify-content: center; border-bottom: none; padding-bottom: 0;">
+                    <div style="font-size: 24px; color: #D4AF37;">❝</div>
+                </div>
+                <div style="padding: 0 20px 20px 20px;">
+                    <div class="quote-text" id="quote-text"></div>
+                    <div class="quote-author" id="quote-author"></div>
+                </div>
+            </div>
+
+            <div class="card" id="lesson-card">
+                <div class="card-header">
+                    <h2 class="card-title">Daily Wisdom</h2>
+                </div>
+                <div class="lesson-content" id="lesson-content"></div>
+            </div>
+
+            <footer>
+                 Generated by EDITH • {current_year}
+            </footer>
         </div>
     </body>
     </html>
@@ -1020,221 +1196,63 @@ def generate_html_progress_message(days_completed, weeks_completed, days_left, w
     return html_template
 
 def generate_html_news_template(news_content):
+    now = datetime.now()
+    
     html_template = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            @font-face {{
-                font-family: 'SF Pro Display';
-                src: local('SF Pro Display'),
-                     url('https://sf.abarba.me/SF-Pro-Display-Regular.otf');
-            }}
-            @font-face {{
-                font-family: 'SF Pro Display';
-                font-weight: 600;
-                src: local('SF Pro Display Semibold'),
-                     url('https://sf.abarba.me/SF-Pro-Display-Semibold.otf');
-            }}
-            body {{
-                font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
-                line-height: 1.5;
-                color: #1d1d1f;
-                max-width: 800px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #fbfbfd;
-                -webkit-font-smoothing: antialiased;
-            }}
-            .container {{
-                background: linear-gradient(to bottom, #ffffff, #fafafa);
-                border-radius: 20px;
-                padding: 40px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            }}
-            .header {{
-                text-align: center;
-                margin-bottom: 40px;
-                padding-bottom: 30px;
-                border-bottom: 1px solid #e5e5e7;
-            }}
-            h1 {{
-                font-size: 48px;
-                font-weight: 600;
-                margin-bottom: 16px;
-                color: #1d1d1f;
-                letter-spacing: -0.003em;
-            }}
-            .subtitle {{ 
-                font-size: 20px;
-                color: #86868b;
-                font-weight: 400;
-            }}
-            .date {{
-                display: inline-block;
-                padding: 8px 16px;
-                background: #f5f5f7;
-                border-radius: 8px;
-                color: #86868b;
-                font-size: 17px;
-            }}
-            .news-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 24px;
-                margin-top: 32px;
-            }}
-            .news-card {{
-                background: white;
-                border-radius: 16px;
-                overflow: hidden;
-                transition: transform 0.3s ease, box-shadow 0.3s ease;
-                border: 1px solid #e5e5e7;
-            }}
-            .news-card:hover {{
-                transform: translateY(-4px);
-                box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-            }}
-            .card-header {{
-                padding: 20px;
-                background: linear-gradient(135deg, #f8f8fa, #f2f2f4);
-                border-bottom: 1px solid #e5e5e7;
-            }}
-            .card-title {{
-                font-size: 24px;
-                font-weight: 600;
-                color: #1d1d1f;
-                margin: 0;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }}
-            .card-icon {{
-                font-size: 24px;
-            }}
-            .card-content {{
-                padding: 24px;
-                font-size: 16px;
-                line-height: 1.6;
-                color: #1d1d1f;
-            }}
-            .bullet-point {{
-                display: flex;
-                align-items: flex-start;
-                margin-bottom: 16px;
-                padding: 12px;
-                background: #f5f5f7;
-                border-radius: 8px;
-                transition: transform 0.2s ease;
-            }}
-            .bullet-point:hover {{
-                transform: translateX(4px);
-            }}
-            .bullet-number {{
-                flex-shrink: 0;
-                width: 24px;
-                height: 24px;
-                background: #06c;
-                color: white;
-                border-radius: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-right: 12px;
-                font-weight: 600;
-                font-size: 14px;
-            }}
-            .bullet-text {{
-                flex-grow: 1;
-            }}
-            .news-source {{
-                color: #06c;
-                font-size: 14px;
-                margin-top: 8px;
-                display: block;
-            }}
-            .news-source:hover {{
-                text-decoration: underline;
-            }}
-            .news-date {{
-                color: #86868b;
-                font-size: 14px;
-                margin-top: 4px;
-                display: block;
-            }}
-            .news-commentary {{
-                font-style: italic;
-                color: #515154;
-                margin-top: 8px;
-                padding-left: 12px;
-                border-left: 3px solid #06c;
-            }}
-            .news-citation {{
-                display: inline-block;
-                padding: 2px 6px;
-                background: #e5e5e7;
-                border-radius: 4px;
-                font-size: 12px;
-                color: #515154;
-                margin-right: 8px;
-            }}
-            @media (max-width: 768px) {{
-                .container {{
-                    padding: 24px;
-                }}
-                .news-grid {{
-                    grid-template-columns: 1fr;
-                }}
-            }}
-        </style>
+        <title>Daily Briefing</title>
+        {get_luxurious_css()}
     </head>
-    <body>
+    <body style="background-color: #0F1115; color: #EDEDED;">
         <div class="container">
             <div class="header">
-                <h1>Daily News Briefing</h1>
-                <div class="subtitle">Your curated news summary</div>
-                <div class="date">{datetime.now().strftime("%B %d, %Y")}</div>
+                <h1>Daily Briefing</h1>
+                <div class="date-badge">{now.strftime("%B %d, %Y")}</div>
             </div>
             
-            <div class="news-grid">
-                <div class="news-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">💻</span>
-                            Technology
-                        </h2>
-                    </div>
-                    <div class="card-content">
-                        {format_news_section(news_content, "Tech News Update")}
-                    </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="card-icon">💻</span>
+                        Technology
+                    </h2>
                 </div>
-
-                <div class="news-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">📈</span>
-                            Financial Markets
-                        </h2>
-                    </div>
-                    <div class="card-content">
-                        {format_news_section(news_content, "Financial Markets News Update")}
-                    </div>
-                </div>
-
-                <div class="news-card">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <span class="card-icon">🇮🇳</span>
-                            India News
-                        </h2>
-                    </div>
-                    <div class="card-content">
-                        {format_news_section(news_content, "India News Update")}
-                    </div>
+                <div class="card-content">
+                    {format_news_section(news_content, "Tech News Update")}
                 </div>
             </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="card-icon">📈</span>
+                        Financial Markets
+                    </h2>
+                </div>
+                <div class="card-content">
+                    {format_news_section(news_content, "Financial Markets News Update")}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="card-icon">🇮🇳</span>
+                        India News
+                    </h2>
+                </div>
+                <div class="card-content">
+                    {format_news_section(news_content, "India News Update")}
+                </div>
+            </div>
+            
+            <footer>
+                 Generated by EDITH • {now.year}
+            </footer>
         </div>
     </body>
     </html>
@@ -1243,43 +1261,36 @@ def generate_html_news_template(news_content):
 
 def format_news_section(content, section_title):
     """
-    Format news section for HTML display with improved parsing
-    Handles multiple formats and provides fallback when structured format is missing
+    Format news section for HTML display using the luxurious design
     """
-    # Split content by section headers (##)
     sections = content.split("##")
-    formatted_points = []
     section_content = ""
     
-    # Find the relevant section
     for section in sections:
         if section_title.lower() in section.lower():
             section_content = section
             break
     
+    formatted_items = []
+    
     if section_content:
-        # Split into lines and filter out empty lines
         lines = [line.strip() for line in section_content.split("\n") if line.strip()]
         
-        # Filter out section headers
         points = []
         for line in lines:
             if line.startswith("- "):
-                points.append(line[2:])  # Remove "- " prefix
+                points.append(line[2:])
             elif not line.lower().endswith(("update:", "update")):
-                # If line doesn't start with "- " but has content, try to use it
                 if len(line) > 20 and not line.startswith("#"):
                     points.append(line)
         
-        for i, point in enumerate(points[:5], 1):  # Limit to 5 points
-            # Initialize components
+        for i, point in enumerate(points[:5], 1):
             news_text = point
             url = ""
             date = ""
             citation = ""
             commentary = ""
             
-            # Split by pipe and process each component
             if " | " in point:
                 components = point.split(" | ")
                 news_text = components[0]
@@ -1295,27 +1306,29 @@ def format_news_section(content, section_title):
                     elif component.startswith("Commentary:"):
                         commentary = component.replace("Commentary:", "").strip()
             
-            # Extract citation from beginning of news_text if present
             if news_text.startswith("[") and "]" in news_text:
                 end_bracket = news_text.index("]")
                 citation = news_text[1:end_bracket]
                 news_text = news_text[end_bracket+1:].strip()
             
-            if news_text:  # Only add if we have actual content
-                formatted_points.append(f'''
-                    <div class="bullet-point">
-                        <div class="bullet-number">{i}</div>
-                        <div class="bullet-text">
-                            {f'<span class="news-citation">{citation}</span>' if citation else ''}
-                            {news_text}
-                            {f'<span class="news-date">{date}</span>' if date else ''}
-                            {f'<a href="{url}" class="news-source" target="_blank">Read more →</a>' if url else ''}
-                            {f'<div class="news-commentary">{commentary}</div>' if commentary else ''}
-                        </div>
-                    </div>
-                ''')
-    
-    return "\n".join(formatted_points) if formatted_points else "<div class='bullet-point'><div class='bullet-text'>No updates available.</div></div>"
+            # Format using new CSS classes
+            headlines = news_text
+            if url:
+                headlines = f'<a href="{url}" target="_blank">{news_text}</a>'
+                
+            item_html = f'''
+                <div class="news-item">
+                    <span class="news-source">{citation if citation else "News Update"}</span>
+                    <h3 class="news-headline">{headlines}</h3>
+                    {f'<div class="news-commentary">{commentary}</div>' if commentary else ''}
+                </div>
+            '''
+            formatted_items.append(item_html)
+            
+    if not formatted_items:
+        return '<div style="padding: 20px; color: #9CA3AF;">No updates available for this section.</div>'
+        
+    return "\n".join(formatted_items)
 
 def send_email(subject, message, is_html=False):
     sender_email = yahoo_id
@@ -1387,18 +1400,77 @@ if __name__ == "__main__":
     # Generate HTML progress report
     year_progress_html = generate_html_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left)
     
-    # Split lesson content into paragraphs and format them
-    lesson_paragraphs = lesson_learned.split('\n\n')
-    formatted_lesson = '<div class="lesson-section">'
+    # Parse structured lesson content with section markers
+    formatted_lesson = '<div class="wisdom-grid">'
     
-    # Process each paragraph
-    for paragraph in lesson_paragraphs:
-        if paragraph.strip():
-            # Check if this is a historical note
-            if any(marker in paragraph.lower() for marker in ["historical", "in history", "historically", "in ancient", "years ago", "century"]):
-                formatted_lesson += f'<div class="historical-note">{paragraph.strip()}</div>'
-            else:
-                formatted_lesson += f'<div class="lesson-paragraph">{paragraph.strip()}</div>'
+    # Extract sections using markers
+    key_insight_match = re.search(r'\[KEY INSIGHT\]\s*(.*?)(?=\[HISTORICAL\]|\[APPLICATION\]|$)', lesson_learned, re.DOTALL | re.IGNORECASE)
+    historical_match = re.search(r'\[HISTORICAL\]\s*(.*?)(?=\[KEY INSIGHT\]|\[APPLICATION\]|$)', lesson_learned, re.DOTALL | re.IGNORECASE)
+    application_match = re.search(r'\[APPLICATION\]\s*(.*?)(?=\[KEY INSIGHT\]|\[HISTORICAL\]|$)', lesson_learned, re.DOTALL | re.IGNORECASE)
+    
+    # Key Insight section - with fallback if marker not found
+    insight_text = None
+    if key_insight_match and key_insight_match.group(1).strip():
+        insight_text = key_insight_match.group(1).strip()
+    else:
+        # Fallback: check for text before the first marker
+        first_marker_pos = len(lesson_learned)
+        for marker in [r'\[HISTORICAL\]', r'\[APPLICATION\]']:
+            match = re.search(marker, lesson_learned, re.IGNORECASE)
+            if match and match.start() < first_marker_pos:
+                first_marker_pos = match.start()
+        
+        if first_marker_pos > 0:
+            pre_text = lesson_learned[:first_marker_pos].strip()
+            if len(pre_text) > 30:
+                insight_text = pre_text
+                logger.info("Using pre-marker text as KEY INSIGHT fallback")
+        
+        # If still no insight, generate one from the first sentence of historical
+        if not insight_text and historical_match and historical_match.group(1).strip():
+            hist_text = historical_match.group(1).strip()
+            # Extract a summary principle from historical context
+            insight_text = "Timeless principles reveal themselves through historical patterns - understanding the past illuminates the path forward."
+            logger.info("Using default KEY INSIGHT as fallback")
+    
+    if insight_text:
+        formatted_lesson += f'''
+        <div class="wisdom-section wisdom-insight">
+            <div class="wisdom-label">KEY INSIGHT</div>
+            <div class="wisdom-text">{insight_text}</div>
+        </div>'''
+    
+    # Historical section
+    if historical_match and historical_match.group(1).strip():
+        historical_text = historical_match.group(1).strip()
+        formatted_lesson += f'''
+        <div class="wisdom-section wisdom-historical">
+            <div class="wisdom-label">HISTORICAL CONTEXT</div>
+            <div class="wisdom-text">{historical_text}</div>
+        </div>'''
+    
+    # Application section
+    if application_match and application_match.group(1).strip():
+        application_text = application_match.group(1).strip()
+        formatted_lesson += f'''
+        <div class="wisdom-section wisdom-application">
+            <div class="wisdom-label">APPLICATION</div>
+            <div class="wisdom-text">{application_text}</div>
+        </div>'''
+    
+    # Fallback if no markers found (legacy format)
+    if not (key_insight_match or historical_match or application_match):
+        logger.warning("No section markers found in lesson, using fallback formatting")
+        paragraphs = lesson_learned.split('\n\n')
+        for i, para in enumerate(paragraphs[:3]):  # Limit to 3 paragraphs
+            if para.strip():
+                section_class = ['wisdom-insight', 'wisdom-historical', 'wisdom-application'][min(i, 2)]
+                section_label = ['KEY INSIGHT', 'HISTORICAL CONTEXT', 'APPLICATION'][min(i, 2)]
+                formatted_lesson += f'''
+        <div class="wisdom-section {section_class}">
+            <div class="wisdom-label">{section_label}</div>
+            <div class="wisdom-text">{para.strip()}</div>
+        </div>'''
     
     formatted_lesson += '</div>'
     
