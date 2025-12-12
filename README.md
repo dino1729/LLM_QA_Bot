@@ -6,12 +6,16 @@ LLM_QA_Bot is a multi-modal research and productivity workspace built with Gradi
 
 ## Table of Contents
 - [Overview](#overview)
+- [Quickstart](#quickstart)
 - [Feature Highlights](#feature-highlights)
 - [Architecture](#architecture)
+- [Project Layout](#project-layout)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Configuration Reference](#configuration-reference)
+- [Configuration Tips & Secrets](#configuration-tips--secrets)
 - [Running the App](#running-the-app)
+- [Running Recipes](#running-recipes)
 - [Typical Workflows](#typical-workflows)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
@@ -19,7 +23,14 @@ LLM_QA_Bot is a multi-modal research and productivity workspace built with Gradi
 - [License](#license)
 
 ## Overview
-LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, paste a link, or point to a video; the bot extracts transcripts or text, chunkifies content through LlamaIndex, builds local vector/summary stores, and surfaces actionable answers through conversational agents. The Memory Palace feature can persist what you analyze into Supabase for long-term personal search, while the integrated chat tabs let you pivot between Azure OpenAI, Gemini, Cohere, Groq, LiteLLM, and local Ollama deployments. Additional planners, generators, and a Bhavagad Gita chatbot extend the workspace beyond Q&A.
+LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, paste a link, or point to a video; the bot extracts transcripts or text, chunkifies content through LlamaIndex, builds local vector/summary stores, and surfaces actionable answers through conversational agents. The Memory Palace feature can persist what you analyze into Supabase for long-term personal search, while the integrated chat tabs let you pivot between Azure OpenAI, Gemini, Cohere, Groq, LiteLLM, and local Ollama deployments. Additional planners and generators extend the workspace beyond Q&A.
+
+## Quickstart
+1. Create and activate a virtual environment: `python -m venv .venv && source .venv/bin/activate`.
+2. Install dependencies: `pip install -r requirements.txt`.
+3. Copy and edit config: `cp config/config.example.yml config/config.yml`, then add your provider keys (or use `config/.env` for secrets).
+4. Launch the main Gradio UI: `python gradio_ui_full.py` (see [Running the App](#running-the-app) for Azure-focused or Docker options).
+5. Run the test suite when changing code: `pytest tests -v` (fixtures mock external services, so tests run offline).
 
 ## Feature Highlights
 
@@ -40,14 +51,7 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 - Swap between Azure OpenAI, Gemini, Cohere, Groq (Llama/Mixtral), LiteLLM, or local Ollama tiers for chat completions.
 - Trigger Firecrawl/Tavily-powered browsing to ground the conversation with fresh web data or Bing news headlines.
 
-![LLM Chat](./screenshots/palm.png)
 ![LLM Latest News](./screenshots/news.png)
-
-### Holy Book Chatbot
-- Query a Pinecone database seeded with Bhagavad Gita embeddings for spiritual guidance.
-- Responses combine retrieved verses with the active LLM for grounded commentary.
-
-![LLM Gita](./screenshots/gita.png)
 
 ### Everyday Agents
 - Random Food Cravings generator suggests something new to eat.
@@ -59,13 +63,22 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 ![LLM Trip Planner](./screenshots/cityplanner.png)
 
 ## Architecture
-- **Interface**: Gradio apps in `azure_gradioui.py` (Azure-focused) and `gradio_ui_full.py` (full provider switchboard).
-- **Content processing**: `helper_functions/analyzers.py` orchestrates Whisper, pytube, LlamaIndex, and the unified LLM client.
+- **Interface**: Gradio apps in `misc_scripts/azure_gradioui.py` (Azure-focused) and `gradio_ui_full.py` (full provider switchboard).
+- **Content processing**: `helper_functions/analyzers.py` orchestrates Whisper, yt-dlp, LlamaIndex, and the unified LLM client.
 - **Vector storage**: Local folders (`UPLOAD_FOLDER`, `SUMMARY_FOLDER`, `VECTOR_FOLDER`) hold raw uploads and persisted indexes.
 - **Memory Palace**: `helper_functions/query_supabasememory.py` streams Supabase RPC results via Azure embeddings.
 - **LLM routing**: `helper_functions/llm_client.py` selects LiteLLM, Ollama, Gemini, Cohere, Groq, or native OpenAI clients.
 - **Aux tools**: Trip planner, food planner, query agents, and image utilities live under `helper_functions/`.
 - **Testing**: Over 150 pytest cases (see `tests/`) cover analyzers, chat generation, Firecrawl, planners, and Supabase flows.
+
+## Project Layout
+- `gradio_ui_full.py`: Main multi-provider Gradio UI entry point.
+- `misc_scripts/azure_gradioui.py`: Azure-first Gradio variant with the same toolbelt.
+- `helper_functions/`: Core analyzers, chat generators, planners, image helpers, and Memory Palace connectors.
+- `config/`: Runtime settings (`config.yml`), prompt templates, and optional `.env` secrets.
+- `frontend/`: Vite/React UI scaffold (run `npm install` then `npm run dev` for experiments).
+- `tests/`: Comprehensive pytest suite with fixtures in `tests/conftest.py`; see `tests/README.md` for recipes.
+- `screenshots/`: Screenshots and demo images showcasing the UI features.
 
 ## Prerequisites
 - Python 3.10+ (virtual environments recommended).
@@ -113,15 +126,28 @@ All runtime settings live in `config/config.yml`. The most important sections ar
 
 `config/prompts.yml` stores the templates for summary, example generation, and QA. Adjust these to enforce tone, length, or metadata policies. When using OpenAI for image operations, also set the `OPENAI_API_KEY` and optionally `OPENAI_API_BASE` environment variables so the SDK in `gptimage_tool` can authenticate.
 
+## Configuration Tips & Secrets
+- Minimal keys for local/offline runs: set `paths` plus one chat model (e.g., LiteLLM or Ollama). Skip Firecrawl/Tavily/Supabase keys if you do not need web or Memory Palace features.
+- Web-connected research: add `tavily_api_key` or `firecrawl_server_url` and ensure `retriever` is set appropriately in `config.yml`.
+- Memory Palace: supply `supabase_service_role_key` and `public_supabase_url`, and confirm the `mp_search` RPC exists in your Supabase project.
+- Secrets storage: use `config/.env` or a local `.env` file and keep keys out of Git. Environment variables override `config.yml` where applicable.
+
 ## Running the App
 ### Local Gradio UI (Azure-focused layout)
 ```bash
-python azure_gradioui.py
+python misc_scripts/azure_gradioui.py
 ```
 
 ### Local Gradio UI (Full provider switchboard)
 ```bash
 python gradio_ui_full.py
+```
+
+### Frontend (React/Vite) dev server
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 ### Docker
@@ -130,6 +156,14 @@ docker build -t llmqabot .
 docker run --restart always -p 7860:7860 --name llmqabot llmqabot
 ```
 Mount a volume for the `paths` directories if you want to persist indexes or uploads between container restarts.
+
+## Running Recipes
+- **One-shot full stack**: from repo root run `./start_fullstack.sh`. It creates/uses `.venv`, installs Python deps, builds the frontend, and launches `gradio_ui_full.py` (serves `/api` and `frontend/dist` on port 7860).
+- **Backend only (dev)**: `source .venv/bin/activate && python gradio_ui_full.py`. This starts FastAPI/Gradio on http://0.0.0.0:7860 with `/api/*` routes and serves a built `frontend/dist` if present.
+- **Frontend dev server**: in another terminal `cd frontend && npm install && npm run dev`. Vite serves the UI on its own port; ensure the backend is running so API calls to `/api` succeed. Use a proxy if the backend lives on a different host/port.
+- **Azure-focused UI**: `python misc_scripts/azure_gradioui.py` for the simplified Azure layout and endpoints.
+- **Headless Docker**: `docker run --restart always -p 7860:7860 -v $(pwd)/data:/app/data llmqabot`. Add `--gpus all` if you plan to run Whisper locally.
+- **Config check**: after editing `config/config.yml` or `.env`, restart the server so new keys are picked up. Keep secrets in `.env` (git-ignored) and refer to them from `config/config.yml` using environment variable expansion if needed.
 
 ## Typical Workflows
 ### Analyze a document, article, or video
@@ -146,7 +180,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 ### Chat, research, and plan
 1. Switch to the Chat tab to pick Azure, Gemini, Cohere, Groq, LiteLLM, or Ollama models.
 2. Enable Firecrawl/Tavily to blend real-time search with the LLM response for breaking news or research tasks.
-3. Hop into the Holy Book, Trip Planner, Food Planner, or Weather tabs for specialized agents that share the same context window.
+3. Hop into the Trip Planner, Food Planner, or Weather tabs for specialized agents that share the same context window.
 
 ### Generate or edit images
 1. Provide a prompt (or let the enhanced prompt helper rewrite it) in the Image Studio tab.

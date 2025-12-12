@@ -88,3 +88,4 @@ settings:
   curate_sources: false
   language: ""
   default_chatbot_model: ""
+MEMORY_PALACE_FOLDER: ./memory_palace

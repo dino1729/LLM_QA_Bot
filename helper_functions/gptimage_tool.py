@@ -16,11 +16,16 @@ import os # Ensure os is imported for path manipulation
 from config import config
 
 # -------------- Detect mode --------------
-edit_mode = len(sys.argv) > 1
-image_path = sys.argv[1] if edit_mode else None
-if edit_mode and not os.path.isfile(image_path):
-    print(f"Error: '{image_path}' is not a valid image file.")
-    sys.exit(1)
+# Only run argument parsing if running as a script, not when imported
+if __name__ == "__main__":
+    edit_mode = len(sys.argv) > 1
+    image_path = sys.argv[1] if edit_mode else None
+    if edit_mode and not os.path.isfile(image_path):
+        print(f"Error: '{image_path}' is not a valid image file.")
+        sys.exit(1)
+else:
+    edit_mode = False
+    image_path = None
 
 # -------------- Shared helpers --------------
 def _mask(secret: str, show: int = 4) -> str:

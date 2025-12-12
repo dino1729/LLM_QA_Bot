@@ -16,7 +16,7 @@ import logging
 import sys
 from newspaper import Article
 from bs4 import BeautifulSoup
-from pytube import YouTube
+import yt_dlp
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from youtube_transcript_api import YouTubeTranscriptApi
 from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, StorageContext, load_index_from_storage, get_response_synthesizer
@@ -25,6 +25,7 @@ from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import PromptTemplate
 from llama_index.core import Settings
+from helper_functions.memory_palace_local import save_memory
 
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -165,14 +166,17 @@ def extract_video_id(url):
     match = re.search(r"youtu\.be\/(.+)", url)
     if match:
         return match.group(1)
-    return url.split("=")[1]
+    if "youtube.com" in url:
+        return url.split("v=")[1].split("&")[0]
+    return url
 
 
 def get_video_title(url, video_id):
     """Get YouTube video title"""
     try:
-        yt = YouTube(url)
-        return yt.title
+        with yt_dlp.YoutubeDL() as ydl:
+            info = ydl.extract_info(url, download=False)
+            return info.get('title', video_id)
     except Exception as e:
         print(f"Error occurred while getting video title: {str(e)}")
         return video_id
@@ -181,8 +185,9 @@ def get_video_title(url, video_id):
 def transcript_extractor(video_id):
     """Extract transcript from YouTube video"""
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcripts([video_id], languages=['en-IN', 'en'])
-        transcript_text = " ".join([transcript["text"] for transcript in transcript_list[0][video_id]])
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id, languages=['en-IN', 'en'])
+        transcript_text = " ".join([snippet.text for snippet in transcript.snippets])
         with open(os.path.join(UPLOAD_FOLDER, "transcript.txt"), "w") as f:
             f.write(transcript_text)
         return True
@@ -193,10 +198,12 @@ def transcript_extractor(video_id):
 
 def video_downloader(url):
     """Download YouTube video"""
-    yt = YouTube(url)
-    yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").desc().first().download(
-        UPLOAD_FOLDER, filename="video.mp4"
-    )
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': os.path.join(UPLOAD_FOLDER, 'video.mp4')
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
 
 
 def process_video(url, memorize, lite_mode):
@@ -211,19 +218,21 @@ def process_video(url, memorize, lite_mode):
         return "Youtube transcript downloaded and Index built successfully!", summary, example_queries, video_title
     else:
         if not lite_mode:
-            video_downloader(url)
-            build_index()
-            summary = summary_generator()
-            example_queries = example_generator()
-            return "Youtube video downloaded and Index built successfully!", summary, example_queries, video_title
+            try:
+                video_downloader(url)
+                build_index()
+                summary = summary_generator()
+                example_queries = example_generator()
+                return "Youtube video downloaded and Index built successfully!", summary, example_queries, video_title
+            except Exception as e:
+                return f"Failed to download video: {str(e)}", None, None, video_title
         else:
             return "Youtube transcripts do not exist for this video!", None, None, None
 
 
-def analyze_ytvideo(url, memorize, lite_mode=False):
+def analyze_ytvideo(url, memorize, lite_mode=False, model_name="LITELLM"):
     """
     Analyze YouTube video
-    Note: memorize parameter is kept for compatibility but memory upload is removed
     """
     clearallfiles()
     if not url or ("youtube.com" not in url and "youtu.be" not in url):
@@ -232,15 +241,30 @@ def analyze_ytvideo(url, memorize, lite_mode=False):
             "summary": None,
             "example_queries": None,
             "video_title": None,
-            "video_memoryupload_status": "Memory upload feature removed"
+            "video_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, video_title = process_video(url, memorize, lite_mode)
+    
+    memory_status = "Memory upload skipped"
+    if memorize and summary:
+        try:
+            memory_status = save_memory(
+                title=video_title,
+                content=summary,
+                source_type="video",
+                source_ref=url,
+                model_name=model_name
+            )
+        except Exception as e:
+            print(f"Memory Palace save failed: {e}")
+            memory_status = f"Memory upload failed: {e}"
+
     results = {
         "message": message,
         "summary": summary,
         "example_queries": example_queries,
         "video_title": video_title,
-        "video_memoryupload_status": "Memory upload feature removed"
+        "video_memoryupload_status": memory_status
     }
     return results
 
@@ -276,10 +300,9 @@ def process_files(files, memorize):
     return "Files uploaded and Index built successfully!", summary, example_queries, file_title
 
 
-def analyze_file(files, memorize):
+def analyze_file(files, memorize, model_name="LITELLM"):
     """
     Analyze uploaded files
-    Note: memorize parameter is kept for compatibility but memory upload is removed
     """
     clearallfiles()
     if not files:
@@ -288,15 +311,31 @@ def analyze_file(files, memorize):
             "summary": None,
             "example_queries": None,
             "file_title": None,
-            "file_memoryupload_status": "Memory upload feature removed"
+            "file_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, file_title = process_files(files, memorize)
+    
+    memory_status = "Memory upload skipped"
+    if memorize and summary:
+        try:
+            # For files, source_ref is the filename of the last processed file
+            memory_status = save_memory(
+                title=file_title,
+                content=summary,
+                source_type="file",
+                source_ref=file_title,
+                model_name=model_name
+            )
+        except Exception as e:
+            print(f"Memory Palace save failed: {e}")
+            memory_status = f"Memory upload failed: {e}"
+
     results = {
         "message": message,
         "summary": summary,
         "example_queries": example_queries,
         "file_title": file_title,
-        "file_memoryupload_status": "Memory upload feature removed"
+        "file_memoryupload_status": memory_status
     }
     return results
 
@@ -355,10 +394,9 @@ def process_article(url, memorize):
     return "Article downloaded and Index built successfully!", summary, example_queries, article_title
 
 
-def analyze_article(url, memorize):
+def analyze_article(url, memorize, model_name="LITELLM"):
     """
     Analyze article from URL
-    Note: memorize parameter is kept for compatibility but memory upload is removed
     """
     clearallfiles()
     if not url:
@@ -367,15 +405,30 @@ def analyze_article(url, memorize):
             "summary": None,
             "example_queries": None,
             "article_title": None,
-            "article_memoryupload_status": "Memory upload feature removed"
+            "article_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, article_title = process_article(url, memorize)
+    
+    memory_status = "Memory upload skipped"
+    if memorize and summary:
+        try:
+            memory_status = save_memory(
+                title=article_title,
+                content=summary,
+                source_type="article",
+                source_ref=url,
+                model_name=model_name
+            )
+        except Exception as e:
+            print(f"Memory Palace save failed: {e}")
+            memory_status = f"Memory upload failed: {e}"
+
     results = {
         "message": message,
         "summary": summary,
         "example_queries": example_queries,
         "article_title": article_title,
-        "article_memoryupload_status": "Memory upload feature removed"
+        "article_memoryupload_status": memory_status
     }
     return results
 
@@ -387,7 +440,12 @@ def extract_media_url_from_overcast(url):
     req = requests.get(url)
     soup = BeautifulSoup(req.content, 'html.parser')
     audio_tag = soup.find('audio')
-    return audio_tag.source['src']
+    # Try to get src from audio tag itself, or from source child element
+    if 'src' in audio_tag.attrs:
+        return audio_tag['src']
+    else:
+        source_tag = audio_tag.find('source')
+        return source_tag['src'] if source_tag else None
 
 
 def download_media_file(url):
@@ -443,10 +501,9 @@ def process_media(url, memorize):
     return "Media downloaded and Index built successfully!", summary, example_queries, media_title
 
 
-def analyze_media(url, memorize):
+def analyze_media(url, memorize, model_name="LITELLM"):
     """
     Analyze media from URL
-    Note: memorize parameter is kept for compatibility but memory upload is removed
     """
     clearallfiles()
     if not url:
@@ -455,19 +512,33 @@ def analyze_media(url, memorize):
             "summary": None,
             "example_queries": None,
             "media_title": None,
-            "media_memoryupload_status": "Memory upload feature removed"
+            "media_memoryupload_status": "Memory upload skipped"
         }
 
     message, summary, example_queries, media_title = process_media(url, memorize)
+
+    memory_status = "Memory upload skipped"
+    if memorize and summary:
+        try:
+            memory_status = save_memory(
+                title=media_title,
+                content=summary,
+                source_type="media",
+                source_ref=url,
+                model_name=model_name
+            )
+        except Exception as e:
+            print(f"Memory Palace save failed: {e}")
+            memory_status = f"Memory upload failed: {e}"
 
     results = {
         "message": message,
         "summary": summary,
         "example_queries": example_queries,
         "media_title": media_title,
-        "media_memoryupload_status": "Memory upload feature removed"
+        "media_memoryupload_status": memory_status
     }
-
+    
     return results
 
 

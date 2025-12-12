@@ -470,6 +470,31 @@ input[type=range]:focus::-webkit-slider-thumb {
     color: var(--text-primary);
     font-family: var(--font-display);
     margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+.prose p {
+    margin-bottom: 1em;
+}
+
+.prose ul, .prose ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.prose li {
+    margin-bottom: 0.25em;
+}
+
+.prose li p {
+    margin-bottom: 0;
+    display: inline;
+}
+
+.prose strong {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .prose a {
@@ -488,6 +513,24 @@ input[type=range]:focus::-webkit-slider-thumb {
     border: 1px solid var(--border-subtle);
     border-radius: var(--border-radius-md);
     box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+    transition: all var(--transition-base);
+}
+
+.chat-window::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-window::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-window::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.chat-window::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .chat-window:empty::before {
