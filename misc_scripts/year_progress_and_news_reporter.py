@@ -1156,10 +1156,10 @@ def time_left_in_year():
 
 def save_message_to_file(message, filename):
     try:
-        os.makedirs(os.path.join("bing_data", os.path.dirname(filename)), exist_ok=True)
-        with open(os.path.join("bing_data", filename), 'w', encoding='utf-8') as file:
+        os.makedirs(os.path.join("newsletter_research_data", os.path.dirname(filename)), exist_ok=True)
+        with open(os.path.join("newsletter_research_data", filename), 'w', encoding='utf-8') as file:
             file.write(message)
-        print(f"Message saved successfully to {os.path.join('bing_data', filename)}")
+        print(f"Message saved successfully to {os.path.join('newsletter_research_data', filename)}")
     except Exception as e:
         print(f"Failed to save message to file: {e}")
 
@@ -1169,7 +1169,23 @@ if __name__ == "__main__":
     # Get quote and lesson
     random_personality = get_random_personality()
     quote = generate_quote(random_personality)
-    lesson_learned = get_random_lesson()
+    # NOTE:
+    # - Legacy `get_random_lesson()` in this file returns a STRING.
+    # - Newer pipelines (e.g., `year_progress_and_news_reporter_litellm.get_random_lesson`)
+    #   return a TUPLE: (topic, lesson_text).
+    # This keeps the legacy script resilient if the lesson provider is swapped.
+    lesson_result = get_random_lesson()
+    lesson_topic = ""
+    if isinstance(lesson_result, tuple) and len(lesson_result) == 2:
+        lesson_topic, lesson_learned = lesson_result
+    else:
+        lesson_learned = lesson_result
+    
+    # Ensure downstream code always receives a string
+    if lesson_learned is None:
+        lesson_learned = ""
+    elif not isinstance(lesson_learned, str):
+        lesson_learned = str(lesson_learned)
     
     # Generate HTML progress report
     year_progress_html = generate_html_progress_message(days_completed, weeks_completed, days_left, weeks_left, percent_days_left)

@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Tuple, Set
 from bs4 import BeautifulSoup
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.debug_logger import log_debug_data
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +97,24 @@ def scrape_with_firecrawl(url: str, max_age: int = 0, timeout: int = 30) -> Opti
         
         if response.status_code == 200:
             result = response.json()
+            # Log successful scrape
+            log_debug_data("scrape", {
+                "url": url,
+                "status": "success",
+                "response": result
+            })
+            
             if "data" in result and "markdown" in result["data"]:
                 return result["data"]["markdown"]
         else:
             logger.warning(f"Firecrawl scrape failed for {url}: status {response.status_code}")
+            # Log failed scrape
+            log_debug_data("scrape_error", {
+                "url": url,
+                "status": "error",
+                "status_code": response.status_code,
+                "response_text": response.text
+            })
             return None
             
     except Exception as e:
@@ -158,6 +173,13 @@ async def scrape_with_firecrawl_async(
         async with session.post(scrape_url, json=payload, timeout=client_timeout) as response:
             if response.status == 200:
                 result = await response.json()
+                # Log successful async scrape
+                log_debug_data("scrape_async", {
+                    "url": url,
+                    "status": "success",
+                    "response": result
+                })
+                
                 if "data" in result and "markdown" in result["data"]:
                     content = result["data"]["markdown"]
                     if content and len(content) > 100:
@@ -169,6 +191,18 @@ async def scrape_with_firecrawl_async(
                         }
             else:
                 logger.warning(f"Firecrawl async scrape failed for {url[:60]}: status {response.status}")
+                # Log failed async scrape
+                try:
+                    error_text = await response.text()
+                except:
+                    error_text = "(could not read response text)"
+                    
+                log_debug_data("scrape_async_error", {
+                    "url": url,
+                    "status": "error",
+                    "status_code": response.status,
+                    "response_text": error_text
+                })
         
         return {"url": url, "content": "", "success": False}
         
@@ -481,6 +515,13 @@ def search_fresh_sources_firecrawl(query: str, limit: int = 5, timeout: int = 12
         
         if response.status_code == 200:
             result = response.json()
+            # Log successful search
+            log_debug_data("search", {
+                "query": query,
+                "status": "success",
+                "response": result
+            })
+            
             logger.debug(f"Firecrawl response keys: {result.keys()}")
             
             # Parse search results - Firecrawl v2 format: {success: true, data: {web: [...]}}
@@ -628,9 +669,22 @@ async def search_fresh_sources_firecrawl_async(
             if response.status != 200:
                 error_text = await response.text()
                 logger.error(f"Firecrawl async search failed: status {response.status} - {error_text[:200]}")
+                # Log failed async search
+                log_debug_data("search_async_error", {
+                    "query": query,
+                    "status": "error",
+                    "status_code": response.status,
+                    "response_text": error_text
+                })
                 return []
             
             result = await response.json()
+            # Log successful async search
+            log_debug_data("search_async", {
+                "query": query,
+                "status": "success",
+                "response": result
+            })
             
             # Parse search results from Firecrawl response
             search_results = []

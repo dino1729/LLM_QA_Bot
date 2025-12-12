@@ -22,6 +22,7 @@ from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryRead
 from llama_index.core.indices import SummaryIndex
 from llama_index.core import Settings
 from helper_functions.firecrawl_researcher import conduct_research_firecrawl
+from helper_functions.debug_logger import log_debug_data
 
 # Configuration
 openweather_api_key = config.openweather_api_key
@@ -115,6 +116,13 @@ def scrape_with_firecrawl(url):
 
         if response.status_code == 200:
             result = response.json()
+            # Log successful scrape
+            log_debug_data("chat_firecrawl_scrape", {
+                "url": url,
+                "status": "success",
+                "response": result
+            })
+            
             # Extract markdown or HTML content
             if "data" in result and "markdown" in result["data"]:
                 return result["data"]["markdown"]
@@ -123,6 +131,13 @@ def scrape_with_firecrawl(url):
                 return soup.get_text()
         else:
             print(f"Firecrawl scrape failed with status {response.status_code}")
+            # Log failed scrape
+            log_debug_data("chat_firecrawl_scrape_error", {
+                "url": url,
+                "status": "error",
+                "status_code": response.status_code,
+                "response_text": response.text
+            })
             return None
 
     except Exception as e:

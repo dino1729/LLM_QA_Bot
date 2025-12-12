@@ -287,7 +287,7 @@ def _break_long_sentence(sentence, max_length):
     return parts
 
 
-def text_to_speech(text, output_path, language, model_name):
+def text_to_speech(text, output_path, language, model_name, speed=1.0):
     """
     Convert text to speech using NVIDIA Riva Magpie TTS model.
     """
@@ -310,9 +310,15 @@ def text_to_speech(text, output_path, language, model_name):
         elif language.startswith("en"):
             language_code = "en-US"
         
+        # Apply SSML for speed control if needed
+        final_text = text
+        if speed != 1.0:
+            rate_pct = int(speed * 100)
+            final_text = f'<speak><prosody rate="{rate_pct}%">{text}</prosody></speak>'
+
         # Create TTS request (only include voice_name if specified)
         req = {
-            "text": text,
+            "text": final_text,
             "language_code": language_code,
             "encoding": riva.AudioEncoding.LINEAR_PCM,
             "sample_rate_hz": 16000,
@@ -371,7 +377,7 @@ def text_to_speech(text, output_path, language, model_name):
         print(f"ERROR in text_to_speech: {e}")
         return False
 
-def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI"):
+def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI", speed=1.0):
     """
     Convert text to speech using NVIDIA Riva Magpie TTS model without playing audio.
     
@@ -417,9 +423,15 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
         for i, chunk in enumerate(chunks):
             logger.debug(f"Synthesizing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
             
+            # Apply SSML for speed control if needed
+            final_text = chunk
+            if speed != 1.0:
+                rate_pct = int(speed * 100)
+                final_text = f'<speak><prosody rate="{rate_pct}%">{chunk}</prosody></speak>'
+
             # Create TTS request for this chunk (only include voice_name if specified)
             req = {
-                "text": chunk,
+                "text": final_text,
                 "language_code": language_code,
                 "encoding": riva.AudioEncoding.LINEAR_PCM,
                 "sample_rate_hz": 16000,
