@@ -57,6 +57,14 @@ nvidia_text_model = config_yaml.get("nvidia_text_model", "")
 openai_image_model = config_yaml.get("openai_image_model", "gpt-image-1")
 openai_image_enhancement_model = config_yaml.get("openai_image_enhancement_model", "gpt-4o")
 
+# CORS Configuration
+# Priority: Environment variables > config.yml > defaults
+# Environment variables: ALLOWED_ORIGINS, CORS_ALLOW_ORIGIN_REGEX, ENVIRONMENT
+cors_config = config_yaml.get("cors", {})
+cors_allowed_origins = os.environ.get("ALLOWED_ORIGINS", cors_config.get("allowed_origins", ""))
+cors_allow_origin_regex = os.environ.get("CORS_ALLOW_ORIGIN_REGEX", cors_config.get("allow_origin_regex", ""))
+cors_environment = os.environ.get("ENVIRONMENT", cors_config.get("environment", "production"))
+
 # Weather and other services
 openweather_api_key = config_yaml.get("openweather_api_key", "")
 pyowm_api_key = config_yaml.get("pyowm_api_key", "")
