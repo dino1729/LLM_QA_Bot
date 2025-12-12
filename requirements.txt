@@ -25,6 +25,9 @@ gpt_researcher
 whisper
 Pillow
 python-dotenv
+fastapi
+uvicorn
+python-multipart
 
 # Optional features
 selenium             # only for misc_scripts/farnam_scraper.py

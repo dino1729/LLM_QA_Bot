@@ -1,211 +1,259 @@
-"""
-LLM QA Bot - Full Featured Gradio UI
-Supports LiteLLM, Ollama, Gemini, and Groq with Firecrawl integration
-"""
-
 import os
-import gradio as gr
-import logging
 import sys
+import logging
 import traceback
-import requests
-from openai import OpenAI
-from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core import PromptTemplate
+import asyncio
+import tempfile
+import shutil
+import uuid
+import re
+from typing import List, Optional, Any
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, File, UploadFile, Form, Body, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+import uvicorn
+from dotenv import load_dotenv
+
+# Import helpers
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
 from helper_functions.food_planner import craving_satisfier
 from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze_media, analyze_file, clearallfiles
 from helper_functions.chat_generation import generate_chat
-from config import config
-# Import image tool functions
 from helper_functions import gptimage_tool as tool
+from helper_functions.llm_client import get_client, list_available_models
+from llama_index.core import Settings as LlamaSettings
+from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core import PromptTemplate
+from config import config
 
-# --- OpenAI Client Initialization ---
-# Create one client instance to reuse for image generation (requires OpenAI API)
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_API_BASE")
-)
-# --- End OpenAI Client Initialization ---
+# Load env vars
+load_dotenv()
 
-# Model choices for Document Q&A (simplified)
-DOCQA_MODEL_CHOICES = [
-    "LITELLM",
-    "OLLAMA"
-]
+# Configure logging
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Model choices for other tabs (full list)
-MODEL_CHOICES = [
-    "LITELLM_FAST",
-    "LITELLM_SMART",
-    "LITELLM_STRATEGIC",
-    "OLLAMA_FAST",
-    "OLLAMA_SMART",
-    "OLLAMA_STRATEGIC",
-    "GEMINI",
-    "GEMINI_THINKING",
-    "GROQ",
-    "GROQ_LLAMA",
-    "GROQ_MIXTRAL"
-]
-
-# Configuration
+# Constants
 VECTOR_FOLDER = config.VECTOR_FOLDER
 SUMMARY_FOLDER = config.SUMMARY_FOLDER
-example_queries = config.example_queries
-example_memorypalacequeries = config.example_memorypalacequeries if hasattr(config, 'example_memorypalacequeries') else []
-example_internetqueries = config.example_internetqueries if hasattr(config, 'example_internetqueries') else []
-sum_template = config.sum_template
-eg_template = config.eg_template
-ques_template = config.ques_template
-summary_template = PromptTemplate(sum_template)
-example_template = PromptTemplate(eg_template)
-qa_template = PromptTemplate(ques_template)
+DOCQA_MODEL_CHOICES = ["LITELLM", "OLLAMA"]
+MODEL_CHOICES = [
+    "LITELLM_FAST", "LITELLM_SMART", "LITELLM_STRATEGIC",
+    "OLLAMA_FAST", "OLLAMA_SMART", "OLLAMA_STRATEGIC",
+    "GEMINI", "GEMINI_THINKING",
+    "GROQ", "GROQ_LLAMA", "GROQ_MIXTRAL"
+]
+qa_template = PromptTemplate(config.ques_template)
 
-# Global variables
-summary = "No Summary available yet"
+# Global Lock for LlamaIndex Settings
+api_lock = asyncio.Lock()
+
+app = FastAPI(title="LLM QA Bot API")
 
 
-# --- Helper Functions ---
+def configure_cors(app: FastAPI) -> None:
+    """
+    Configure CORS middleware with environment-driven, secure origins.
+    
+    Reads configuration from environment variables (priority) or config.yml:
+    - ALLOWED_ORIGINS / cors.allowed_origins: Comma-separated list of allowed origins
+    - CORS_ALLOW_ORIGIN_REGEX / cors.allow_origin_regex: Regex pattern for dynamic subdomains
+    - ENVIRONMENT / cors.environment: "development" enables permissive "*", default is "production"
+    
+    In production:
+    - Rejects wildcard "*" and requires explicit origins
+    - Logs error and fails fast if no valid origins are configured
+    
+    In development:
+    - Allows wildcard "*" for convenience (logs warning)
+    """
+    import re
+    
+    environment = getattr(config, "cors_environment", "production").lower().strip()
+    allowed_origins_raw = getattr(config, "cors_allowed_origins", "")
+    allow_origin_regex = getattr(config, "cors_allow_origin_regex", "")
+    
+    is_development = environment == "development"
+    
+    # Parse and validate allowed origins (comma-separated)
+    allowed_origins: List[str] = []
+    has_explicit_wildcard = False
+    
+    if allowed_origins_raw:
+        for origin in allowed_origins_raw.split(","):
+            origin = origin.strip()
+            if origin:
+                # Validate origin format (must be a valid URL or "*")
+                if origin == "*":
+                    has_explicit_wildcard = True
+                    if is_development:
+                        logger.warning(
+                            "CORS: Wildcard '*' is enabled in DEVELOPMENT mode. "
+                            "Do NOT use this setting in production!"
+                        )
+                        allowed_origins = ["*"]
+                        break
+                    else:
+                        logger.error(
+                            "CORS: Wildcard '*' origin is NOT allowed in production. "
+                            "Please configure explicit origins via ALLOWED_ORIGINS or "
+                            "config.yml cors.allowed_origins. Skipping '*'."
+                        )
+                        continue
+                elif origin.startswith("http://") or origin.startswith("https://"):
+                    allowed_origins.append(origin)
+                else:
+                    logger.warning(f"CORS: Invalid origin '{origin}' skipped. Origins must start with http:// or https://")
+    
+    # Validate regex pattern if provided
+    validated_regex: Optional[str] = None
+    if allow_origin_regex:
+        try:
+            re.compile(allow_origin_regex)
+            validated_regex = allow_origin_regex
+            logger.info(f"CORS: Using origin regex pattern: {allow_origin_regex}")
+        except re.error as e:
+            logger.error(f"CORS: Invalid regex pattern '{allow_origin_regex}': {e}. Ignoring regex.")
+    
+    # In development mode with no explicit origins, default to permissive wildcard "*"
+    if is_development and not allowed_origins and not validated_regex:
+        logger.warning(
+            "CORS: No origins configured in DEVELOPMENT mode. "
+            "Defaulting to wildcard '*'. Do NOT use this setting in production!"
+        )
+        allowed_origins = ["*"]
+    
+    # Fail fast in production if no valid origins are configured
+    if not is_development and not allowed_origins and not validated_regex:
+        error_msg = (
+            "CORS: No valid origins configured for production! "
+            "Set ALLOWED_ORIGINS environment variable (comma-separated URLs) or "
+            "configure cors.allowed_origins in config.yml. "
+            "For dynamic subdomains, set CORS_ALLOW_ORIGIN_REGEX or cors.allow_origin_regex. "
+            "Example: ALLOWED_ORIGINS='https://app.example.com,https://admin.example.com' "
+            "Falling back to localhost origins for safety."
+        )
+        logger.error(error_msg)
+        # Fallback to common localhost origins for local development/testing
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:7860",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:7860",
+        ]
+        logger.warning(f"CORS: Using fallback localhost origins: {allowed_origins}")
+    
+    # Log the final configuration
+    if allowed_origins == ["*"]:
+        logger.info("CORS: Configured with permissive wildcard '*' (DEVELOPMENT ONLY)")
+    else:
+        logger.info(f"CORS: Configured with {len(allowed_origins)} explicit origin(s)")
+        for origin in allowed_origins[:5]:  # Log first 5
+            logger.info(f"  - {origin}")
+        if len(allowed_origins) > 5:
+            logger.info(f"  ... and {len(allowed_origins) - 5} more")
+    
+    # Configure CORS middleware
+    # Note: allow_origin_regex and allow_origins are mutually exclusive in Starlette
+    # If regex is set, it takes precedence for matching, but we still set origins for non-regex cases
+    cors_kwargs = {
+        "allow_credentials": True,
+        "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        "allow_headers": ["*"],  # Allow all headers (common for APIs)
+    }
+    
+    if validated_regex and not (allowed_origins == ["*"]):
+        # Use regex for dynamic subdomain matching
+        cors_kwargs["allow_origin_regex"] = validated_regex
+        # Also include explicit origins as fallback
+        if allowed_origins:
+            cors_kwargs["allow_origins"] = allowed_origins
+    else:
+        cors_kwargs["allow_origins"] = allowed_origins
+    
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
+
+
+# Configure CORS with secure, environment-driven settings
+configure_cors(app)
+
+# --- Helper Classes & Functions ---
+
+class FileWrapper:
+    """Wrapper to mimic Gradio file object for analyzers"""
+    def __init__(self, path):
+        self.name = path
+
 def parse_model_name(model_name):
-    """Parse model name to extract provider and tier"""
+    """
+    Parse model name to extract provider and tier/model
+    
+    Supports formats:
+    - "LITELLM:model_name" -> ("litellm", "smart", "model_name")
+    - "OLLAMA:model_name" -> ("ollama", "smart", "model_name")
+    - "LITELLM_FAST" -> ("litellm", "fast", None)
+    - Legacy formats for backward compatibility
+    
+    Returns:
+        Tuple of (provider, tier, model_name)
+    """
+    # New dynamic format: PROVIDER:model_name
+    if ":" in model_name:
+        parts = model_name.split(":", 1)
+        provider = parts[0].lower()
+        actual_model = parts[1]
+        return provider, "smart", actual_model
+    
+    # Legacy tier-based format
     if model_name.startswith("LITELLM_"):
         tier = model_name.replace("LITELLM_", "").lower()
-        return "litellm", tier
+        return "litellm", tier, None
     elif model_name == "LITELLM":
-        # Simplified option: use fast model for summary/example generation
-        return "litellm", "fast"
+        return "litellm", "fast", None
     elif model_name.startswith("OLLAMA_"):
         tier = model_name.replace("OLLAMA_", "").lower()
-        return "ollama", tier
+        return "ollama", tier, None
     elif model_name == "OLLAMA":
-        # Simplified option: use fast model for summary/example generation
-        return "ollama", "fast"
+        return "ollama", "fast", None
     else:
-        # For other models (GEMINI, GROQ), use the default
-        return "litellm", "fast"
+        return "litellm", "fast", None
 
-
-# --- Content Analysis Functions ---
-def set_model_for_session(model_name):
-    """Set the LLM model for the current session"""
-    from helper_functions.llm_client import get_client
-    from llama_index.core import Settings as LlamaSettings
-
-    provider, tier = parse_model_name(model_name)
-
+async def set_model_context(model_name: str):
+    """Set the LLM model for the current session (Thread/Async safe wrapper)"""
+    provider, tier, actual_model = parse_model_name(model_name)
     if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier)
+        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
         LlamaSettings.llm = client.get_llamaindex_llm()
         LlamaSettings.embed_model = client.get_llamaindex_embedding()
-        print(f"Set model for session: provider={provider}, tier={tier}")
-
-
-def upload_file(files, memorize, model_name):
-    """Upload and process files with the selected model"""
-    global example_queries, summary, query_component
-    
-    # Set the model for this session
-    set_model_for_session(model_name)
-
-    analysis = analyze_file(files, memorize)
-    message = analysis["message"]
-    summary = analysis["summary"]
-    example_queries = analysis["example_queries"]
-    file_title = analysis["file_title"]
-    file_memoryupload_status = analysis["file_memoryupload_status"]
-
-    # Return results + locked model selector + model state
-    return (message, gr.Dataset(components=[query_component], samples=example_queries), summary, 
-            file_title, file_memoryupload_status, gr.Dropdown(interactive=False), model_name)
-
-
-def download_ytvideo(url, memorize, model_name):
-    """Download and process YouTube video with the selected model"""
-    global example_queries, summary, video_title, query_component
-    
-    # Set the model for this session
-    set_model_for_session(model_name)
-
-    analysis = analyze_ytvideo(url, memorize)
-    message = analysis["message"]
-    summary = analysis["summary"]
-    example_queries = analysis["example_queries"]
-    video_title = analysis["video_title"]
-    video_memoryupload_status = analysis["video_memoryupload_status"]
-
-    # Return results + locked model selector + model state
-    return (message, gr.Dataset(components=[query_component], samples=example_queries), summary, 
-            video_title, video_memoryupload_status, gr.Dropdown(interactive=False), model_name)
-
-
-def download_art(url, memorize, model_name):
-    """Download and process article with the selected model"""
-    global example_queries, summary, article_title, query_component
-    
-    # Set the model for this session
-    set_model_for_session(model_name)
-
-    analysis = analyze_article(url, memorize)
-    message = analysis["message"]
-    summary = analysis["summary"]
-    example_queries = analysis["example_queries"]
-    article_title = analysis["article_title"]
-    article_memoryupload_status = analysis["article_memoryupload_status"]
-
-    # Return results + locked model selector + model state
-    return (message, gr.Dataset(components=[query_component], samples=example_queries), summary, 
-            article_title, article_memoryupload_status, gr.Dropdown(interactive=False), model_name)
-
-
-def download_media(url, memorize, model_name):
-    """Download and process media with the selected model"""
-    global example_queries, summary, media_title, query_component
-    
-    # Set the model for this session
-    set_model_for_session(model_name)
-
-    analysis = analyze_media(url, memorize)
-    message = analysis["message"]
-    summary = analysis["summary"]
-    example_queries = analysis["example_queries"]
-    media_title = analysis["media_title"]
-    media_memoryupload_status = analysis["media_memoryupload_status"]
-
-    # Return results + locked model selector + model state
-    return (message, gr.Dataset(components=[query_component], samples=example_queries), summary, 
-            media_title, media_memoryupload_status, gr.Dropdown(interactive=False), model_name)
-
-
-# --- Q&A Functions ---
-def ask(question, history, model_name):
-    """Ask a question using the selected model"""
-    history = history or []
-    answer = ask_query(question, model_name)
-    return answer
-
+        logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
 
 def ask_query(question, model_name="LITELLM_SMART"):
     """Query the vector index using the specified model"""
-    from helper_functions.llm_client import get_client
-    from llama_index.core import Settings as LlamaSettings
+    # Note: This function runs synchronously as per original logic.
+    # In FastAPI we wrap it or just run it. LlamaIndex is mostly sync.
+    provider, tier, actual_model = parse_model_name(model_name)
 
-    # Parse model name to get provider and tier
-    provider, tier = parse_model_name(model_name)
-
-    # Create a client for the selected model
     if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier)
-        # Temporarily set the LLM and embedding model for this query
+        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
         original_llm = LlamaSettings.llm
         original_embed = LlamaSettings.embed_model
         LlamaSettings.llm = client.get_llamaindex_llm()
         LlamaSettings.embed_model = client.get_llamaindex_embedding()
 
     try:
+        if not os.path.exists(VECTOR_FOLDER) or not os.listdir(VECTOR_FOLDER):
+             return "Index not found. Please upload documents first."
+
         storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
         vector_index = load_index_from_storage(storage_context, index_id="vector_index")
         retriever = VectorIndexRetriever(
@@ -220,495 +268,330 @@ def ask_query(question, model_name="LITELLM_SMART"):
             response_synthesizer=response_synthesizer,
         )
         response = query_engine.query(question)
-        answer = response.response
+        answer = str(response) # response.response
+    except Exception as e:
+        logger.error(f"Error querying index: {e}")
+        return f"Error: {str(e)}"
     finally:
-        # Restore original LLM and embedding model if we changed them
         if provider in ["litellm", "ollama"]:
             LlamaSettings.llm = original_llm
             LlamaSettings.embed_model = original_embed
 
     return answer
 
+# --- Pydantic Models ---
 
-def load_example(example_id):
-    global example_queries
-    return example_queries[example_id][0]
+class AnalyzeUrlRequest(BaseModel):
+    url: str
+    memorize: bool = False
+    model_name: str = "LITELLM"
+
+class ChatRequest(BaseModel):
+    message: str
+    history: List[List[str]] = []
+    model_name: str = "LITELLM_SMART"
+
+class InternetChatRequest(BaseModel):
+    message: str
+    history: List[List[str]]
+    model_name: str = "LITELLM_SMART"
+    max_tokens: int = 4096
+    temperature: float = 0.5
+
+class TripRequest(BaseModel):
+    city: str
+    days: str
+    model_name: str = "LITELLM_FAST"
+
+class CravingRequest(BaseModel):
+    city: str
+    cuisine: str
+    model_name: str = "LITELLM_FAST"
+
+class ImageGenRequest(BaseModel):
+    prompt: str
+    enhanced_prompt: str = ""
+    size: str = "1024x1024"
+    provider: str = "nvidia"
+
+class ImageEditRequest(BaseModel):
+    img_path: str
+    prompt: str
+    enhanced_prompt: str = ""
+    size: str = "1024x1024"
+    provider: str = "nvidia"
+
+class PromptEnhanceRequest(BaseModel):
+    prompt: str
+    provider: str = "nvidia"
+
+class SurpriseRequest(BaseModel):
+    provider: str = "nvidia"
 
 
-def clearfield(field):
-    return [""]
+# --- API Endpoints ---
 
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok"}
 
-def clearhistory(field1, field2, field3):
-    return ["", "", ""]
-
-
-def clear_trip_plan(field1, field2):
-    return "", "", "Your trip plan will appear here..."
-
-
-def clear_craving_plan(field1, field2):
-    return "", "", "Your food recommendations will appear here..."
-
-
-def toggle_model_local(is_local):
-    """Toggle between local and remote models"""
-    if is_local:
-        return "OLLAMA_FAST"
-    else:
-        return "LITELLM_FAST"
-
-
-def fetch_litellm_models():
+@app.get("/api/models/{provider}")
+async def get_models(provider: str):
     """
-    Fetch available models from LiteLLM API
-    
-    Returns:
-        List of model names
-    """
-    try:
-        base_url = config.litellm_base_url
-        api_key = config.litellm_api_key
-        
-        # LiteLLM uses the OpenAI-compatible /v1/models endpoint
-        models_url = f"{base_url}/models"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.get(models_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # Extract model IDs from the response
-        if "data" in data:
-            models = [model["id"] for model in data["data"]]
-            print(f"Fetched {len(models)} models from LiteLLM")
-            return models
-        else:
-            print("Unexpected response format from LiteLLM")
-            return []
-            
-    except Exception as e:
-        print(f"Error fetching LiteLLM models: {e}")
-        return []
-
-
-def fetch_ollama_models():
-    """
-    Fetch available models from Ollama API
-    
-    Returns:
-        List of model names
-    """
-    try:
-        base_url = config.ollama_base_url
-        
-        # Ollama has a specific endpoint for listing models
-        # Remove the /v1 suffix if present, as Ollama uses different endpoints
-        base_url = base_url.replace("/v1", "")
-        models_url = f"{base_url}/api/tags"
-        
-        response = requests.get(models_url, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # Extract model names from the response
-        if "models" in data:
-            models = [model["name"] for model in data["models"]]
-            print(f"Fetched {len(models)} models from Ollama")
-            return models
-        else:
-            print("Unexpected response format from Ollama")
-            return []
-            
-    except Exception as e:
-        print(f"Error fetching Ollama models: {e}")
-        return []
-
-
-def update_model_dropdown(provider):
-    """
-    Update the model dropdown based on selected provider
+    Get list of available models for a provider (litellm or ollama)
     
     Args:
-        provider: Either "LiteLLM" or "Ollama"
+        provider: Either "litellm" or "ollama"
     
     Returns:
-        Updated dropdown with new choices and default value
+        List of model names
     """
-    if provider == "LiteLLM":
-        models = fetch_litellm_models()
-        if not models:
-            # Fallback to default choices if API call fails
-            models = MODEL_CHOICES
-        else:
-            # Prefix models with provider identifier for routing
-            models = [f"LITELLM:{model}" for model in models]
-        default_model = models[0] if models else f"LITELLM:{config.litellm_default_model}"
-    else:  # Ollama
-        models = fetch_ollama_models()
-        if not models:
-            # Fallback to default choices if API call fails
-            models = MODEL_CHOICES
-        else:
-            # Prefix models with provider identifier for routing
-            models = [f"OLLAMA:{model}" for model in models]
-        default_model = models[0] if models else f"OLLAMA:{config.ollama_default_model}"
+    if provider.lower() not in ["litellm", "ollama"]:
+        raise HTTPException(status_code=400, detail="Provider must be 'litellm' or 'ollama'")
     
-    return gr.Dropdown(choices=models, value=default_model)
-
-
-# --- Image Tool UI Helper Functions ---
-def clear_generate():
-    return "", "", None, "1024x1024"
-
-
-def clear_edit():
-    return None, "Turn the subject into a cyberpunk character with neon lights", "", None, "1024x1024"
-
-
-def ui_generate_wrapper(prompt: str, enhanced_prompt: str, size: str, provider: str = "openai"):
-    final_prompt = enhanced_prompt if enhanced_prompt and enhanced_prompt.strip() else prompt
-    img_path = tool.run_generate_unified(final_prompt, size=size, provider=provider)
-    return img_path
-
-
-def ui_edit_wrapper(img_path: str, prompt: str, enhanced_prompt: str, size: str, provider: str = "openai"):
-    if not img_path:
-        raise gr.Error("Please upload an image to edit.")
-    edited_img_path = img_path
-    final_prompt = enhanced_prompt if enhanced_prompt and enhanced_prompt.strip() else prompt
     try:
-        edited_img_path = tool.run_edit_unified(img_path, final_prompt, size=size, provider=provider)
+        models = list_available_models(provider.lower())
+        return {"models": models}
     except Exception as e:
-        print(f"Error during image edit: {e}")
-        traceback.print_exc()
-        gr.Warning(f"Image edit failed: {e}. Returning original image.")
-        return img_path
-    return edited_img_path
+        logger.error(f"Error fetching models for {provider}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+# Analyzers
 
-# --- Main UI ---
-logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
-logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-
-with gr.Blocks(theme='davehornik/Tealy', fill_height=True) as llmapp:
-    gr.Markdown(
-        """
-        <h1><center><b>LLM Bot: Your AI-Powered Knowledge Companion</center></h1>
-        """
-    )
-    gr.Markdown(
-        """
-        <center>
-        <br>
-        Dive into the world of AI with LLM Bot, your go-to assistant for exploring, learning, and storing knowledge. <br>
-        Powered by LiteLLM, Ollama, Gemini, Cohere, and Groq with Firecrawl web scraping. <br>
-        </center>
-        """
-    )
-
-    with gr.Tab(label="Document Q&A"):
-        with gr.Row():
-            with gr.Column():
-                docqa_model_selector = gr.Dropdown(
-                    label="Model Selection",
-                    choices=DOCQA_MODEL_CHOICES,
-                    value="LITELLM",
-                    interactive=True,
-                    info="Select model before uploading documents. This will be used for analysis and Q&A."
-                )
-                memorize = gr.Checkbox(label="Store in vector index", value=False, visible=False)
-                reset_button = gr.Button(value="Reset Database. Deletes all local data")
-                docqa_model_state = gr.State(value="LITELLM")  # Store the locked-in model
-        with gr.Row():
-            with gr.Column():
-                with gr.Tab(label="Video Analyzer"):
-                    with gr.Row():
-                        with gr.Column(scale=0):
-                            yturl = gr.Textbox(placeholder="Input must be a Youtube URL", label="Enter Youtube URL")
-                            video_output = gr.Textbox(label="Video Processing Status")
-                            video_button = gr.Button(value="Process")
-                        with gr.Column(scale=0):
-                            video_title = gr.Textbox(placeholder="Video title to be generated here", label="Video Title")
-                            video_memoryupload_status = gr.Textbox(label="Status", visible=False)
-                    with gr.Accordion(label="Key takeaways", open=False):
-                        vsummary_output = gr.Markdown(value="Summary will be generated here")
-                with gr.Tab(label="Article Analyzer"):
-                    with gr.Row():
-                        with gr.Column(scale=0):
-                            arturl = gr.Textbox(placeholder="Input must be a URL", label="Enter Article URL")
-                            article_output = gr.Textbox(label="Article Processing Status")
-                            article_button = gr.Button(value="Process")
-                        with gr.Column(scale=0):
-                            article_title = gr.Textbox(placeholder="Article title to be generated here", label="Article Title")
-                            article_memoryupload_status = gr.Textbox(label="Status", visible=False)
-                    with gr.Accordion(label="Key takeaways", open=False):
-                        asummary_output = gr.Markdown(value="Summary will be generated here")
-                with gr.Tab(label="File Analyzer"):
-                    with gr.Row():
-                        with gr.Column(scale=0):
-                            files = gr.Files(label="Supported types: pdf, txt, docx, png, jpg, jpeg, mp3")
-                            file_output = gr.Textbox(label="File Processing Status")
-                            file_button = gr.Button(value="Process")
-                        with gr.Column(scale=0):
-                            file_title = gr.Textbox(placeholder="File title to be generated here", label="File Title")
-                            file_memoryupload_status = gr.Textbox(label="Status", visible=False)
-                    with gr.Accordion(label="Key takeaways", open=False):
-                        fsummary_output = gr.Markdown(value="Summary will be generated here")
-                with gr.Tab(label="Media URL Analyzer"):
-                    with gr.Row():
-                        with gr.Column(scale=0):
-                            mediaurl = gr.Textbox(placeholder="Input must be a URL", label="Enter Media URL")
-                            media_output = gr.Textbox(label="Media Processing Status")
-                            media_button = gr.Button(value="Process")
-                        with gr.Column(scale=0):
-                            media_title = gr.Textbox(placeholder="Media title to be generated here", label="Media Title")
-                            media_memoryupload_status = gr.Textbox(label="Status", visible=False)
-                    with gr.Accordion(label="Key takeaways", open=False):
-                        msummary_output = gr.Markdown(value="Summary will be generated here")
-        with gr.Row():
-            with gr.Column(scale=8):
-                chatui = gr.ChatInterface(
-                    ask,
-                    additional_inputs=[docqa_model_state],
-                    submit_btn="Ask",
-                    fill_height=True,
-                    type="messages"
-                )
-                query_component = chatui.textbox
-            with gr.Column(scale=2):
-                examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")
-
-    with gr.Tab(label="AI Assistant"):
-        gr.Markdown("### Internet-Connected AI with Firecrawl and GPT Researcher")
-        gr.Markdown("_Uses Firecrawl for web scraping and GPT Researcher for deep research._")
+@app.post("/api/analyze/file")
+async def endpoint_analyze_file(
+    files: List[UploadFile] = File(...),
+    memorize: bool = Form(False),
+    model_name: str = Form("LITELLM")
+):
+    async with api_lock:
+        await set_model_context(model_name)
         
-        with gr.Row():
-            ai_provider_selector = gr.Radio(
-                label="LLM Provider",
-                choices=["LiteLLM", "Ollama"],
-                value="LiteLLM",
-                info="Select your LLM provider to fetch available models"
-            )
-        
-        ai_chatinterface = gr.ChatInterface(
-            internet_connected_chatbot,
-            additional_inputs=[
-                gr.Dropdown(label="Model", choices=MODEL_CHOICES, value="LITELLM_SMART"),
-                gr.Slider(10, 8680, value=4840, label="Max Output Tokens"),
-                gr.Slider(0.1, 0.9, value=0.5, label="Temperature"),
-            ],
-            examples=example_internetqueries if example_internetqueries else [
-                ["What's the latest news about AI?"],
-                ["What's the weather in New York?"],
-                ["Search for information about quantum computing"]
-            ],
-            submit_btn="Ask",
-            fill_height=True,
-            type="messages"
+        tmp_dir = tempfile.mkdtemp()
+        file_objs = []
+        try:
+            for file in files:
+                # Sanitize filename to prevent path traversal attacks:
+                # 1. Extract basename to strip any directory components
+                # 2. Keep only safe characters (letters, numbers, dash, underscore, dot)
+                # 3. Add UUID prefix to avoid filename collisions
+                raw_name = os.path.basename(file.filename) if file.filename else "upload"
+                # Remove any character not in the safe whitelist
+                safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
+                # Ensure we have a valid filename (not empty, not just dots)
+                if not safe_name or safe_name.strip('.') == '':
+                    safe_name = "upload"
+                # Add UUID prefix to ensure uniqueness
+                unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+                file_path = os.path.join(tmp_dir, unique_filename)
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                file_objs.append(FileWrapper(file_path))
+            
+            result = analyze_file(file_objs, memorize)
+            return result
+        except Exception as e:
+            logger.error(f"Error analyzing file: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            shutil.rmtree(tmp_dir)
+
+@app.post("/api/analyze/youtube")
+async def endpoint_analyze_youtube(req: AnalyzeUrlRequest):
+    async with api_lock:
+        await set_model_context(req.model_name)
+        return analyze_ytvideo(req.url, req.memorize)
+
+@app.post("/api/analyze/article")
+async def endpoint_analyze_article(req: AnalyzeUrlRequest):
+    async with api_lock:
+        await set_model_context(req.model_name)
+        return analyze_article(req.url, req.memorize)
+
+@app.post("/api/analyze/media")
+async def endpoint_analyze_media(req: AnalyzeUrlRequest):
+    async with api_lock:
+        await set_model_context(req.model_name)
+        return analyze_media(req.url, req.memorize)
+
+@app.post("/api/docqa/reset")
+async def endpoint_reset():
+    clearallfiles()
+    return {"status": "Database reset"}
+
+@app.post("/api/docqa/ask")
+async def endpoint_ask(req: ChatRequest):
+    async with api_lock:
+        # ask_query uses global settings, so we need lock
+        answer = ask_query(req.message, req.model_name)
+        return {"answer": answer}
+
+# Internet Chat
+@app.post("/api/chat/internet")
+async def endpoint_chat_internet(req: InternetChatRequest):
+    # Internet connected chatbot handles its own context/history
+    # But it might use global LlamaIndex settings?
+    # helper_functions/chat_generation_with_internet.py uses get_client and Settings.
+    # It seems to set Settings.llm inside the module globally on import, 
+    # but the function `internet_connected_chatbot` doesn't explicitly set them?
+    # Wait, internet_connected_chatbot calls `generate_chat` or `get_web_results`.
+    # `get_web_results` calls `firecrawl_researcher` which calls `conduct_research_firecrawl`.
+    # Let's assume it's safe or we need the lock if it modifies global Settings.
+    # Given the complexity, locking is safer.
+    async with api_lock:
+        response = internet_connected_chatbot(
+            query=req.message,
+            history=req.history,
+            model_name=req.model_name,
+            max_tokens=req.max_tokens,
+            temperature=req.temperature
         )
+        return {"response": response}
+
+# Fun Tools
+@app.post("/api/fun/trip")
+async def endpoint_trip(req: TripRequest):
+    # generate_trip_plan takes (city, days, model_name)
+    result = generate_trip_plan(req.city, req.days, req.model_name)
+    # result is a list/tuple? In Gradio it was returning single value for output
+    # check gradio_ui_full.py: outputs=[city_output]
+    # generate_trip_plan likely returns a string.
+    return {"plan": result}
+
+@app.post("/api/fun/cravings")
+async def endpoint_cravings(req: CravingRequest):
+    result = craving_satisfier(req.city, req.cuisine, req.model_name)
+    return {"recommendation": result}
+
+# Image Studio
+@app.post("/api/image/generate")
+async def endpoint_image_generate(req: ImageGenRequest):
+    final_prompt = req.enhanced_prompt if req.enhanced_prompt and req.enhanced_prompt.strip() else req.prompt
+    img_path = tool.run_generate_unified(final_prompt, size=req.size, provider=req.provider)
+    # img_path is a local path. We need to serve it.
+    # It likely saves to helper_functions/data/ or similar.
+    # We should ensure it's accessible. 
+    # Let's return the URL path relative to our static mount if possible, or serve it via a generic /api/files endpoint.
+    # For now, return the path.
+    return {"image_path": img_path}
+
+@app.post("/api/image/edit")
+async def endpoint_image_edit(req: ImageEditRequest):
+    # Image edit requires a source image path.
+    # The frontend should upload the image first?
+    # Or if it's already generated, we pass the path.
+    # If it's a new upload, we need an upload endpoint for image studio.
+    
+    # For simplicity, let's assume the user uploads an image to edit via a separate endpoint first,
+    # or we handle upload in this request (multipart).
+    # But the request model above assumes string path.
+    
+    # Let's check how Gradio handled it: `edit_img` (Image component) -> `ui_edit_wrapper` -> `tool.run_edit_unified`.
+    # Gradio passes the file path of the uploaded image.
+    
+    # We need an endpoint to upload image for editing.
+    if not os.path.exists(req.img_path):
+        raise HTTPException(status_code=404, detail="Image not found")
         
-        # Get reference to the model dropdown for updating
-        ai_model_dropdown = ai_chatinterface.additional_inputs[0]
+    final_prompt = req.enhanced_prompt if req.enhanced_prompt and req.enhanced_prompt.strip() else req.prompt
+    try:
+        edited_path = tool.run_edit_unified(req.img_path, final_prompt, size=req.size, provider=req.provider)
+        return {"image_path": edited_path}
+    except Exception as e:
+        logger.error(f"Image edit failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    with gr.Tab(label="Fun"):
-        with gr.Tab(label="City Planner"):
-            with gr.Row():
-                city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
-                number_of_days = gr.Textbox(placeholder="Enter the number of days", label="Number of Days")
-                trip_local_checkbox = gr.Checkbox(label="LOCAL", value=False, scale=0, info="Use local Ollama model")
-            with gr.Row():
-                city_button = gr.Button(value="Plan", scale=0)
-                clear_trip_button = gr.Button(value="Clear", scale=0)
-            with gr.Accordion(label="Trip Plan", open=True):
-                city_output = gr.Markdown(value="Your trip plan will appear here...")
-            trip_model_state = gr.State(value="LITELLM_FAST")
-        with gr.Tab(label="Cravings Generator"):
-            with gr.Row():
-                craving_city_name = gr.Textbox(placeholder="Enter the name of the city", label="City Name")
-                craving_cuisine = gr.Textbox(placeholder="What are you craving for? Enter idk if you don't know what you want to eat", label="Food")
-                craving_local_checkbox = gr.Checkbox(label="LOCAL", value=False, scale=0, info="Use local Ollama model")
-            with gr.Row():
-                craving_button = gr.Button(value="Cook", scale=0)
-                clear_craving_button = gr.Button(value="Clear", scale=0)
-            with gr.Accordion(label="Food Places", open=True):
-                craving_output = gr.Markdown(value="Your food recommendations will appear here...")
-            craving_model_state = gr.State(value="LITELLM_FAST")
-
-    # --- Image Studio Tab ---
-    with gr.Tab("Image Studio"):
-        gr.Markdown("## Generate and Edit Images using AI Models")
-        with gr.Row():
-            image_provider = gr.Dropdown(
-                label="AI Provider",
-                choices=["nvidia"],
-                value="nvidia",
-                info="NVIDIA: Stable Diffusion 3"
-            )
-        with gr.Tab("Generate"):
-            clear_gen_btn = gr.Button("Clear")
-            with gr.Row():
-                gen_prompt = gr.Textbox(
-                    label="Prompt",
-                    value="A futuristic cityscape at sunset, synthwave style",
-                    scale=4
-                )
-                gen_size = gr.Dropdown(
-                    label="Size",
-                    choices=["1024x1024", "1024x1536", "1536x1024"],
-                    value="1024x1024",
-                    scale=1
-                )
-            with gr.Row():
-                enhance_btn = gr.Button("Enhance Prompt")
-                surprise_gen_btn = gr.Button("🎁 Surprise Me!")
-            gen_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
-            with gr.Row():
-                gen_ex1_btn = gr.Button("🌆 Synthwave City")
-                gen_ex2_btn = gr.Button("🐶 Dog Astronaut")
-                gen_ex3_btn = gr.Button("🍔 Giant Burger")
-                gen_ex4_btn = gr.Button("🎨 Watercolor Forest")
-            gen_btn = gr.Button("Generate Image", variant="primary")
-            gen_out = gr.Image(label="Generated Image", show_download_button=True)
-
-        with gr.Tab("Edit"):
-            clear_edit_btn = gr.Button("Clear")
-            edit_img = gr.Image(type="filepath", label="Image to Edit", sources=["upload"], height=400)
-            with gr.Row():
-                edit_prompt = gr.Textbox(
-                    label="Edit Prompt",
-                    value="Turn the subject into a cyberpunk character with neon lights",
-                    scale=4
-                )
-                edit_size = gr.Dropdown(
-                    label="Size",
-                    choices=["1024x1024", "1024x1536", "1536x1024"],
-                    value="1024x1024",
-                    scale=1
-                )
-            with gr.Row():
-                edit_enhance_btn = gr.Button("Enhance Prompt")
-                surprise_edit_btn = gr.Button("🎁 Surprise Me!")
-            edit_enhanced_prompt = gr.Textbox(label="Enhanced Prompt (Editable)", interactive=True)
-            with gr.Row():
-                ghibli_btn = gr.Button("🎨 Ghibli Style")
-                simp_btn = gr.Button("📺 Simpsons")
-                sp_btn = gr.Button("☃️ South Park")
-                comic_btn = gr.Button("💥 Comic Style")
-            edit_btn = gr.Button("Edit Image", variant="primary")
-            edit_out = gr.Image(label="Edited Image", show_download_button=True)
-    # --- End Image Studio Tab ---
-
-    # --- Event Handlers ---
-    # Document Q&A Event Handlers
-    video_button.click(download_ytvideo, inputs=[yturl, memorize, docqa_model_selector], 
-                       outputs=[video_output, examples, vsummary_output, video_title, video_memoryupload_status, 
-                               docqa_model_selector, docqa_model_state], show_progress=True)
-    article_button.click(download_art, inputs=[arturl, memorize, docqa_model_selector], 
-                        outputs=[article_output, examples, asummary_output, article_title, article_memoryupload_status, 
-                                docqa_model_selector, docqa_model_state], show_progress=True)
-    file_button.click(upload_file, inputs=[files, memorize, docqa_model_selector], 
-                     outputs=[file_output, examples, fsummary_output, file_title, file_memoryupload_status, 
-                             docqa_model_selector, docqa_model_state], show_progress=True)
-    media_button.click(download_media, inputs=[mediaurl, memorize, docqa_model_selector], 
-                      outputs=[media_output, examples, msummary_output, media_title, media_memoryupload_status, 
-                              docqa_model_selector, docqa_model_state], show_progress=True)
-
-    # AI Assistant Event Handlers
-    ai_provider_selector.change(
-        update_model_dropdown,
-        inputs=[ai_provider_selector],
-        outputs=[ai_model_dropdown]
-    )
+@app.post("/api/image/upload")
+async def endpoint_image_upload(file: UploadFile = File(...)):
+    # Save uploaded image for editing
+    if not os.path.exists("data/uploads"):
+        os.makedirs("data/uploads")
     
-    # Fun Features Event Handlers
-    city_button.click(generate_trip_plan, inputs=[city_name, number_of_days, trip_model_state], outputs=[city_output], show_progress=True)
-    craving_button.click(craving_satisfier, inputs=[craving_city_name, craving_cuisine, craving_model_state], outputs=[craving_output], show_progress=True)
-    clear_trip_button.click(clear_trip_plan, inputs=[city_name, number_of_days], outputs=[city_name, number_of_days, city_output])
-    clear_craving_button.click(clear_craving_plan, inputs=[craving_city_name, craving_cuisine], outputs=[craving_city_name, craving_cuisine, craving_output])
+    file_path = f"data/uploads/{file.filename}"
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
     
-    # Local checkbox handlers - update the hidden state
-    trip_local_checkbox.change(toggle_model_local, inputs=[trip_local_checkbox], outputs=[trip_model_state])
-    craving_local_checkbox.change(toggle_model_local, inputs=[craving_local_checkbox], outputs=[craving_model_state])
+    return {"file_path": file_path}
 
-    examples.click(load_example, inputs=[examples], outputs=[query_component])
+@app.post("/api/image/enhance")
+async def endpoint_enhance(req: PromptEnhanceRequest):
+    res = tool.prompt_enhancer_unified(req.prompt, req.provider)
+    return {"enhanced_prompt": res}
 
-    reset_button.click(clearallfiles)
-    reset_button.click(lambda: ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], 
-                      inputs=[], 
-                      outputs=[video_output, vsummary_output, video_title, video_memoryupload_status, 
-                              article_output, asummary_output, article_title, article_memoryupload_status, 
-                              file_output, fsummary_output, file_title, file_memoryupload_status, 
-                              media_output, msummary_output, media_title, media_memoryupload_status])
-    # Unlock model selector on reset
-    reset_button.click(lambda: gr.Dropdown(interactive=True), inputs=[], outputs=[docqa_model_selector])
+@app.post("/api/image/surprise")
+async def endpoint_surprise(req: SurpriseRequest):
+    res = tool.generate_surprise_prompt_unified(req.provider)
+    return {"prompt": res}
 
-    # Image Studio Event Handlers
-    # Generate Tab
-    enhance_btn.click(
-        lambda p, prov: tool.prompt_enhancer_unified(p, prov),
-        inputs=[gen_prompt, image_provider],
-        outputs=[gen_enhanced_prompt],
-        show_progress="Generating enhanced prompt..."
-    )
-    surprise_gen_btn.click(
-        lambda prov: tool.generate_surprise_prompt_unified(prov),
-        inputs=[image_provider],
-        outputs=[gen_prompt],
-        show_progress="Generating surprise prompt..."
-    )
-    clear_gen_btn.click(
-        clear_generate,
-        inputs=None,
-        outputs=[gen_prompt, gen_enhanced_prompt, gen_out, gen_size]
-    )
-    gen_ex1_btn.click(lambda: "A futuristic cityscape at sunset, synthwave style", None, gen_prompt)
-    gen_ex2_btn.click(lambda: "A golden retriever wearing a space helmet, digital art", None, gen_prompt)
-    gen_ex3_btn.click(lambda: "A giant cheeseburger resting on a mountaintop", None, gen_prompt)
-    gen_ex4_btn.click(lambda: "A dense forest painted in watercolor style", None, gen_prompt)
-    gen_btn.click(
-        ui_generate_wrapper,
-        inputs=[gen_prompt, gen_enhanced_prompt, gen_size, image_provider],
-        outputs=[gen_out],
-        show_progress="Generating image..."
-    )
-
-    # Edit Tab
-    edit_enhance_btn.click(
-        lambda p, prov: tool.prompt_enhancer_unified(p, prov),
-        inputs=[edit_prompt, image_provider],
-        outputs=[edit_enhanced_prompt],
-        show_progress="Generating enhanced prompt..."
-    )
-    surprise_edit_btn.click(
-        lambda prov: tool.generate_surprise_prompt_unified(prov),
-        inputs=[image_provider],
-        outputs=[edit_prompt],
-        show_progress="Generating surprise prompt..."
-    )
-    clear_edit_btn.click(
-        clear_edit,
-        inputs=None,
-        outputs=[edit_img, edit_prompt, edit_enhanced_prompt, edit_out, edit_size]
-    )
-    ghibli_btn.click(lambda: "Convert the picture into Ghibli style animation", None, edit_prompt)
-    simp_btn.click(lambda: "Turn the subjects into a Simpsons character", None, edit_prompt)
-    sp_btn.click(lambda: "Turn the subjects into a South Park character", None, edit_prompt)
-    comic_btn.click(lambda: "Convert the picture into a comic book style drawing with compelling futuristic story and cool dialogues", None, edit_prompt)
-    edit_btn.click(
-        ui_edit_wrapper,
-        inputs=[edit_img, edit_prompt, edit_enhanced_prompt, edit_size, image_provider],
-        outputs=[edit_out],
-        show_progress="Editing image..."
-    )
-    # --- End Event Handlers ---
+@app.get("/api/files/{file_path:path}")
+async def serve_file(file_path: str):
+    """
+    Serve files from allowed directories only.
+    Security: Uses path resolution and safe containment checks to prevent path traversal.
+    """
+    from pathlib import Path
+    
+    # Whitelist of allowed file extensions (case-insensitive)
+    ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+    
+    # Allowed directories - resolved to absolute paths to handle symlinks and normalize
+    allowed_dirs = [
+        Path("helper_functions/data").resolve(),
+        Path("data/uploads").resolve(),
+        Path("playground").resolve()
+    ]
+    
+    # Resolve the requested path to absolute, handling symlinks and .. traversal
+    try:
+        resolved_path = Path(file_path).resolve()
+    except (ValueError, OSError):
+        return {"error": "Invalid file path"}
+    
+    # Check file extension against whitelist
+    if resolved_path.suffix.lower() not in ALLOWED_EXTENSIONS:
+        return {"error": "File type not allowed"}
+    
+    # Safe containment check using os.path.commonpath:
+    # This properly handles path traversal attempts like /allowed/../../../etc/passwd
+    is_allowed = False
+    for allowed_dir in allowed_dirs:
+        try:
+            # commonpath returns the longest common sub-path; if it equals allowed_dir,
+            # then resolved_path is contained within allowed_dir
+            common = Path(os.path.commonpath([allowed_dir, resolved_path]))
+            if common == allowed_dir:
+                is_allowed = True
+                break
+        except ValueError:
+            # commonpath raises ValueError if paths are on different drives (Windows)
+            continue
+    
+    if not is_allowed:
+        return {"error": "Access denied"}
+    
+    # Final check: file must exist and be a regular file (not directory/symlink to dir)
+    if not resolved_path.exists() or not resolved_path.is_file():
+        return {"error": "File not found"}
+    
+    return FileResponse(str(resolved_path))
 
 
-if __name__ == '__main__':
-    llmapp.launch(server_name='0.0.0.0', server_port=7860)
+# Serve Frontend
+@app.get("/{full_path:path}")
+async def serve_app(full_path: str):
+    if full_path.startswith("api/"):
+        return {"error": "API route not found"}
+        
+    file_path = os.path.join("frontend/dist", full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    index_path = "frontend/dist/index.html"
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    return {"error": "Frontend not built. Run 'npm run build' in frontend directory."}
+
+if __name__ == "__main__":
+    print("Starting LLM QA Bot on http://0.0.0.0:7860")
+    uvicorn.run(app, host="0.0.0.0", port=7860)

@@ -212,13 +212,14 @@ class UnifiedLLMClient:
     Unified client for LiteLLM and Ollama that uses OpenAI-compatible API
     """
 
-    def __init__(self, provider="litellm", model_tier="smart"):
+    def __init__(self, provider="litellm", model_tier="smart", model_name=None):
         """
         Initialize the unified LLM client
 
         Args:
             provider: Either "litellm" or "ollama"
-            model_tier: Either "fast", "smart", or "strategic"
+            model_tier: Either "fast", "smart", or "strategic" (ignored if model_name is provided)
+            model_name: Optional specific model name to use (overrides model_tier)
         """
         self.provider = provider
         self.model_tier = model_tier
@@ -228,7 +229,10 @@ class UnifiedLLMClient:
             self.api_key = config.litellm_api_key
             self.embedding_model = config.litellm_embedding
 
-            if model_tier == "fast":
+            # Use explicit model name if provided, otherwise use tier
+            if model_name:
+                self.model = model_name
+            elif model_tier == "fast":
                 self.model = config.litellm_fast_llm
             elif model_tier == "smart":
                 self.model = config.litellm_smart_llm
@@ -242,7 +246,10 @@ class UnifiedLLMClient:
             self.api_key = "ollama"  # Ollama doesn't need a real API key
             self.embedding_model = config.ollama_embedding
 
-            if model_tier == "fast":
+            # Use explicit model name if provided, otherwise use tier
+            if model_name:
+                self.model = model_name
+            elif model_tier == "fast":
                 self.model = config.ollama_fast_llm
             elif model_tier == "smart":
                 self.model = config.ollama_smart_llm
@@ -363,15 +370,51 @@ class UnifiedLLMClient:
             embed_batch_size=10
         )
 
-def get_client(provider="litellm", model_tier="smart"):
+def get_client(provider="litellm", model_tier="smart", model_name=None):
     """
     Factory function to get a unified LLM client
 
     Args:
         provider: Either "litellm" or "ollama"
-        model_tier: Either "fast", "smart", or "strategic"
+        model_tier: Either "fast", "smart", or "strategic" (ignored if model_name is provided)
+        model_name: Optional specific model name to use (overrides model_tier)
 
     Returns:
         UnifiedLLMClient instance
     """
-    return UnifiedLLMClient(provider=provider, model_tier=model_tier)
+    return UnifiedLLMClient(provider=provider, model_tier=model_tier, model_name=model_name)
+
+
+def list_available_models(provider="litellm"):
+    """
+    List all available models from LiteLLM or Ollama
+
+    Args:
+        provider: Either "litellm" or "ollama"
+
+    Returns:
+        List of available model names, or empty list if failed
+    """
+    try:
+        if provider == "litellm":
+            base_url = config.litellm_base_url
+            api_key = config.litellm_api_key
+        elif provider == "ollama":
+            base_url = config.ollama_base_url
+            api_key = "ollama"
+        else:
+            return []
+
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        
+        # Call /v1/models endpoint
+        models = client.models.list()
+        
+        # Extract model names
+        model_names = [model.id for model in models.data]
+        
+        return sorted(model_names)
+    
+    except Exception as e:
+        print(f"Error fetching models from {provider}: {str(e)}")
+        return []

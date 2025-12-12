@@ -59,6 +59,16 @@ nvidia_text_model: ""
 openai_image_model: ""
 openai_image_enhancement_model: ""
 
+# CORS Configuration
+# ALLOWED_ORIGINS: Comma-separated list of allowed origins (e.g., "https://example.com,https://app.example.com")
+# Set to "*" ONLY for development. In production, always specify explicit origins.
+# CORS_ALLOW_ORIGIN_REGEX: Optional regex pattern for dynamic subdomains (e.g., "https://.*\\.example\\.com")
+# ENVIRONMENT: Set to "development" to enable permissive CORS ("*"). Default is "production".
+cors:
+  allowed_origins: ""
+  allow_origin_regex: ""
+  environment: "production"
+
 paths:
   UPLOAD_FOLDER: ""
   WEB_SEARCH_FOLDER: ""
