@@ -27,3 +27,8 @@ used_topics.txt
 *png
 venv/
 .coverage
+.claude/
+.cursor/
+newsletter_research_data/
+web_search*
+.pytest_cache/

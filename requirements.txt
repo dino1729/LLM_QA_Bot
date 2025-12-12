@@ -1,77 +1,36 @@
-#for i in $(cat requirements.txt); do pip install $i; done
-#for i in $(cat requirements.txt); do pip install --upgrade $i; done
-# For testing
-pytest
-pytest-dotenv
-
-# third-party (libraries)
-rake_nltk
-ipython
-
-# linting stubs
-types-requests
-types-setuptools
-
-# linting
-black
-isort
-mypy
-flake8
-flake8-docstrings
-pylint
-
-git+https://github.com/openai/whisper.git
-pyparsing
-newspaper3k
-requests
-aiohttp
-selenium
-beautifulsoup4
-ffmpeg-python
-PyPDF2
-tiktoken
-moviepy
+# Core runtime
 gradio
-IPython
-pydub
-torch
-wget
-numpy
-pandas
-matplotlib
-seaborn
-scikit-learn
-scipy
-tqdm
-nltk
-gensim
-# spacy
-transformers
-torch
-pytube
-flask
+requests
+openai
+llama-index
 llama-index-llms-openai
 llama-index-embeddings-openai
-llama-index-readers-file
-llama-index-readers-llama-parse
-llama-index-agent-openai
-llama-index-tools-bing-search
-llama-index-tools-weather
-llama-index-tools-google
-llama-index-tools-wikipedia
-pyowm
-llama-index
-openai
-langchain>=0.0.329
+newspaper3k
+beautifulsoup4
+aiohttp
+tiktoken
+pytube
+moviepy
 youtube_transcript_api
-supabase
-docx2txt
-pypdf
-groq
+wget
+pyowm
 google.generativeai
+groq
 pinecone
-lxml_html_clean
-nvidia-riva-client
+supabase
 soundfile
 sounddevice
+numpy
 gpt_researcher
+whisper
+Pillow
+python-dotenv
+
+# Optional features
+selenium             # only for misc_scripts/farnam_scraper.py
+nvidia-riva-client   # only for NVIDIA Riva audio; skip if not needed
+torch                # required by Whisper
+
+# Tests
+pytest
+pytest-dotenv

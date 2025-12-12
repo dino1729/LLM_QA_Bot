@@ -3,9 +3,11 @@ Custom Research Feature using Firecrawl and LLM
 Simple, reliable research without external API dependencies
 """
 import requests
+import logging
 from datetime import datetime
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.debug_logger import log_debug_data
 
 # Configuration
 firecrawl_server_url = config.firecrawl_server_url
@@ -38,6 +40,13 @@ def scrape_with_firecrawl(url, timeout=30):
         
         if response.status_code == 200:
             result = response.json()
+            # Log successful scrape
+            log_debug_data("firecrawl_scrape", {
+                "url": url,
+                "status": "success",
+                "response": result
+            })
+            
             if "data" in result and "markdown" in result["data"]:
                 return result["data"]["markdown"]
             elif "data" in result and "html" in result["data"]:
@@ -46,6 +55,13 @@ def scrape_with_firecrawl(url, timeout=30):
                 return soup.get_text()
         else:
             print(f"Firecrawl scrape failed for {url}: status {response.status_code}")
+            # Log failed scrape
+            log_debug_data("firecrawl_scrape_error", {
+                "url": url,
+                "status": "error",
+                "status_code": response.status_code,
+                "response_text": response.text
+            })
             return None
             
     except Exception as e:

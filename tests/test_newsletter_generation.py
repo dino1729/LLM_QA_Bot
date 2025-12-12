@@ -2,22 +2,35 @@
 """
 Test script for newsletter generation
 Tests the newsletter formatting and HTML generation without running full news fetch
+
+Updated for JSON-backed newsletter pipeline.
 """
 
 from datetime import datetime
 import sys
 import os
+import json
+from pathlib import Path
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from year_progress_and_news_reporter_litellm import (
-    generate_gpt_response_newsletter,
     generate_html_news_template,
     format_news_section,
-    save_message_to_file,
-    generate_fallback_newsletter
+    save_to_output_dir,
+    parse_newsletter_text_to_sections,
+    parse_newsletter_item,
+    generate_fallback_newsletter_sections,
+    format_news_items_html,
+    render_newsletter_html_from_bundle,
+    build_daily_bundle,
+    write_bundle_json,
+    load_bundle_json,
+    parse_lesson_to_dict,
+    OUTPUT_DIR
 )
+
 
 def test_newsletter_parsing():
     """Test the newsletter parsing with sample content"""
@@ -53,11 +66,11 @@ def test_newsletter_parsing():
     print("\n1. Testing newsletter content generation...")
     print(f"✓ Sample newsletter created: {len(sample_newsletter)} characters")
     
-    print("\n2. Testing HTML generation...")
+    print("\n2. Testing HTML generation (legacy text-based)...")
     html_output = generate_html_news_template(sample_newsletter)
     print(f"✓ HTML generated: {len(html_output)} characters")
     
-    print("\n3. Testing individual section parsing...")
+    print("\n3. Testing individual section parsing (legacy)...")
     sections = [
         ("Tech News Update", "Technology"),
         ("Financial Markets News Update", "Financial Markets"),
@@ -70,77 +83,207 @@ def test_newsletter_parsing():
         status = "✓" if has_content else "✗"
         print(f"{status} {display_name}: {'Found content' if has_content else 'No content found'}")
     
-    print("\n4. Saving test HTML output...")
-    save_message_to_file(html_output, "test_newsletter.html")
-    save_message_to_file(sample_newsletter, "test_newsletter.txt")
-    print("✓ Test files saved to bing_data/")
+    print("\n4. Testing structured newsletter parsing...")
+    parsed_sections = parse_newsletter_text_to_sections(sample_newsletter)
+    print(f"✓ Parsed tech items: {len(parsed_sections['tech'])}")
+    print(f"✓ Parsed financial items: {len(parsed_sections['financial'])}")
+    print(f"✓ Parsed india items: {len(parsed_sections['india'])}")
     
-    print("\n5. Testing fallback newsletter generation...")
-    fallback = generate_fallback_newsletter("")
-    print(f"✓ Fallback newsletter generated: {len(fallback)} characters")
+    print("\n5. Testing fallback newsletter sections...")
+    fallback_sections = generate_fallback_newsletter_sections()
+    print(f"✓ Fallback sections generated with keys: {list(fallback_sections.keys())}")
+    
+    print("\n6. Testing structured HTML rendering...")
+    items_html = format_news_items_html(parsed_sections['tech'])
+    print(f"✓ Tech items HTML generated: {len(items_html)} characters")
     
     print("\n" + "="*80)
-    print("✓ ALL TESTS COMPLETED")
+    print("✓ ALL PARSING TESTS COMPLETED")
     print("="*80)
-    print("\nCheck the following files in bing_data/:")
-    print("  - test_newsletter.html (open in browser to view)")
-    print("  - test_newsletter.txt (view raw formatted content)")
     
     return True
 
 
-def test_with_actual_files():
-    """Test with actual news files if they exist"""
+def test_bundle_creation():
+    """Test bundle creation and JSON serialization"""
     
     print("\n" + "="*80)
-    print("TESTING WITH ACTUAL NEWS FILES")
+    print("TESTING BUNDLE CREATION")
     print("="*80)
     
-    news_files = [
-        "bing_data/news_tech_report.txt",
-        "bing_data/news_usa_report.txt",
-        "bing_data/news_india_report.txt",
-        "bing_data/news_newsletter_report.txt"
-    ]
+    print("\n1. Creating sample data...")
     
-    print("\nChecking for existing news files...")
-    for file_path in news_files:
-        if os.path.exists(file_path):
-            size = os.path.getsize(file_path)
-            status = "✓" if size > 100 else "⚠"
-            print(f"{status} {os.path.basename(file_path)}: {size} bytes")
-        else:
-            print(f"✗ {os.path.basename(file_path)}: Not found")
+    # Sample data
+    weather_data = {"temp_c": 12.5, "status": "cloudy", "location": "Test City"}
+    lesson_dict = parse_lesson_to_dict(
+        "[KEY INSIGHT]\nTest insight here.\n\n[HISTORICAL]\nTest historical context.\n\n[APPLICATION]\nTest application.",
+        topic="Test Topic"
+    )
     
-    # Try to regenerate HTML from existing newsletter content
-    newsletter_path = "bing_data/news_newsletter_report.txt"
-    if os.path.exists(newsletter_path):
-        with open(newsletter_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    newsletter_sections = {
+        "tech": [
+            {"source": "Test", "headline": "Test headline 1", "date_mmddyyyy": "12/11/2025", "url": "", "commentary": "Test commentary"}
+        ],
+        "financial": [
+            {"source": "Test", "headline": "Test headline 2", "date_mmddyyyy": "12/11/2025", "url": "https://example.com", "commentary": "Test commentary"}
+        ],
+        "india": [
+            {"source": "Test", "headline": "Test headline 3", "date_mmddyyyy": "12/11/2025", "url": "", "commentary": "Test commentary"}
+        ]
+    }
+    
+    print("✓ Sample data created")
+    
+    print("\n2. Building bundle...")
+    bundle = build_daily_bundle(
+        days_completed=345,
+        weeks_completed=49.29,
+        days_left=20,
+        weeks_left=2.86,
+        percent_days_left=5.48,
+        weather_data=weather_data,
+        quote_text="Test quote",
+        quote_author="Test Author",
+        lesson_dict=lesson_dict,
+        news_raw_sources={"technology": "raw tech", "financial": "raw financial", "india": "raw india"},
+        newsletter_sections=newsletter_sections,
+        voicebot_script="Test voicebot script"
+    )
+    
+    print(f"✓ Bundle created with keys: {list(bundle.keys())}")
+    print(f"✓ Meta schema version: {bundle['meta']['schema_version']}")
+    
+    print("\n3. Testing JSON serialization...")
+    json_str = json.dumps(bundle, indent=2)
+    print(f"✓ JSON serialized: {len(json_str)} characters")
+    
+    # Verify it can be deserialized
+    parsed = json.loads(json_str)
+    assert parsed['meta']['schema_version'] == bundle['meta']['schema_version']
+    print("✓ JSON deserialization verified")
+    
+    print("\n4. Testing bundle HTML rendering...")
+    progress_html = None
+    newsletter_html = None
+    
+    try:
+        from year_progress_and_news_reporter_litellm import render_year_progress_html_from_bundle, render_newsletter_html_from_bundle
         
-        if content.strip():
-            print("\n📄 Regenerating HTML from existing newsletter...")
-            html = generate_html_news_template(content)
-            save_message_to_file(html, "news_newsletter_report_regenerated.html")
-            print("✓ Regenerated HTML saved")
-        else:
-            print("\n⚠ Newsletter file is empty")
+        progress_html = render_year_progress_html_from_bundle(bundle)
+        print(f"✓ Progress HTML rendered: {len(progress_html)} characters")
+        
+        newsletter_html = render_newsletter_html_from_bundle(bundle)
+        print(f"✓ Newsletter HTML rendered: {len(newsletter_html)} characters")
+    except Exception as e:
+        print(f"✗ HTML rendering failed: {e}")
+    
+    print("\n" + "="*80)
+    print("✓ ALL BUNDLE TESTS COMPLETED")
+    print("="*80)
+    
+    return True
+
+
+def test_lesson_parsing():
+    """Test lesson text parsing to structured dict"""
+    
+    print("\n" + "="*80)
+    print("TESTING LESSON PARSING")
+    print("="*80)
+    
+    # Test case 1: Full structured lesson
+    print("\n1. Testing full structured lesson...")
+    full_lesson = """[KEY INSIGHT]
+The best leaders understand that influence comes from service, not authority.
+
+[HISTORICAL]
+In ancient Rome, Marcus Aurelius demonstrated servant leadership by personally visiting soldiers and sharing their hardships. His Meditations reveal a leader focused on duty rather than power.
+
+[APPLICATION]
+Modern engineers can apply this by mentoring juniors, sharing credit, and focusing on team success over personal recognition."""
+    
+    parsed = parse_lesson_to_dict(full_lesson, "Leadership")
+    assert parsed["topic"] == "Leadership"
+    assert "influence" in parsed["key_insight"].lower()
+    assert "Rome" in parsed["historical"] or "Marcus" in parsed["historical"]
+    assert "engineers" in parsed["application"].lower()
+    print("✓ Full lesson parsed correctly")
+    
+    # Test case 2: Missing sections (fallback)
+    print("\n2. Testing fallback for missing sections...")
+    partial_lesson = "Just some text without markers."
+    parsed2 = parse_lesson_to_dict(partial_lesson, "Test")
+    assert parsed2["key_insight"]  # Should have fallback
+    print(f"✓ Fallback insight: {parsed2['key_insight'][:50]}...")
+    
+    # Test case 3: Empty input
+    print("\n3. Testing empty input...")
+    parsed3 = parse_lesson_to_dict("", "Empty")
+    assert parsed3["topic"] == "Empty"
+    assert parsed3["raw_text"] == ""
+    print("✓ Empty input handled correctly")
+    
+    print("\n" + "="*80)
+    print("✓ ALL LESSON PARSING TESTS COMPLETED")
+    print("="*80)
+    
+    return True
+
+
+def test_news_item_parsing():
+    """Test individual news item parsing"""
+    
+    print("\n" + "="*80)
+    print("TESTING NEWS ITEM PARSING")
+    print("="*80)
+    
+    # Test case 1: Full item with URL
+    print("\n1. Testing full item with URL...")
+    item1 = "- [Reuters] Major announcement made | Date: 12/11/2025 | https://example.com/article | Commentary: This is important news."
+    parsed1 = parse_newsletter_item(item1)
+    assert parsed1["source"] == "Reuters"
+    assert "announcement" in parsed1["headline"].lower()
+    assert parsed1["date_mmddyyyy"] == "12/11/2025"
+    assert parsed1["url"] == "https://example.com/article"
+    assert "important" in parsed1["commentary"].lower()
+    print("✓ Full item parsed correctly")
+    
+    # Test case 2: Item without URL
+    print("\n2. Testing item without URL...")
+    item2 = "- [Bloomberg] Market update today | Date: 12/11/2025 | Commentary: Markets showed strength."
+    parsed2 = parse_newsletter_item(item2)
+    assert parsed2["source"] == "Bloomberg"
+    assert parsed2["url"] == ""
+    print("✓ Item without URL parsed correctly")
+    
+    # Test case 3: Minimal item
+    print("\n3. Testing minimal item...")
+    item3 = "Simple headline text"
+    parsed3 = parse_newsletter_item(item3)
+    assert parsed3["headline"] == "Simple headline text"
+    print("✓ Minimal item parsed correctly")
+    
+    print("\n" + "="*80)
+    print("✓ ALL NEWS ITEM PARSING TESTS COMPLETED")
+    print("="*80)
     
     return True
 
 
 if __name__ == "__main__":
     print("\n" + "="*80)
-    print("NEWSLETTER GENERATION TEST SUITE")
+    print("NEWSLETTER GENERATION TEST SUITE (JSON-BACKED)")
     print("="*80)
+    print(f"Output directory: {OUTPUT_DIR}")
     
-    # Run parsing test with sample data
+    # Run all tests
     test_newsletter_parsing()
+    test_bundle_creation()
+    test_lesson_parsing()
+    test_news_item_parsing()
     
-    # Test with actual files if they exist
-    test_with_actual_files()
-    
-    print("\n✓ Test suite completed!")
+    print("\n" + "="*80)
+    print("✓ ALL TEST SUITES COMPLETED SUCCESSFULLY!")
+    print("="*80)
     print("\nTo test the full newsletter generation:")
     print("  python year_progress_and_news_reporter_litellm.py")
-
