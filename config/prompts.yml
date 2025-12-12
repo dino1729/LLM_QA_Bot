@@ -28,7 +28,15 @@ ques_template: |
   ---------------------
   {context_str}
   ---------------------
-  Based on the context provided, your task is to answer the user's question to the best of your ability. Try to long answers to certain questions in the form of a bulleted list. It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.
+  Based on the context provided, your task is to answer the user's question to the best of your ability.
+  
+  Format your response using Markdown:
+  - Use bullet points (hyphens -) for lists
+  - Use **bold** for emphasis
+  - Use headings (###) for sections if the answer is long
+  - Keep paragraph spacing clear
+  
+  It is important to refrain from directly copying word-for-word from the original context. Additionally, please ensure that the summary excludes any extraneous details such as discounts, promotions, sponsorships, or advertisements, and remains focused on the core message of the content.
   ---------------------
   Using both the context information and also using your own knowledge, 
   answer the question: {query_str}

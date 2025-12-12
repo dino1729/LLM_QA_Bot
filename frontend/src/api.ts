@@ -223,6 +223,22 @@ export interface ImageUploadResponse {
   file_path: string;
 }
 
+export interface MemorySaveResponse {
+  status: string;
+}
+
+export interface MemorySearchResponse {
+  results: {
+    content: string;
+    score: number;
+    metadata: any;
+  }[];
+}
+
+export interface MemoryResetResponse {
+  status: string;
+}
+
 export const api = {
   health: (): CancellableApiCall<HealthResponse> => 
     apiCall<HealthResponse>(`${API_BASE}/health`),
@@ -268,6 +284,48 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, history, model_name: model })
       }),
+    
+    askStream: (message: string, history: string[][], model: string, onChunk: (chunk: string) => void): CancellableApiCall<void> => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+      
+      const promise = (async () => {
+        try {
+          const response = await fetch(`${API_BASE}/docqa/ask_stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, history, model_name: model }),
+            signal
+          });
+
+          if (!response.ok) throw new Error(`API error: ${response.status}`);
+          if (!response.body) throw new Error('No response body');
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            onChunk(chunk);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.name === 'AbortError') {
+            const abortError = new Error('Request cancelled');
+            (abortError as any).aborted = true;
+            throw abortError;
+          }
+          throw e;
+        }
+      })();
+
+      return {
+        promise,
+        cancel: () => controller.abort(),
+        controller
+      };
+    },
     
     reset: (): CancellableApiCall<DocQAResetResponse> => 
       apiCall<DocQAResetResponse>(`${API_BASE}/docqa/reset`, { method: 'POST' }),
@@ -335,6 +393,71 @@ export const api = {
         body: fd
       });
     }
+  },
+
+  memoryPalace: {
+    save: (title: string, content: string, source_type: string, source_ref: string, model: string): CancellableApiCall<MemorySaveResponse> => 
+      apiCall<MemorySaveResponse>(`${API_BASE}/memory_palace/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, source_type, source_ref, model_name: model })
+      }),
+
+    search: (query: string, model: string, top_k: number = 5): CancellableApiCall<MemorySearchResponse> => 
+      apiCall<MemorySearchResponse>(`${API_BASE}/memory_palace/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, model_name: model, top_k })
+      }),
+
+    askStream: (message: string, history: string[][], model: string, onChunk: (chunk: string) => void): CancellableApiCall<void> => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+      
+      const promise = (async () => {
+        try {
+          const response = await fetch(`${API_BASE}/memory_palace/ask_stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, history, model_name: model }),
+            signal
+          });
+
+          if (!response.ok) throw new Error(`API error: ${response.status}`);
+          if (!response.body) throw new Error('No response body');
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            onChunk(chunk);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.name === 'AbortError') {
+            const abortError = new Error('Request cancelled');
+            (abortError as any).aborted = true;
+            throw abortError;
+          }
+          throw e;
+        }
+      })();
+
+      return {
+        promise,
+        cancel: () => controller.abort(),
+        controller
+      };
+    },
+
+    reset: (model: string): CancellableApiCall<MemoryResetResponse> => 
+      apiCall<MemoryResetResponse>(`${API_BASE}/memory_palace/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: model })
+      }),
   }
 };
 

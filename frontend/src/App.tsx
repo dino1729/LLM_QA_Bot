@@ -3,6 +3,7 @@ import { DocumentQA } from './components/DocumentQA';
 import { AIAssistant } from './components/AIAssistant';
 import { FunTools } from './components/FunTools';
 import { ImageStudio } from './components/ImageStudio';
+import { MemoryPalace } from './components/MemoryPalace';
 
 function App() {
   const [activeTab, setActiveTab] = useState('docqa');
@@ -10,8 +11,8 @@ function App() {
   return (
     <div className="container">
       <header className="header">
-        <h1>LLM Bot</h1>
-        <p className="subtitle">Your AI-Powered Knowledge Companion</p>
+        <h1>Nexus Mind</h1>
+        <p className="subtitle">All Your AI Tools, One Intelligent Hub</p>
       </header>
 
       <nav className="tabs">
@@ -26,6 +27,12 @@ function App() {
           onClick={() => setActiveTab('ai')}
         >
           AI Assistant
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'memory' ? 'active' : ''}`}
+          onClick={() => setActiveTab('memory')}
+        >
+          Memory Palace
         </button>
         <button 
           className={`tab-btn ${activeTab === 'fun' ? 'active' : ''}`}
@@ -44,6 +51,7 @@ function App() {
       <main>
         {activeTab === 'docqa' && <DocumentQA />}
         {activeTab === 'ai' && <AIAssistant />}
+        {activeTab === 'memory' && <MemoryPalace />}
         {activeTab === 'fun' && <FunTools />}
         {activeTab === 'image' && <ImageStudio />}
       </main>
@@ -69,7 +77,7 @@ function App() {
             color: 'var(--accent-gold)',
             fontFamily: 'var(--font-display)',
             fontWeight: 600
-          }}>LLM QA Bot</strong> • {new Date().getFullYear()}
+          }}>Nexus Mind</strong> • {new Date().getFullYear()}
         </p>
         <p style={{ 
           fontSize: '13px', 

@@ -583,13 +583,17 @@ def transcribe_audio_to_text(audio_path):
 def generate_response(english_text, conversation, model_name, max_tokens, temperature):
     """
     Generates a response using the selected model.
+    
+    Returns:
+        str: The assistant's reply, or an error message if generation fails.
     """
+    assistant_reply = None  # Initialize to avoid UnboundLocalError in error scenarios
     try:
         assistant_reply = internet_connected_chatbot(english_text, conversation, model_name, max_tokens, temperature)
         print("{} Bot: {}".format(model_name, assistant_reply))
     except Exception as e:
         print("Model error:", str(e))
-        pass
+        assistant_reply = "Sorry, I encountered an error generating a response."
     return assistant_reply
 
 def translate_and_speak(assistant_reply, detected_audio_language, tts_output_path, model_name):

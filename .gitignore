@@ -1,34 +1,150 @@
+# Python
 .python-version
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+include/
+
+# Environment & Configuration (Sensitive)
+.env*
+config/config.yml
+config/.env
+
+# IDEs & Editors
+.vscode/
+.idea/
+.claude/
+.cursor/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+nohup.out
+
+# Frontend Dependencies & Build
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+frontend/dist/
+frontend/build/
+
+# Package Locks (frontend specific)
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+
+# Testing & Coverage
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.hypothesis/
+coverage.xml
+*.cover
+.cache
+nosetests.xml
+
+# Data & Uploads
 data/
 iosdata/
 bing_data/
-nohup.out
-__pycache__/
-.env*
-.venv
-.vscode
-include/
-gradio_cached_examples/
-playground/*txt
-playground/storage/*
-config/config.yml
-*mp3
-*mp4
-*wav
-*log
-*transcript.txt
-*article_list.txt
-*pdf
-*formatted_transcript.md
-*TTF
-used_personalities.txt
-used_topics.txt
-*png
-venv/
-.coverage
-.claude/
-.cursor/
 newsletter_research_data/
 web_search*
-.pytest_cache/
+UPLOAD_FOLDER/
+uploads/
+
+# Gradio & Cache
+gradio_cached_examples/
+gradio_flagged/
+
+# Playground & Temp Files
+playground/*txt
+playground/*.txt
+playground/storage/*
+
+# Media Files
+*.mp3
+*.mp4
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+*.mov
+
+# Documents
+*.pdf
+*.doc
+*.docx
+
+# Text Files (Specific)
+*transcript.txt
+*article_list.txt
+*formatted_transcript.md
+used_personalities.txt
+used_topics.txt
+
+# Fonts
+*.TTF
+*.ttf
+*.otf
+*.woff
+*.woff2
+
+# Logs
+*.log
+logs/
+
+# Miscellaneous
+*article_list.txt
+
+summaries/
+vectors/

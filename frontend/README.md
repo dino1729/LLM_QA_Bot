@@ -1,73 +1,28 @@
-# React + TypeScript + Vite
+# LLM_QA_Bot Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite UI for the LLM_QA_Bot FastAPI/Gradio backend. This layer calls `/api/*` routes exposed by `gradio_ui_full.py` (or `misc_scripts/azure_gradioui.py`) and renders tabs for Document Q&A, AI chat, fun tools, and the Image Studio.
 
-Currently, two official plugins are available:
+## Quick Start
+- Install deps: `cd frontend && npm install`.
+- Run the backend (from repo root): `python gradio_ui_full.py` (ensures `/api` is available).
+- Start the dev server: `npm run dev` and open the shown localhost URL. Vite serves the frontend; API calls expect the backend on the same origin or behind a proxy to `/api`.
+- Build for prod: `npm run build`; preview locally with `npm run preview`.
+- Lint: `npm run lint` (ESLint 9 + TypeScript rules).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Project Structure
+- `src/main.tsx` boots React; `src/App.tsx` defines the tabbed layout and routing state.
+- `src/components/` holds feature panels:
+  - `DocumentQA` for uploads and retrieval Q&A
+  - `AIAssistant` for chat
+  - `FunTools` for trip/food planners
+  - `ImageStudio` for gen/edit/enhance workflows
+- `src/api.ts` centralizes typed fetch helpers with abort + timeout handling against `/api`.
+- `src/styles`, `src/App.css`, and `src/index.css` define the theme variables and layout.
+- Assets and logos live under `src/assets/`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Development Notes
+- API base is hardcoded to `/api`; if the backend runs elsewhere, proxy requests or adjust `API_BASE` in `src/api.ts`.
+- Keep components small and state-local; prefer lifting shared fetch logic into `api.ts` rather than reimplementing `fetch`.
+- Use TypeScript interfaces in `api.ts` as the single source of truth for response shapes; update them alongside backend changes.
+- CSS variables in `index.css`/`App.css` control typography and accent colors—tweak there before editing component styles.
+- Before committing UI changes, run `npm run lint` and, if applicable, include screenshots in the PR to reflect visual updates.

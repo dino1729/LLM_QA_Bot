@@ -14,7 +14,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, File, UploadFile, Form, Body, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from helper_functions.chat_stream import prepare_chat_stream
 from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
@@ -27,6 +28,12 @@ from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze
 from helper_functions.chat_generation import generate_chat
 from helper_functions import gptimage_tool as tool
 from helper_functions.llm_client import get_client, list_available_models
+from helper_functions.memory_palace_local import (
+    save_memory,
+    search_memories,
+    prepare_memory_stream,
+    reset_memory_palace
+)
 from llama_index.core import Settings as LlamaSettings
 from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
 from llama_index.core.retrievers import VectorIndexRetriever
@@ -328,6 +335,27 @@ class PromptEnhanceRequest(BaseModel):
 class SurpriseRequest(BaseModel):
     provider: str = "nvidia"
 
+class MemorySaveRequest(BaseModel):
+    title: str
+    content: str
+    source_type: str
+    source_ref: str
+    model_name: str = "LITELLM"
+
+class MemorySearchRequest(BaseModel):
+    query: str
+    model_name: str = "LITELLM"
+    top_k: int = 5
+
+class MemoryChatRequest(BaseModel):
+    message: str
+    history: List[List[str]] = []
+    model_name: str = "LITELLM"
+    top_k: int = 5
+
+class MemoryResetRequest(BaseModel):
+    model_name: str = "LITELLM"
+
 
 # --- API Endpoints ---
 
@@ -426,6 +454,23 @@ async def endpoint_ask(req: ChatRequest):
         answer = ask_query(req.message, req.model_name)
         return {"answer": answer}
 
+@app.post("/api/docqa/ask_stream")
+async def endpoint_ask_stream(req: ChatRequest):
+    async with api_lock:
+        # Prepare the stream inside the lock to handle retrieval and settings safely
+        # prepare_chat_stream runs the retrieval and returns a response object with .response_gen
+        response = prepare_chat_stream(
+            question=req.message,
+            model_name=req.model_name,
+            vector_folder=VECTOR_FOLDER,
+            qa_template=qa_template,
+            parse_model_name_func=parse_model_name
+        )
+        
+    # The generator response.response_gen can be iterated outside the lock 
+    # because it uses the specific LLM instance captured during setup
+    return StreamingResponse(response.response_gen, media_type="text/event-stream")
+
 # Internet Chat
 @app.post("/api/chat/internet")
 async def endpoint_chat_internet(req: InternetChatRequest):
@@ -447,6 +492,70 @@ async def endpoint_chat_internet(req: InternetChatRequest):
             temperature=req.temperature
         )
         return {"response": response}
+
+# Memory Palace Endpoints
+@app.post("/api/memory_palace/save")
+async def endpoint_memory_save(req: MemorySaveRequest):
+    async with api_lock:
+        await set_model_context(req.model_name)
+        try:
+            result = save_memory(
+                title=req.title,
+                content=req.content,
+                source_type=req.source_type,
+                source_ref=req.source_ref,
+                model_name=req.model_name
+            )
+            return {"status": result}
+        except Exception as e:
+            logger.error(f"Error saving to memory palace: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/memory_palace/search")
+async def endpoint_memory_search(req: MemorySearchRequest):
+    # Search doesn't necessarily need the LLM context if it just loads the index and uses it,
+    # but VectorIndexRetriever might trigger embedding generation for the query.
+    # So we should lock and set context.
+    async with api_lock:
+        await set_model_context(req.model_name)
+        try:
+            results = search_memories(
+                query=req.query,
+                model_name=req.model_name,
+                top_k=req.top_k
+            )
+            return {"results": results}
+        except Exception as e:
+            logger.error(f"Error searching memory palace: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/memory_palace/ask_stream")
+async def endpoint_memory_ask_stream(req: MemoryChatRequest):
+    async with api_lock:
+        await set_model_context(req.model_name)
+        try:
+            response = prepare_memory_stream(
+                message=req.message,
+                history=req.history,
+                model_name=req.model_name,
+                top_k=req.top_k
+            )
+        except Exception as e:
+            logger.error(f"Error preparing memory stream: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    # Stream response outside lock
+    return StreamingResponse(response.response_gen, media_type="text/event-stream")
+
+@app.post("/api/memory_palace/reset")
+async def endpoint_memory_reset(req: MemoryResetRequest):
+    # Reset deletes files, doesn't need LLM context usually, but we need to know the folder path which depends on model name
+    try:
+        result = reset_memory_palace(req.model_name)
+        return {"status": result}
+    except Exception as e:
+        logger.error(f"Error resetting memory palace: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Fun Tools
 @app.post("/api/fun/trip")

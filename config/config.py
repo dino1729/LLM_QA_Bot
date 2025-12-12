@@ -57,6 +57,18 @@ nvidia_text_model = config_yaml.get("nvidia_text_model", "")
 openai_image_model = config_yaml.get("openai_image_model", "gpt-image-1")
 openai_image_enhancement_model = config_yaml.get("openai_image_enhancement_model", "gpt-4o")
 
+# Azure Configuration
+azure_api_key = config_yaml.get("azure_api_key", "")
+azure_api_base = config_yaml.get("azure_api_base", "")
+azure_chatapi_version = config_yaml.get("azure_chatapi_version", "")
+azure_gpt4_deploymentid = config_yaml.get("azure_gpt4_deploymentid", "")
+azure_embeddingapi_version = config_yaml.get("azure_embeddingapi_version", "")
+azure_embedding_deploymentid = config_yaml.get("azure_embedding_deploymentid", "")
+
+# Supabase Configuration
+supabase_service_role_key = config_yaml.get("supabase_service_role_key", "")
+public_supabase_url = config_yaml.get("public_supabase_url", "")
+
 # CORS Configuration
 # Priority: Environment variables > config.yml > defaults
 # Environment variables: ALLOWED_ORIGINS, CORS_ALLOW_ORIGIN_REGEX, ENVIRONMENT
@@ -77,6 +89,7 @@ UPLOAD_FOLDER = config_yaml['paths']['UPLOAD_FOLDER']
 WEB_SEARCH_FOLDER = config_yaml['paths']['WEB_SEARCH_FOLDER']
 SUMMARY_FOLDER = config_yaml['paths']['SUMMARY_FOLDER']
 VECTOR_FOLDER = config_yaml['paths']['VECTOR_FOLDER']
+MEMORY_PALACE_FOLDER = config_yaml['paths'].get('MEMORY_PALACE_FOLDER', './memory_palace')
 
 temperature = config_yaml['settings']['temperature']
 max_tokens = config_yaml['settings']['max_tokens']

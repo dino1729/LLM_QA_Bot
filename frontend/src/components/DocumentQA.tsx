@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
 
 export function DocumentQA() {
@@ -13,12 +14,19 @@ export function DocumentQA() {
   // Inputs
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [memorize, setMemorize] = useState(false);
   
   // Chat
   const [chatHistory, setChatHistory] = useState<string[][]>([]);
   const [message, setMessage] = useState('');
   const [answering, setAnswering] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   // Fetch models when provider changes
   useEffect(() => {
@@ -82,29 +90,27 @@ export function DocumentQA() {
     
     setLoading(true);
     setResult(null);
-    let cancelFn: (() => void) | null = null;
-    
+
     try {
       // Format model name as PROVIDER:model_name for backend
       const modelName = `${provider.toUpperCase()}:${model}`;
       let apiCall;
       if (subTab === 'video') {
-        apiCall = api.analyze.youtube(url, false, modelName);
+        apiCall = api.analyze.youtube(url, memorize, modelName);
       } else if (subTab === 'article') {
-        apiCall = api.analyze.article(url, false, modelName);
+        apiCall = api.analyze.article(url, memorize, modelName);
       } else if (subTab === 'media') {
-        apiCall = api.analyze.media(url, false, modelName);
+        apiCall = api.analyze.media(url, memorize, modelName);
       } else if (subTab === 'file' && file) {
         const fd = new FormData();
         fd.append('files', file);
-        fd.append('memorize', 'false');
+        fd.append('memorize', memorize.toString());
         fd.append('model_name', modelName);
         apiCall = api.analyze.file(fd);
       } else {
         return;
       }
-      
-      cancelFn = apiCall.cancel;
+
       const res = await apiCall.promise;
       setResult(res);
     } catch (e) {
@@ -116,13 +122,12 @@ export function DocumentQA() {
       alert('Error processing: ' + e);
     } finally {
       setLoading(false);
-      cancelFn = null;
     }
   };
 
   const handleAsk = async () => {
     if (!message.trim() || !model) return;
-    const newHistory = [...chatHistory, [message, '...']];
+    const newHistory = [...chatHistory, [message, '']];
     setChatHistory(newHistory);
     setMessage('');
     setAnswering(true);
@@ -130,24 +135,56 @@ export function DocumentQA() {
     try {
       // Format model name as PROVIDER:model_name for backend
       const modelName = `${provider.toUpperCase()}:${model}`;
-      const { promise, cancel } = api.docqa.ask(message, chatHistory, modelName);
-      const res = await promise;
-      const updated = [...chatHistory, [message, res.answer]];
-      setChatHistory(updated);
+      
+      let currentAnswer = '';
+      
+      const { promise } = api.docqa.askStream(message, chatHistory, modelName, (chunk) => {
+        currentAnswer += chunk;
+        setChatHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = [message, currentAnswer];
+          return updated;
+        });
+      });
+      
+      await promise;
     } catch (e) {
       // Ignore abort errors (request cancelled)
       if (e instanceof Error && (e as any).aborted) {
         return;
       }
-      const updated = [...chatHistory, [message, 'Error: ' + e]];
-      setChatHistory(updated);
+      setChatHistory(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = [message, 'Error: ' + e];
+        return updated;
+      });
     } finally {
       setAnswering(false);
     }
   };
 
   return (
-    <div className="doc-qa">
+    <div className="doc-qa" style={{ position: 'relative' }}>
+      {notification && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: notification.type === 'error' ? 'rgba(220, 38, 38, 0.9)' : 'rgba(16, 185, 129, 0.9)',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          zIndex: 1000,
+          animation: 'slideUp 0.3s ease-out',
+          backdropFilter: 'blur(8px)',
+          fontWeight: 500,
+          fontSize: '14px',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          {notification.message}
+        </div>
+      )}
       <div className="card">
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' }}>
           <h2 className="card-title" style={{ margin: 0 }}>Analysis Configuration</h2>
@@ -240,6 +277,27 @@ export function DocumentQA() {
               style={{ flex: 1 }}
             />
           )}
+          
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            cursor: 'pointer',
+            padding: '0 8px',
+            height: '46px',
+            userSelect: 'none'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={memorize} 
+              onChange={e => setMemorize(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: '14px', color: memorize ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>
+              Memorize
+            </span>
+          </label>
+
           <button className="btn btn-primary" onClick={handleProcess} disabled={loading} style={{ minWidth: '140px' }}>
             {loading ? (
               <>
@@ -265,6 +323,26 @@ export function DocumentQA() {
                 {result.video_title || result.article_title || result.file_title || result.media_title || 'Analysis Result'}
               </h3>
               <p style={{ color: 'var(--accent-gold)', marginBottom: '16px', fontSize: '14px' }}>{result.message}</p>
+              {result.video_memoryupload_status && (
+                <p style={{ color: result.video_memoryupload_status.includes('failed') ? 'red' : 'var(--text-secondary)', marginBottom: '16px', fontSize: '13px' }}>
+                  🧠 {result.video_memoryupload_status}
+                </p>
+              )}
+              {result.article_memoryupload_status && (
+                <p style={{ color: result.article_memoryupload_status.includes('failed') ? 'red' : 'var(--text-secondary)', marginBottom: '16px', fontSize: '13px' }}>
+                  🧠 {result.article_memoryupload_status}
+                </p>
+              )}
+              {result.media_memoryupload_status && (
+                <p style={{ color: result.media_memoryupload_status.includes('failed') ? 'red' : 'var(--text-secondary)', marginBottom: '16px', fontSize: '13px' }}>
+                  🧠 {result.media_memoryupload_status}
+                </p>
+              )}
+              {result.file_memoryupload_status && (
+                <p style={{ color: result.file_memoryupload_status.includes('failed') ? 'red' : 'var(--text-secondary)', marginBottom: '16px', fontSize: '13px' }}>
+                  🧠 {result.file_memoryupload_status}
+                </p>
+              )}
               <details open>
                 <summary style={{ 
                   cursor: 'pointer', 
@@ -283,7 +361,7 @@ export function DocumentQA() {
                   paddingTop: '4px',
                   paddingBottom: '4px'
                 }}>
-                  {result.summary ?? 'No summary available'}
+                  <ReactMarkdown>{result.summary ?? 'No summary available'}</ReactMarkdown>
                 </div>
               </details>
             </div>
@@ -302,10 +380,10 @@ export function DocumentQA() {
               try {
                 await api.docqa.reset().promise;
                 setChatHistory([]);
-                alert('Database reset successfully!');
+                showNotification('Database reset successfully!');
               } catch (e) {
                 if (e instanceof Error && (e as any).aborted) return;
-                alert('Error resetting database: ' + (e instanceof Error ? e.message : String(e)));
+                showNotification('Error resetting database: ' + (e instanceof Error ? e.message : String(e)), 'error');
               } finally {
                 setResetting(false);
               }
@@ -321,7 +399,8 @@ export function DocumentQA() {
         </div>
         
         <div className="chat-window" style={{ 
-          height: '450px', 
+          minHeight: '300px',
+          maxHeight: '70vh',
           overflowY: 'auto', 
           marginBottom: '24px', 
           padding: '24px' 
@@ -344,7 +423,7 @@ export function DocumentQA() {
                 </span>
               </div>
               <div style={{ textAlign: 'left' }}>
-                <div style={{ 
+                <div className="prose" style={{ 
                   background: 'rgba(255,255,255,0.05)', 
                   padding: '16px 20px', 
                   borderRadius: '18px 18px 18px 2px', 
@@ -352,9 +431,11 @@ export function DocumentQA() {
                   maxWidth: '85%', 
                   lineHeight: 1.7,
                   fontSize: '15px',
-                  border: '1px solid var(--border-subtle)'
+                  border: '1px solid var(--border-subtle)',
+                  textAlign: 'left',
+                  color: 'var(--text-primary)'
                 }}>
-                  {msg[1]}
+                  <ReactMarkdown>{msg[1]}</ReactMarkdown>
                 </div>
               </div>
             </div>

@@ -9,7 +9,7 @@ newspaper3k
 beautifulsoup4
 aiohttp
 tiktoken
-pytube
+yt-dlp
 moviepy
 youtube_transcript_api
 wget
@@ -21,8 +21,6 @@ supabase
 soundfile
 sounddevice
 numpy
-gpt_researcher
-whisper
 Pillow
 python-dotenv
 fastapi
@@ -31,9 +29,11 @@ python-multipart
 
 # Optional features
 selenium             # only for misc_scripts/farnam_scraper.py
-nvidia-riva-client   # only for NVIDIA Riva audio; skip if not needed
 torch                # required by Whisper
+openai-whisper       # Audio transcription
+nvidia-riva-client   # NVIDIA Riva ASR/TTS (includes grpcio-tools)
 
 # Tests
 pytest
 pytest-dotenv
+lxml_html_clean
