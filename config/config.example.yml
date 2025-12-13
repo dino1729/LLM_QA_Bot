@@ -43,9 +43,10 @@ ollama_default_model: ""
 # Retriever and Firecrawl
 retriever: ""
 firecrawl_server_url: ""
+firecrawl_default_provider: "litellm"
+firecrawl_default_model_name: ""
 
 # Tavily (optional - for GPT Researcher web search)
-# Get your free API key from https://tavily.com
 tavily_api_key: ""
 
 # NVIDIA NIM (for Image Studio)
@@ -59,6 +60,13 @@ nvidia_text_model: ""
 openai_image_model: ""
 openai_image_enhancement_model: ""
 
+# Whisper (for audio transcription)
+whisper_model_name: "base"
+
+# Riva TTS (for text-to-speech)
+# Leave empty to use Riva service default voice
+riva_tts_voice_name: ""
+
 # CORS Configuration
 # ALLOWED_ORIGINS: Comma-separated list of allowed origins (e.g., "https://example.com,https://app.example.com")
 # Set to "*" ONLY for development. In production, always specify explicit origins.
@@ -69,11 +77,26 @@ cors:
   allow_origin_regex: ""
   environment: "production"
 
+# Default model selectors for API endpoints (used as Pydantic defaults)
+# These are selector tokens like "LITELLM", "LITELLM_SMART", "OLLAMA_FAST", etc.
+defaults:
+  analyze_model_name: "LITELLM"
+  chat_model_name: "LITELLM_SMART"
+  internet_chat_model_name: "LITELLM_SMART"
+  trip_model_name: "LITELLM_FAST"
+  cravings_model_name: "LITELLM_FAST"
+  memory_model_name: "LITELLM"
+  image_provider: "nvidia"
+
+# Research agent configuration
+research_agent_tool_calling_hint: "Ensure you are using a model that supports tool calling in config.yml"
+
 paths:
   UPLOAD_FOLDER: ""
   WEB_SEARCH_FOLDER: ""
   SUMMARY_FOLDER: ""
   VECTOR_FOLDER: ""
+  MEMORY_PALACE_FOLDER: "./memory_palace"
 
 settings:
   temperature: 0.0
@@ -88,4 +111,3 @@ settings:
   curate_sources: false
   language: ""
   default_chatbot_model: ""
-MEMORY_PALACE_FOLDER: ./memory_palace

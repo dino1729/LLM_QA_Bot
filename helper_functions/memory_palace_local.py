@@ -86,7 +86,7 @@ def save_memory(
         content: The main content (summary, takeaways, etc.)
         source_type: Type of source (video, article, etc.)
         source_ref: URL or filename
-        model_name: The model name string (e.g. "LITELLM:gpt-4") to derive embedding config
+        model_name: The model name string (e.g. "LITELLM:model-name" or "OLLAMA:model-name") to derive embedding config
     """
     # 1. Parse model to determine embedding configuration
     # We rely on helper_functions.llm_client.get_client to configure Settings.embed_model

@@ -1154,7 +1154,7 @@ Write a professional news summary with explicit date references and diverse topi
         )
         
         # Step 3: Use strategic model for final polish
-        logger.info("Step 3: Enhancing report with strategic model (gpt-5.1)...")
+        logger.info("Step 3: Enhancing report with strategic model...")
         strategic_client = get_client(provider=provider, model_tier="strategic")
         
         editorial_prompt = f"""You are an expert editor reviewing a news summary. Enhance this draft to make it publication-ready.

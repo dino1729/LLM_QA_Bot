@@ -1,8 +1,15 @@
+"""
+Configuration loader for LLM_QA_Bot.
+All model identifiers and settings are loaded from config.yml.
+No hardcoded model defaults - everything must be specified in config.yml.
+"""
 import yaml
 import dotenv
 import os
 
-config_dir = os.path.join(".", "config")
+# Resolve config directory relative to this module's location
+# This ensures imports work regardless of the current working directory
+config_dir = os.path.dirname(os.path.abspath(__file__))
 
 # load yaml config
 with open(os.path.join(config_dir, "config.yml"), "r") as f:
@@ -15,36 +22,44 @@ if os.path.exists(env_path):
 else:
     config_env = {}
 
-# API Keys
+# API Keys - Gemini
 google_api_key = config_yaml.get("google_api_key", "")
 gemini_model_name = config_yaml.get("gemini_model_name", "")
 gemini_thinkingmodel_name = config_yaml.get("gemini_thinkingmodel_name", "")
-groq_api_key = config_yaml.get("groq_api_key", "")
-groq_model_name = config_yaml.get("groq_model_name", "deepseek-r1-distill-llama-70b")
-groq_llama_model_name = config_yaml.get("groq_llama_model_name", "llama3-70b-8192")
-groq_mixtral_model_name = config_yaml.get("groq_mixtral_model_name", "mixtral-8x7b-32768")
 
-# LiteLLM Configuration
+# Cohere
+cohere_api_key = config_yaml.get("cohere_api_key", "")
+cohere_model_name = config_yaml.get("cohere_model_name", "")
+
+# Groq - all model names must be specified in config.yml (no hardcoded defaults)
+groq_api_key = config_yaml.get("groq_api_key", "")
+groq_model_name = config_yaml.get("groq_model_name", "")
+groq_llama_model_name = config_yaml.get("groq_llama_model_name", "")
+groq_mixtral_model_name = config_yaml.get("groq_mixtral_model_name", "")
+
+# LiteLLM Configuration - all model names must be specified in config.yml
 litellm_base_url = config_yaml.get("litellm_base_url", "")
 litellm_api_key = config_yaml.get("litellm_api_key", "")
 litellm_fast_llm = config_yaml.get("litellm_fast_llm", "")
 litellm_smart_llm = config_yaml.get("litellm_smart_llm", "")
 litellm_strategic_llm = config_yaml.get("litellm_strategic_llm", "")
 litellm_embedding = config_yaml.get("litellm_embedding", "")
-litellm_default_model = config_yaml.get("litellm_default_model", "gpt-4")
+litellm_default_model = config_yaml.get("litellm_default_model", "")
 
-# Ollama Configuration
+# Ollama Configuration - all model names must be specified in config.yml
 ollama_base_url = config_yaml.get("ollama_base_url", "")
 ollama_fast_llm = config_yaml.get("ollama_fast_llm", "")
 ollama_smart_llm = config_yaml.get("ollama_smart_llm", "")
 ollama_strategic_llm = config_yaml.get("ollama_strategic_llm", "")
 ollama_embedding = config_yaml.get("ollama_embedding", "")
-ollama_default_model = config_yaml.get("ollama_default_model", "llama2")
+ollama_default_model = config_yaml.get("ollama_default_model", "")
 
 # Retriever Configuration
 retriever = config_yaml.get("retriever", "")
-firecrawl_server_url = config_yaml.get("firecrawl_server_url", "http://localhost:3002")
+firecrawl_server_url = config_yaml.get("firecrawl_server_url", "")
 tavily_api_key = config_yaml.get("tavily_api_key", "")
+firecrawl_default_provider = config_yaml.get("firecrawl_default_provider", "litellm")
+firecrawl_default_model_name = config_yaml.get("firecrawl_default_model_name", "")
 
 # NVIDIA NIM Configuration (for Image Studio)
 nvidia_api_key = config_yaml.get("nvidia_api_key", "")
@@ -53,9 +68,16 @@ nvidia_image_gen_url = config_yaml.get("nvidia_image_gen_url", "")
 nvidia_vision_model = config_yaml.get("nvidia_vision_model", "")
 nvidia_text_model = config_yaml.get("nvidia_text_model", "")
 
-# OpenAI Image Generation Configuration
-openai_image_model = config_yaml.get("openai_image_model", "gpt-image-1")
-openai_image_enhancement_model = config_yaml.get("openai_image_enhancement_model", "gpt-4o")
+# OpenAI Image Generation Configuration - no hardcoded defaults
+openai_image_model = config_yaml.get("openai_image_model", "")
+openai_image_enhancement_model = config_yaml.get("openai_image_enhancement_model", "")
+
+# Whisper Configuration (for audio transcription)
+whisper_model_name = config_yaml.get("whisper_model_name", "base")
+
+# Riva TTS Configuration (for text-to-speech)
+# Empty string means use service default voice
+riva_tts_voice_name = config_yaml.get("riva_tts_voice_name", "")
 
 # Azure Configuration
 azure_api_key = config_yaml.get("azure_api_key", "")
@@ -85,12 +107,31 @@ pyowm_api_key = config_yaml.get("pyowm_api_key", "")
 yahoo_id = config_yaml.get("yahoo_id", "")
 yahoo_app_password = config_yaml.get("yahoo_app_password", "")
 
+# Default model selectors for API endpoints
+# These are loaded from the 'defaults' section in config.yml
+defaults_config = config_yaml.get("defaults", {})
+default_analyze_model_name = defaults_config.get("analyze_model_name", "LITELLM")
+default_chat_model_name = defaults_config.get("chat_model_name", "LITELLM_SMART")
+default_internet_chat_model_name = defaults_config.get("internet_chat_model_name", "LITELLM_SMART")
+default_trip_model_name = defaults_config.get("trip_model_name", "LITELLM_FAST")
+default_cravings_model_name = defaults_config.get("cravings_model_name", "LITELLM_FAST")
+default_memory_model_name = defaults_config.get("memory_model_name", "LITELLM")
+default_image_provider = defaults_config.get("image_provider", "nvidia")
+
+# Research agent configuration
+research_agent_tool_calling_hint = config_yaml.get(
+    "research_agent_tool_calling_hint",
+    "Ensure you are using a model that supports tool calling in config.yml"
+)
+
+# Paths
 UPLOAD_FOLDER = config_yaml['paths']['UPLOAD_FOLDER']
 WEB_SEARCH_FOLDER = config_yaml['paths']['WEB_SEARCH_FOLDER']
 SUMMARY_FOLDER = config_yaml['paths']['SUMMARY_FOLDER']
 VECTOR_FOLDER = config_yaml['paths']['VECTOR_FOLDER']
 MEMORY_PALACE_FOLDER = config_yaml['paths'].get('MEMORY_PALACE_FOLDER', './memory_palace')
 
+# Settings
 temperature = config_yaml['settings']['temperature']
 max_tokens = config_yaml['settings']['max_tokens']
 model_name = config_yaml['settings']['model_name']
@@ -98,12 +139,10 @@ num_output = config_yaml['settings']['num_output']
 max_chunk_overlap_ratio = config_yaml['settings']['max_chunk_overlap_ratio']
 max_input_size = config_yaml['settings']['max_input_size']
 context_window = config_yaml['settings']['context_window']
-default_chatbot_model = config_yaml['settings'].get('default_chatbot_model', 'GEMINI')
-
-# Assuming config_dir is already defined as shown in your existing config.py
-prompts_file_path = os.path.join(config_dir, "prompts.yml")
+default_chatbot_model = config_yaml['settings'].get('default_chatbot_model', '')
 
 # Load prompts.yml config
+prompts_file_path = os.path.join(config_dir, "prompts.yml")
 with open(prompts_file_path, "r") as f:
     prompts_config = yaml.safe_load(f)
 

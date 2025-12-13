@@ -120,7 +120,7 @@ class CustomOpenAILLM(CustomLLM):
             max_tokens=kwargs.get("max_tokens", self._max_tokens),
         )
         
-        # For reasoning models (o1, o3, gpt-oss-120b, etc.), the actual response is in reasoning_content
+        # For reasoning models, the actual response may be in reasoning_content field
         message = response.choices[0].message
         content = message.content
         
@@ -165,7 +165,7 @@ class CustomOpenAILLM(CustomLLM):
             max_tokens=kwargs.get("max_tokens", self._max_tokens),
         )
         
-        # For reasoning models (o1, o3, gpt-oss-120b, etc.), the actual response is in reasoning_content
+        # For reasoning models, the actual response may be in reasoning_content field
         message = response.choices[0].message
         content = message.content
         
@@ -293,7 +293,7 @@ class UnifiedLLMClient:
             **kwargs
         )
         
-        # Handle reasoning models (o1, o3, gpt-oss-120b, deepseek-r1) that return content in reasoning_content field
+        # Handle reasoning models that return content in reasoning_content field
         message = response.choices[0].message
         content = message.content
         

@@ -413,19 +413,19 @@ class TestGetWebResults:
 
 
 class TestParseDynamicModelName:
-    """Tests for parse_dynamic_model_name() function"""
+    """Tests for parse_dynamic_model_name() function - uses test placeholder model names"""
     
     def test_parse_litellm_dynamic(self):
         """Test parsing LITELLM:model format"""
-        provider, model = chat_generation_with_internet.parse_dynamic_model_name("LITELLM:gpt-4")
+        provider, model = chat_generation_with_internet.parse_dynamic_model_name("LITELLM:test-model")
         assert provider == "litellm"
-        assert model == "gpt-4"
+        assert model == "test-model"
     
     def test_parse_ollama_dynamic(self):
         """Test parsing OLLAMA:model format"""
-        provider, model = chat_generation_with_internet.parse_dynamic_model_name("OLLAMA:llama3.2:3b")
+        provider, model = chat_generation_with_internet.parse_dynamic_model_name("OLLAMA:test-ollama:3b")
         assert provider == "ollama"
-        assert model == "llama3.2:3b"
+        assert model == "test-ollama:3b"
     
     def test_parse_litellm_tier(self):
         """Test parsing LITELLM_TIER format"""
@@ -594,12 +594,12 @@ class TestFirecrawlResearcher:
         result = chat_generation_with_internet.firecrawl_researcher(
             "Space exploration",
             provider="litellm",
-            model_name="gpt-4"
+            model_name="test-model"
         )
         
         assert result == "Custom model report"
         call_args = mock_conduct.call_args
-        assert call_args[1]["model_name"] == "gpt-4"
+        assert call_args[1]["model_name"] == "test-model"
     
     @patch('helper_functions.chat_generation_with_internet.conduct_research_firecrawl')
     def test_firecrawl_researcher_error(self, mock_conduct):

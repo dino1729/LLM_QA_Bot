@@ -62,15 +62,15 @@ class TestSanitizeFilename:
     
     def test_sanitize_string_with_dashes(self):
         """Test sanitizing string with dashes"""
-        assert _sanitize_filename("text-embedding-3") == "text-embedding-3"
+        assert _sanitize_filename("test-embed-model") == "test-embed-model"
     
     def test_sanitize_string_with_underscores(self):
         """Test sanitizing string with underscores"""
-        assert _sanitize_filename("text_embedding") == "text_embedding"
+        assert _sanitize_filename("test_embedding") == "test_embedding"
     
     def test_sanitize_string_with_slashes(self):
         """Test sanitizing string with slashes"""
-        assert _sanitize_filename("openai/embedding") == "openai_embedding"
+        assert _sanitize_filename("provider/embedding") == "provider_embedding"
     
     def test_sanitize_string_with_colons(self):
         """Test sanitizing string with colons"""
@@ -78,7 +78,7 @@ class TestSanitizeFilename:
     
     def test_sanitize_string_with_spaces(self):
         """Test sanitizing string with spaces"""
-        assert _sanitize_filename("text embedding") == "text_embedding"
+        assert _sanitize_filename("test embedding") == "test_embedding"
     
     def test_sanitize_string_with_special_chars(self):
         """Test sanitizing string with various special characters"""
@@ -90,27 +90,27 @@ class TestSanitizeFilename:
 
 
 class TestGetMemoryPalaceIndexDir:
-    """Tests for get_memory_palace_index_dir() function"""
+    """Tests for get_memory_palace_index_dir() function - uses test placeholder model names"""
     
     def test_get_memory_palace_index_dir(self, temp_memory_root):
         """Test basic directory path generation"""
         provider = "litellm"
-        model = "text-embedding-3-large"
-        expected = str(temp_memory_root / "litellm__text-embedding-3-large")
+        model = "test-embed-model"
+        expected = str(temp_memory_root / "litellm__test-embed-model")
         assert get_memory_palace_index_dir(provider, model) == expected
     
     def test_get_memory_palace_index_dir_ollama(self, temp_memory_root):
         """Test directory path for Ollama provider"""
         provider = "ollama"
-        model = "nomic-embed-text"
-        expected = str(temp_memory_root / "ollama__nomic-embed-text")
+        model = "test-ollama-embed"
+        expected = str(temp_memory_root / "ollama__test-ollama-embed")
         assert get_memory_palace_index_dir(provider, model) == expected
     
     def test_get_memory_palace_index_dir_with_special_chars(self, temp_memory_root):
         """Test directory path with special characters in model name"""
         provider = "litellm"
-        model = "openai/text-embedding-3:v1"
-        expected = str(temp_memory_root / "litellm__openai_text-embedding-3_v1")
+        model = "provider/test-embed:v1"
+        expected = str(temp_memory_root / "litellm__provider_test-embed_v1")
         assert get_memory_palace_index_dir(provider, model) == expected
 
 
@@ -151,7 +151,7 @@ class TestLoadOrCreateIndex:
 
 
 class TestSaveMemory:
-    """Tests for save_memory() function"""
+    """Tests for save_memory() function - uses test placeholder model names"""
     
     def test_save_memory(self, temp_memory_root, mock_settings):
         """Test basic memory saving"""
@@ -163,7 +163,7 @@ class TestSaveMemory:
                 content="Test Content",
                 source_type="test",
                 source_ref="test_ref",
-                model_name="LITELLM:gpt-4"
+                model_name="LITELLM:test-model"
             )
             
             assert status == "Saved to Memory Palace"
@@ -175,19 +175,19 @@ class TestSaveMemory:
     def test_save_memory_ollama_provider(self, temp_memory_root, mock_settings):
         """Test saving memory with Ollama provider"""
         with patch("helper_functions.memory_palace_local.config") as mock_config:
-            mock_config.ollama_embedding = "nomic-embed-text"
+            mock_config.ollama_embedding = "test-ollama-embed"
             
             status = save_memory(
                 title="Ollama Memory",
                 content="Test content for Ollama",
                 source_type="note",
                 source_ref="note.txt",
-                model_name="OLLAMA:llama3"
+                model_name="OLLAMA:test-ollama-model"
             )
             
             assert status == "Saved to Memory Palace"
             
-            index_dir = temp_memory_root / "ollama__nomic-embed-text"
+            index_dir = temp_memory_root / "ollama__test-ollama-embed"
             assert index_dir.exists()
     
     def test_save_memory_multiple_entries(self, temp_memory_root, mock_settings):
@@ -202,13 +202,13 @@ class TestSaveMemory:
                     content=f"Content for memory {i}",
                     source_type="test",
                     source_ref=f"ref_{i}",
-                    model_name="LITELLM:gpt-4"
+                    model_name="LITELLM:test-model"
                 )
                 assert status == "Saved to Memory Palace"
 
 
 class TestSearchMemories:
-    """Tests for search_memories() function"""
+    """Tests for search_memories() function - uses test placeholder model names"""
     
     def test_search_memories(self, temp_memory_root, mock_settings):
         """Test basic memory search"""
@@ -221,11 +221,11 @@ class TestSearchMemories:
                 content="Important information about AI",
                 source_type="note",
                 source_ref="note.txt",
-                model_name="LITELLM:gpt-4"
+                model_name="LITELLM:test-model"
             )
             
             # Then search
-            results = search_memories("AI", "LITELLM:gpt-4")
+            results = search_memories("AI", "LITELLM:test-model")
             
             assert len(results) > 0
             assert "Important information" in results[0]["content"]
@@ -236,7 +236,7 @@ class TestSearchMemories:
         with patch("helper_functions.memory_palace_local.config") as mock_config:
             mock_config.litellm_embedding = "test-embed-model"
             
-            results = search_memories("AI", "LITELLM:gpt-4")
+            results = search_memories("AI", "LITELLM:test-model")
             
             assert results == []
     
@@ -252,11 +252,11 @@ class TestSearchMemories:
                     content=f"AI related content {i}",
                     source_type="test",
                     source_ref=f"ref_{i}",
-                    model_name="LITELLM:gpt-4"
+                    model_name="LITELLM:test-model"
                 )
             
             # Search with top_k=2
-            results = search_memories("AI", "LITELLM:gpt-4", top_k=2)
+            results = search_memories("AI", "LITELLM:test-model", top_k=2)
             
             # Should return at most 2 results
             assert len(results) <= 2
@@ -264,17 +264,17 @@ class TestSearchMemories:
     def test_search_memories_ollama_provider(self, temp_memory_root, mock_settings):
         """Test searching with Ollama provider"""
         with patch("helper_functions.memory_palace_local.config") as mock_config:
-            mock_config.ollama_embedding = "nomic-embed-text"
+            mock_config.ollama_embedding = "test-ollama-embed"
             
             save_memory(
                 title="Ollama Memory",
                 content="Content about Ollama models",
                 source_type="test",
                 source_ref="ref",
-                model_name="OLLAMA:llama3"
+                model_name="OLLAMA:test-ollama-model"
             )
             
-            results = search_memories("Ollama", "OLLAMA:llama3")
+            results = search_memories("Ollama", "OLLAMA:test-ollama-model")
             
             assert len(results) > 0
 
@@ -311,7 +311,7 @@ class TestPrepareMemoryStream:
             response = prepare_memory_stream(
                 message="What do I know about AI?",
                 history=[],
-                model_name="LITELLM:gpt-4",
+                model_name="LITELLM:test-model",
                 top_k=5
             )
             
@@ -327,14 +327,14 @@ class TestPrepareMemoryStream:
                 prepare_memory_stream(
                     message="Test question",
                     history=[],
-                    model_name="LITELLM:gpt-4"
+                    model_name="LITELLM:test-model"
                 )
             
             assert "empty" in str(excinfo.value).lower()
 
 
 class TestResetMemoryPalace:
-    """Tests for reset_memory_palace() function"""
+    """Tests for reset_memory_palace() function - uses test placeholder model names"""
     
     def test_reset_memory_palace(self, temp_memory_root):
         """Test basic memory palace reset"""
@@ -346,7 +346,7 @@ class TestResetMemoryPalace:
             
             assert index_dir.exists()
             
-            status = reset_memory_palace("LITELLM:gpt-4")
+            status = reset_memory_palace("LITELLM:test-model")
             
             assert "reset" in status
             assert not index_dir.exists()
@@ -356,19 +356,19 @@ class TestResetMemoryPalace:
         with patch("helper_functions.memory_palace_local.config") as mock_config:
             mock_config.litellm_embedding = "test-embed-model"
             
-            status = reset_memory_palace("LITELLM:gpt-4")
+            status = reset_memory_palace("LITELLM:test-model")
             
             assert "empty" in status.lower()
     
     def test_reset_memory_palace_ollama(self, temp_memory_root):
         """Test resetting Ollama memory palace"""
         with patch("helper_functions.memory_palace_local.config") as mock_config:
-            mock_config.ollama_embedding = "nomic-embed-text"
+            mock_config.ollama_embedding = "test-ollama-embed"
             
-            index_dir = temp_memory_root / "ollama__nomic-embed-text"
+            index_dir = temp_memory_root / "ollama__test-ollama-embed"
             index_dir.mkdir(parents=True)
             
-            status = reset_memory_palace("OLLAMA:llama3")
+            status = reset_memory_palace("OLLAMA:test-ollama-model")
             
             assert "reset" in status.lower() or "ollama" in status.lower()
             assert not index_dir.exists()

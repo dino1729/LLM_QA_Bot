@@ -8,11 +8,11 @@ from helper_functions import chat_generation
 
 
 class TestGenerateChat:
-    """Tests for generate_chat() function"""
+    """Tests for generate_chat() function - uses test placeholder model names"""
     
     @patch('helper_functions.chat_generation.OpenAI')
     def test_generate_chat_dynamic_litellm(self, mock_openai_class):
-        """Test dynamic LiteLLM model (e.g., LITELLM:deepseek-v3.1)"""
+        """Test dynamic LiteLLM model (e.g., LITELLM:test-model)"""
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -22,7 +22,7 @@ class TestGenerateChat:
         
         conversation = [{"role": "user", "content": "Hello"}]
         result = chat_generation.generate_chat(
-            "LITELLM:deepseek-v3.1", 
+            "LITELLM:test-litellm-model", 
             conversation, 
             0.7, 
             1000
@@ -32,11 +32,11 @@ class TestGenerateChat:
         mock_client.chat.completions.create.assert_called_once()
         # Verify the actual model name was passed (without LITELLM: prefix)
         call_args = mock_client.chat.completions.create.call_args
-        assert call_args[1]["model"] == "deepseek-v3.1"
+        assert call_args[1]["model"] == "test-litellm-model"
     
     @patch('helper_functions.chat_generation.OpenAI')
     def test_generate_chat_dynamic_ollama(self, mock_openai_class):
-        """Test dynamic Ollama model (e.g., OLLAMA:llama3.2:3b)"""
+        """Test dynamic Ollama model (e.g., OLLAMA:test-model:3b)"""
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -46,7 +46,7 @@ class TestGenerateChat:
         
         conversation = [{"role": "user", "content": "Hello"}]
         result = chat_generation.generate_chat(
-            "OLLAMA:llama3.2:3b", 
+            "OLLAMA:test-ollama:3b", 
             conversation, 
             0.7, 
             1000
@@ -54,7 +54,7 @@ class TestGenerateChat:
         
         assert result == "Ollama response"
         call_args = mock_client.chat.completions.create.call_args
-        assert call_args[1]["model"] == "llama3.2:3b"
+        assert call_args[1]["model"] == "test-ollama:3b"
     
     @patch('helper_functions.chat_generation.get_client')
     def test_generate_chat_litellm_fast(self, mock_get_client):
@@ -245,9 +245,11 @@ class TestGenerateChat:
         
         assert result == "Groq response"
     
+    @patch('helper_functions.chat_generation.groq_llama_model_name', 'test-groq-llama-model')
+    @patch('helper_functions.chat_generation.groq_api_key', 'test-key')
     @patch('helper_functions.chat_generation.Groq')
     def test_generate_chat_groq_llama(self, mock_groq_class):
-        """Test Groq with Llama model"""
+        """Test Groq with Llama model - patches module-level variables captured at import time"""
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -264,13 +266,15 @@ class TestGenerateChat:
         )
         
         assert result == "Groq Llama response"
-        # Verify Llama model was used
+        # Verify the configured model was used
         call_args = mock_client.chat.completions.create.call_args
-        assert "llama" in call_args[1]["model"].lower()
+        assert call_args[1]["model"] == "test-groq-llama-model"
     
+    @patch('helper_functions.chat_generation.groq_mixtral_model_name', 'test-groq-mixtral-model')
+    @patch('helper_functions.chat_generation.groq_api_key', 'test-key')
     @patch('helper_functions.chat_generation.Groq')
     def test_generate_chat_groq_mixtral(self, mock_groq_class):
-        """Test Groq with Mixtral model"""
+        """Test Groq with Mixtral model - patches module-level variables captured at import time"""
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -287,9 +291,9 @@ class TestGenerateChat:
         )
         
         assert result == "Groq Mixtral response"
-        # Verify Mixtral model was used
+        # Verify the configured model was used
         call_args = mock_client.chat.completions.create.call_args
-        assert "mixtral" in call_args[1]["model"].lower()
+        assert call_args[1]["model"] == "test-groq-mixtral-model"
     
     def test_generate_chat_invalid_model(self):
         """Test with invalid model name"""

@@ -20,11 +20,11 @@ from helper_functions.query_supabasememory import query_memorypalace_stream
 from helper_functions import gptimage_tool as tool # Added import
 
 # --- OpenAI Client Initialization ---
-# Create one client instance to reuse
-# Ensure OPENAI_API_KEY and optionally OPENAI_API_BASE are set as environment variables
+# Create one client instance using Azure config from config.yml
+# Falls back to environment variables if config values are empty
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_API_BASE") # Use None if not using a custom base URL
+    api_key=config.azure_api_key if config.azure_api_key else os.getenv("OPENAI_API_KEY"),
+    base_url=config.azure_api_base if config.azure_api_base else os.getenv("OPENAI_API_BASE")
 )
 # --- End OpenAI Client Initialization ---
 

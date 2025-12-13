@@ -31,12 +31,12 @@ class TestPrepareChatStream:
 
     @pytest.fixture
     def mock_parse_model_func(self):
-        """Create a mock model name parser"""
+        """Create a mock model name parser - uses test placeholder model names"""
         def parser(model_name):
             if model_name.startswith("LITELLM"):
-                return ("litellm", "smart", "gpt-4")
+                return ("litellm", "smart", "test-litellm-model")
             elif model_name.startswith("OLLAMA"):
-                return ("ollama", "smart", "llama3")
+                return ("ollama", "smart", "test-ollama-model")
             else:
                 return ("litellm", "smart", model_name)
         return parser
@@ -87,7 +87,7 @@ class TestPrepareChatStream:
 
         # Assertions
         mock_get_client.assert_called_once_with(
-            provider="litellm", model_tier="smart", model_name="gpt-4"
+            provider="litellm", model_tier="smart", model_name="test-litellm-model"
         )
         mock_engine.query.assert_called_once_with("What is AI?")
         assert response == mock_response
@@ -137,7 +137,7 @@ class TestPrepareChatStream:
 
         # Assertions
         mock_get_client.assert_called_once_with(
-            provider="ollama", model_tier="smart", model_name="llama3"
+            provider="ollama", model_tier="smart", model_name="test-ollama-model"
         )
         assert response == mock_response
 
@@ -309,7 +309,7 @@ class TestPrepareChatStream:
         from helper_functions.chat_stream import prepare_chat_stream
 
         def gemini_parser(model_name):
-            return ("gemini", "smart", "gemini-pro")
+            return ("gemini", "smart", "test-gemini-model")
 
         mock_index = Mock()
         mock_load_index.return_value = mock_index

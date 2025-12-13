@@ -230,7 +230,7 @@ def parse_dynamic_model_name(model_name):
     Parse dynamic model name to extract provider and actual model
     
     Args:
-        model_name: Model name (e.g., "LITELLM:gpt-4" or "OLLAMA:llama3.2:3b" or "LITELLM_SMART")
+        model_name: Model name (e.g., "LITELLM:model-name" or "OLLAMA:model:size" or "LITELLM_SMART")
     
     Returns:
         Tuple of (provider, actual_model_name)

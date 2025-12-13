@@ -599,30 +599,34 @@ class TestTranslateAndSpeak:
 
 
 class TestVoiceMapping:
-    """Tests for VOICE_MAP configuration"""
+    """Tests for get_riva_voice_name() function - voice config from config.yml"""
     
-    def test_voice_map_exists(self):
-        """Test that VOICE_MAP is defined"""
-        assert hasattr(audio_processors, 'VOICE_MAP')
-        assert isinstance(audio_processors.VOICE_MAP, dict)
+    def test_get_riva_voice_name_exists(self):
+        """Test that get_riva_voice_name function is defined"""
+        assert hasattr(audio_processors, 'get_riva_voice_name')
+        assert callable(audio_processors.get_riva_voice_name)
     
-    def test_voice_map_has_default(self):
-        """Test that VOICE_MAP has a DEFAULT key"""
-        assert "DEFAULT" in audio_processors.VOICE_MAP
+    @patch('helper_functions.audio_processors.config')
+    def test_get_riva_voice_name_returns_config_value(self, mock_config):
+        """Test that get_riva_voice_name returns config value when set"""
+        mock_config.riva_tts_voice_name = "test-voice-name"
+        result = audio_processors.get_riva_voice_name()
+        assert result == "test-voice-name"
     
-    def test_voice_map_model_entries(self):
-        """Test that VOICE_MAP has entries for common models"""
-        # Check for models that are actually defined in VOICE_MAP
-        expected_models = ["GEMINI", "GPT4", "GPT4OMINI", "BING+OPENAI", "MIXTRAL8x7B", "LITELLM_SMART"]
-        for model in expected_models:
-            assert model in audio_processors.VOICE_MAP
+    @patch('helper_functions.audio_processors.config')
+    def test_get_riva_voice_name_returns_none_when_empty(self, mock_config):
+        """Test that get_riva_voice_name returns None when config is empty"""
+        mock_config.riva_tts_voice_name = ""
+        result = audio_processors.get_riva_voice_name()
+        assert result is None
     
-    def test_voice_map_values_are_none(self):
-        """Test that voice values are None (using service defaults)"""
-        # Per the code comments, all voice names are set to None
-        # to use the service's default voice
-        for model, voice in audio_processors.VOICE_MAP.items():
-            assert voice is None, f"Voice for {model} should be None"
+    def test_get_riva_voice_name_returns_none_when_missing(self):
+        """Test that get_riva_voice_name returns None when config attr is missing"""
+        # Use spec=True to prevent MagicMock from auto-creating attributes
+        with patch('helper_functions.audio_processors.config', spec=[]) as mock_config:
+            # spec=[] means the mock has no attributes, so hasattr returns False
+            result = audio_processors.get_riva_voice_name()
+            assert result is None
 
 
 class TestRivaServiceInitialization:
