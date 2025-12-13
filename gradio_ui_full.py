@@ -51,13 +51,6 @@ logger = logging.getLogger(__name__)
 # Constants
 VECTOR_FOLDER = config.VECTOR_FOLDER
 SUMMARY_FOLDER = config.SUMMARY_FOLDER
-DOCQA_MODEL_CHOICES = ["LITELLM", "OLLAMA"]
-MODEL_CHOICES = [
-    "LITELLM_FAST", "LITELLM_SMART", "LITELLM_STRATEGIC",
-    "OLLAMA_FAST", "OLLAMA_SMART", "OLLAMA_STRATEGIC",
-    "GEMINI", "GEMINI_THINKING",
-    "GROQ", "GROQ_LLAMA", "GROQ_MIXTRAL"
-]
 qa_template = PromptTemplate(config.ques_template)
 
 # Global Lock for LlamaIndex Settings
@@ -287,74 +280,75 @@ def ask_query(question, model_name="LITELLM_SMART"):
     return answer
 
 # --- Pydantic Models ---
+# Default values are loaded from config.yml via config module
 
 class AnalyzeUrlRequest(BaseModel):
     url: str
     memorize: bool = False
-    model_name: str = "LITELLM"
+    model_name: str = config.default_analyze_model_name
 
 class ChatRequest(BaseModel):
     message: str
     history: List[List[str]] = []
-    model_name: str = "LITELLM_SMART"
+    model_name: str = config.default_chat_model_name
 
 class InternetChatRequest(BaseModel):
     message: str
     history: List[List[str]]
-    model_name: str = "LITELLM_SMART"
+    model_name: str = config.default_internet_chat_model_name
     max_tokens: int = 4096
     temperature: float = 0.5
 
 class TripRequest(BaseModel):
     city: str
     days: str
-    model_name: str = "LITELLM_FAST"
+    model_name: str = config.default_trip_model_name
 
 class CravingRequest(BaseModel):
     city: str
     cuisine: str
-    model_name: str = "LITELLM_FAST"
+    model_name: str = config.default_cravings_model_name
 
 class ImageGenRequest(BaseModel):
     prompt: str
     enhanced_prompt: str = ""
     size: str = "1024x1024"
-    provider: str = "nvidia"
+    provider: str = config.default_image_provider
 
 class ImageEditRequest(BaseModel):
     img_path: str
     prompt: str
     enhanced_prompt: str = ""
     size: str = "1024x1024"
-    provider: str = "nvidia"
+    provider: str = config.default_image_provider
 
 class PromptEnhanceRequest(BaseModel):
     prompt: str
-    provider: str = "nvidia"
+    provider: str = config.default_image_provider
 
 class SurpriseRequest(BaseModel):
-    provider: str = "nvidia"
+    provider: str = config.default_image_provider
 
 class MemorySaveRequest(BaseModel):
     title: str
     content: str
     source_type: str
     source_ref: str
-    model_name: str = "LITELLM"
+    model_name: str = config.default_memory_model_name
 
 class MemorySearchRequest(BaseModel):
     query: str
-    model_name: str = "LITELLM"
+    model_name: str = config.default_memory_model_name
     top_k: int = 5
 
 class MemoryChatRequest(BaseModel):
     message: str
     history: List[List[str]] = []
-    model_name: str = "LITELLM"
+    model_name: str = config.default_memory_model_name
     top_k: int = 5
 
 class MemoryResetRequest(BaseModel):
-    model_name: str = "LITELLM"
+    model_name: str = config.default_memory_model_name
 
 
 # --- API Endpoints ---
@@ -390,7 +384,7 @@ async def get_models(provider: str):
 async def endpoint_analyze_file(
     files: List[UploadFile] = File(...),
     memorize: bool = Form(False),
-    model_name: str = Form("LITELLM")
+    model_name: str = Form(config.default_analyze_model_name)
 ):
     async with api_lock:
         await set_model_context(model_name)

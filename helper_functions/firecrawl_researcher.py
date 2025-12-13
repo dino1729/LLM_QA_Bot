@@ -245,7 +245,7 @@ Now, write a comprehensive research report:"""
                 max_tokens=4000
             )
             
-            # Handle reasoning models (o1, o3, gpt-oss-120b, etc.) that return content in reasoning_content
+            # Handle reasoning models that return content in reasoning_content field
             message = response.choices[0].message
             report = message.content
             
@@ -281,11 +281,15 @@ Now, write a comprehensive research report:"""
 
 
 if __name__ == "__main__":
-    # Test the researcher
+    # Test the researcher - uses config values for provider/model
     query = "Latest developments in artificial intelligence"
     print(f"Testing Firecrawl Researcher with query: {query}\n")
     
-    report = conduct_research_firecrawl(query, provider="litellm", model_name="gpt-oss-120b", max_sources=3)
+    # Use configured defaults from config.yml
+    provider = config.firecrawl_default_provider
+    model_name = config.firecrawl_default_model_name if config.firecrawl_default_model_name else None
+    
+    report = conduct_research_firecrawl(query, provider=provider, model_name=model_name, max_sources=3)
     
     print("\n" + "="*80)
     print("RESEARCH REPORT")

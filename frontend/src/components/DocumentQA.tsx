@@ -138,7 +138,8 @@ export function DocumentQA() {
       
       let currentAnswer = '';
       
-      const { promise } = api.docqa.askStream(message, chatHistory, modelName, (chunk) => {
+      // Pass newHistory (with current message) instead of stale chatHistory
+      const { promise } = api.docqa.askStream(message, newHistory, modelName, (chunk) => {
         currentAnswer += chunk;
         setChatHistory(prev => {
           const updated = [...prev];

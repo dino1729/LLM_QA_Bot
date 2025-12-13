@@ -1,5 +1,9 @@
 import sys
 import os
+
+# Add parent directory to path for config import
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from moviepy import VideoFileClip
 import whisper
 import openai
@@ -7,8 +11,9 @@ from dotenv import load_dotenv
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from config import config
 
-# Load environment variables from .env file
+# Load environment variables from .env file (for backwards compatibility)
 load_dotenv()
 # Get the directory of the current script
 current_script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -40,18 +45,17 @@ def extract_audio_from_video(video_path, audio_output_path):
 
 def format_transcript_with_llm(transcript):
     """
-    Uses OpenAI GPT to organize and format the transcript in a more readable way.
+    Uses LiteLLM to organize and format the transcript in a more readable way.
+    Model configuration loaded from config.yml.
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL")
-    
-    # Create client with the new OpenAI format
+    # Use LiteLLM configuration from config.yml
     client = openai.OpenAI(
-        api_key=api_key,
-        base_url=base_url if base_url else None
+        api_key=config.litellm_api_key,
+        base_url=config.litellm_base_url if config.litellm_base_url else None
     )
 
-    model_name = os.getenv("FAST_LLM_MODELNAME")
+    # Use fast LLM model from config
+    model_name = config.litellm_fast_llm
 
     print(f"Using model: {model_name}")
 
@@ -200,7 +204,8 @@ def process_video(video_path):
     if transcript is None: # Proceed with transcription if file didn't exist, was empty, or reading failed
         print("Transcribing audio with Whisper...")
         try:
-            model = whisper.load_model("base")  # or "small", "medium", etc.
+            # Whisper model name configured via config.yml
+            model = whisper.load_model(config.whisper_model_name)
             result = model.transcribe(wav_path)
             transcript = result["text"]
             print("Saving raw transcript...")

@@ -18,13 +18,14 @@ def test_frontend_serve():
         assert "text/html" in response.headers["content-type"]
 
 def test_model_parse_logic():
+    """Test model name parsing - uses test placeholder model names"""
     # parse_model_name returns (provider, tier, model_name)
     assert parse_model_name("LITELLM_SMART") == ("litellm", "smart", None)
     assert parse_model_name("OLLAMA_FAST") == ("ollama", "fast", None)
     assert parse_model_name("GEMINI") == ("litellm", "fast", None)
-    # Test dynamic format: PROVIDER:model_name
-    assert parse_model_name("LITELLM:gpt-4") == ("litellm", "smart", "gpt-4")
-    assert parse_model_name("OLLAMA:llama2") == ("ollama", "smart", "llama2")
+    # Test dynamic format: PROVIDER:model_name (using test placeholders)
+    assert parse_model_name("LITELLM:test-model") == ("litellm", "smart", "test-model")
+    assert parse_model_name("OLLAMA:test-ollama-model") == ("ollama", "smart", "test-ollama-model")
 
 def test_reset_endpoint():
     response = client.post("/api/docqa/reset")

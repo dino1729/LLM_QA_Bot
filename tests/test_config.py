@@ -24,27 +24,38 @@ settings:
   max_chunk_overlap_ratio: 0.1
   max_input_size: 4096
   context_window: 8192
-  default_chatbot_model: "GEMINI"
+  default_chatbot_model: "LITELLM_SMART"
 
-litellm:
-  base_url: "http://litellm:4000"
-  api_key: "test-key"
-  fast_llm: "gpt-3.5-turbo"
-  smart_llm: "gpt-4"
-  strategic_llm: "gpt-4-turbo"
-  embedding: "text-embedding-ada-002"
+litellm_base_url: "http://litellm:4000"
+litellm_api_key: "test-key"
+litellm_fast_llm: "test-fast-model"
+litellm_smart_llm: "test-smart-model"
+litellm_strategic_llm: "test-strategic-model"
+litellm_embedding: "test-embed-model"
+litellm_default_model: "test-default-model"
 
-ollama:
-  base_url: "http://localhost:11434"
-  fast_llm: "llama3.2:3b"
-  smart_llm: "llama3.2:8b"
-  strategic_llm: "llama3.2:70b"
-  embedding: "nomic-embed-text"
+ollama_base_url: "http://localhost:11434"
+ollama_fast_llm: "test-ollama-fast"
+ollama_smart_llm: "test-ollama-smart"
+ollama_strategic_llm: "test-ollama-strategic"
+ollama_embedding: "test-ollama-embed"
+ollama_default_model: "test-ollama-default"
+
+whisper_model_name: "base"
+riva_tts_voice_name: ""
+
+defaults:
+  analyze_model_name: "LITELLM"
+  chat_model_name: "LITELLM_SMART"
+  internet_chat_model_name: "LITELLM_SMART"
+  trip_model_name: "LITELLM_FAST"
+  cravings_model_name: "LITELLM_FAST"
+  memory_model_name: "LITELLM"
+  image_provider: "nvidia"
 
 paths:
   UPLOAD_FOLDER: "./uploads"
   WEB_SEARCH_FOLDER: "./web_search"
-  BING_FOLDER: "./bing"
   SUMMARY_FOLDER: "./summary"
   VECTOR_FOLDER: "./vector"
   MEMORY_PALACE_FOLDER: "./memory_palace"

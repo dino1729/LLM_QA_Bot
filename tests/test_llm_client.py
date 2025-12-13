@@ -12,20 +12,20 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 
 class TestCustomOpenAIEmbedding:
-    """Test CustomOpenAIEmbedding class"""
+    """Test CustomOpenAIEmbedding class - uses test placeholder model names"""
 
     def test_initialization(self):
         """Test CustomOpenAIEmbedding initialization"""
         from helper_functions.llm_client import CustomOpenAIEmbedding
 
         embedding = CustomOpenAIEmbedding(
-            model_name="text-embedding-ada-002",
+            model_name="test-embed-model",
             api_key="test-key",
             api_base="http://localhost:4000",
             embed_batch_size=10
         )
 
-        assert embedding._model_name == "text-embedding-ada-002"
+        assert embedding._model_name == "test-embed-model"
         assert embedding._api_key == "test-key"
         assert embedding._api_base == "http://localhost:4000"
         assert embedding._is_asymmetric == False
@@ -34,9 +34,9 @@ class TestCustomOpenAIEmbedding:
         """Test asymmetric model detection (NVIDIA NIM models)"""
         from helper_functions.llm_client import CustomOpenAIEmbedding
 
-        # Test NVIDIA NIM model
+        # Test NVIDIA NIM model - asymmetric detection is path-based
         embedding = CustomOpenAIEmbedding(
-            model_name="nvidia/nv-embedqa-e5-v5",
+            model_name="nvidia/test-asymmetric-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -56,7 +56,7 @@ class TestCustomOpenAIEmbedding:
         mock_openai.return_value = mock_client
 
         embedding = CustomOpenAIEmbedding(
-            model_name="text-embedding-ada-002",
+            model_name="test-embed-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -79,7 +79,7 @@ class TestCustomOpenAIEmbedding:
         mock_openai.return_value = mock_client
 
         embedding = CustomOpenAIEmbedding(
-            model_name="text-embedding-ada-002",
+            model_name="test-embed-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -105,7 +105,7 @@ class TestCustomOpenAIEmbedding:
         mock_openai.return_value = mock_client
 
         embedding = CustomOpenAIEmbedding(
-            model_name="text-embedding-ada-002",
+            model_name="test-embed-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -174,7 +174,7 @@ class TestCustomOpenAIEmbedding:
         mock_openai.return_value = mock_client
 
         embedding = CustomOpenAIEmbedding(
-            model_name="text-embedding-ada-002",
+            model_name="test-embed-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -192,14 +192,14 @@ class TestCustomOpenAILLM:
         from helper_functions.llm_client import CustomOpenAILLM
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000",
             temperature=0.7,
             max_tokens=2000
         )
 
-        assert llm._model_name == "gpt-4"
+        assert llm._model_name == "test-smart-model"
         assert llm._api_key == "test-key"
         assert llm._api_base == "http://localhost:4000"
         assert llm._temperature == 0.7
@@ -210,7 +210,7 @@ class TestCustomOpenAILLM:
         from helper_functions.llm_client import CustomOpenAILLM
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000",
             max_tokens=2000
@@ -218,7 +218,7 @@ class TestCustomOpenAILLM:
 
         metadata = llm.metadata
 
-        assert metadata.model_name == "gpt-4"
+        assert metadata.model_name == "test-smart-model"
         assert metadata.num_output == 2000
         assert metadata.context_window == 128000
 
@@ -235,7 +235,7 @@ class TestCustomOpenAILLM:
         mock_openai.return_value = mock_client
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -283,7 +283,7 @@ class TestCustomOpenAILLM:
         mock_openai.return_value = mock_client
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -308,7 +308,7 @@ class TestCustomOpenAILLM:
         mock_openai.return_value = mock_client
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -336,7 +336,7 @@ class TestCustomOpenAILLM:
         mock_openai.return_value = mock_client
 
         llm = CustomOpenAILLM(
-            model_name="gpt-4",
+            model_name="test-smart-model",
             api_key="test-key",
             api_base="http://localhost:4000"
         )
@@ -360,10 +360,10 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_fast_llm = "gpt-3.5-turbo"
-        mock_config.litellm_smart_llm = "gpt-4"
-        mock_config.litellm_strategic_llm = "gpt-4-turbo"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_fast_llm = "test-fast-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+        mock_config.litellm_strategic_llm = "test-strategic-model"
 
         mock_openai.return_value = Mock()
 
@@ -371,7 +371,7 @@ class TestUnifiedLLMClient:
 
         assert client.provider == "litellm"
         assert client.model_tier == "smart"
-        assert client.model == "gpt-4"
+        assert client.model == "test-smart-model"
         assert client.base_url == "http://litellm:4000"
 
     @patch('helper_functions.llm_client.config')
@@ -381,10 +381,10 @@ class TestUnifiedLLMClient:
         from helper_functions.llm_client import UnifiedLLMClient
 
         mock_config.ollama_base_url = "http://localhost:11434"
-        mock_config.ollama_embedding = "nomic-embed-text"
-        mock_config.ollama_fast_llm = "llama3.2:3b"
-        mock_config.ollama_smart_llm = "llama3.2:8b"
-        mock_config.ollama_strategic_llm = "llama3.2:70b"
+        mock_config.ollama_embedding = "test-ollama-embed"
+        mock_config.ollama_fast_llm = "test-ollama-fast"
+        mock_config.ollama_smart_llm = "test-ollama-smart"
+        mock_config.ollama_strategic_llm = "test-ollama-strategic"
 
         mock_openai.return_value = Mock()
 
@@ -392,7 +392,7 @@ class TestUnifiedLLMClient:
 
         assert client.provider == "ollama"
         assert client.model_tier == "fast"
-        assert client.model == "llama3.2:3b"
+        assert client.model == "test-ollama-fast"
         assert client.api_key == "ollama"
 
     @patch('helper_functions.llm_client.config')
@@ -412,24 +412,24 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_fast_llm = "gpt-3.5-turbo"
-        mock_config.litellm_smart_llm = "gpt-4"
-        mock_config.litellm_strategic_llm = "gpt-4-turbo"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_fast_llm = "test-fast-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+        mock_config.litellm_strategic_llm = "test-strategic-model"
 
         mock_openai.return_value = Mock()
 
         # Test fast
         client_fast = UnifiedLLMClient(provider="litellm", model_tier="fast")
-        assert client_fast.model == "gpt-3.5-turbo"
+        assert client_fast.model == "test-fast-model"
 
         # Test smart
         client_smart = UnifiedLLMClient(provider="litellm", model_tier="smart")
-        assert client_smart.model == "gpt-4"
+        assert client_smart.model == "test-smart-model"
 
         # Test strategic
         client_strategic = UnifiedLLMClient(provider="litellm", model_tier="strategic")
-        assert client_strategic.model == "gpt-4-turbo"
+        assert client_strategic.model == "test-strategic-model"
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
@@ -439,8 +439,8 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
 
         mock_client = Mock()
         mock_response = Mock()
@@ -464,8 +464,8 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
 
         mock_client = Mock()
         mock_response = Mock()
@@ -489,7 +489,7 @@ class TestUnifiedLLMClient:
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
         mock_config.litellm_embedding = "nvidia/nv-embedqa-e5-v5"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_smart_llm = "test-smart-model"
 
         mock_client = Mock()
         mock_response = Mock()
@@ -513,8 +513,8 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
         mock_config.temperature = 0.7
         mock_config.max_tokens = 2000
 
@@ -525,7 +525,7 @@ class TestUnifiedLLMClient:
         llm = client.get_llamaindex_llm()
 
         assert isinstance(llm, CustomOpenAILLM)
-        assert llm._model_name == "gpt-4"
+        assert llm._model_name == "test-smart-model"
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
@@ -535,8 +535,8 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
 
         mock_openai.return_value = Mock()
 
@@ -545,7 +545,7 @@ class TestUnifiedLLMClient:
         embedding = client.get_llamaindex_embedding()
 
         assert isinstance(embedding, CustomOpenAIEmbedding)
-        assert embedding._model_name == "text-embedding-ada-002"
+        assert embedding._model_name == "test-embed-model"
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
@@ -555,8 +555,8 @@ class TestUnifiedLLMClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "openai:text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "openai:gpt-4"
+        mock_config.litellm_embedding = "openai:test-embed-model"
+        mock_config.litellm_smart_llm = "openai:test-smart-model"
 
         mock_client = Mock()
         mock_response = Mock()
@@ -571,7 +571,7 @@ class TestUnifiedLLMClient:
 
         # Verify prefix was stripped
         call_args = mock_client.chat.completions.create.call_args
-        assert call_args[1]['model'] == "gpt-4"
+        assert call_args[1]['model'] == "test-smart-model"
 
 
 class TestGetClient:
@@ -585,8 +585,8 @@ class TestGetClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_smart_llm = "gpt-4"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
 
         mock_openai.return_value = Mock()
 
@@ -603,8 +603,8 @@ class TestGetClient:
         from helper_functions.llm_client import get_client, UnifiedLLMClient
 
         mock_config.ollama_base_url = "http://localhost:11434"
-        mock_config.ollama_embedding = "nomic-embed-text"
-        mock_config.ollama_smart_llm = "llama3.2"
+        mock_config.ollama_embedding = "test-ollama-embed"
+        mock_config.ollama_smart_llm = "test-ollama-model"
 
         mock_openai.return_value = Mock()
 
@@ -621,10 +621,10 @@ class TestGetClient:
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "text-embedding-ada-002"
-        mock_config.litellm_fast_llm = "gpt-3.5-turbo"
-        mock_config.litellm_smart_llm = "gpt-4"
-        mock_config.litellm_strategic_llm = "gpt-4-turbo"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_fast_llm = "test-fast-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+        mock_config.litellm_strategic_llm = "test-strategic-model"
 
         mock_openai.return_value = Mock()
 

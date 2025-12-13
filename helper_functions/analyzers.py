@@ -187,7 +187,8 @@ def transcript_extractor(video_id):
     try:
         api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=['en-IN', 'en'])
-        transcript_text = " ".join([snippet.text for snippet in transcript.snippets])
+        # FetchedTranscript is directly iterable - iterate over it to get snippets
+        transcript_text = " ".join([snippet.text for snippet in transcript])
         with open(os.path.join(UPLOAD_FOLDER, "transcript.txt"), "w") as f:
             f.write(transcript_text)
         return True
@@ -440,6 +441,9 @@ def extract_media_url_from_overcast(url):
     req = requests.get(url)
     soup = BeautifulSoup(req.content, 'html.parser')
     audio_tag = soup.find('audio')
+    # Check if audio tag exists before accessing attributes
+    if audio_tag is None:
+        return None
     # Try to get src from audio tag itself, or from source child element
     if 'src' in audio_tag.attrs:
         return audio_tag['src']

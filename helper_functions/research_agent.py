@@ -393,8 +393,8 @@ STRICT RULES:
 
                 # Check for format issues
                 if '<tool_call>' in content:
-                    logger.warning("⚠️  Detected XML <tool_call> tags (qwen3 format)")
-                    logger.warning("💡 This model is incompatible - use llama3.1:8b instead")
+                    logger.warning("⚠️  Detected XML <tool_call> tags (incompatible format)")
+                    logger.warning("💡 This model is incompatible - use a model that supports tool calling")
                 elif 'function' in content.lower() or 'tool' in content.lower():
                     logger.warning("⚠️  Model mentions tools but none were parsed")
 
@@ -403,7 +403,7 @@ STRICT RULES:
                 if no_tool_call_streak >= self.max_no_tool_attempts:
                     error_msg = (
                         f"Research failed: Model '{self.llm.model}' doesn't support tool calling properly. "
-                        f"Switch to llama3.1:8b in config.yaml (research_server: 'server_research')"
+                        f"Please configure a tool-calling capable model in config.yml"
                     )
                     logger.error(error_msg)
 
@@ -412,7 +412,7 @@ STRICT RULES:
                         summary=f"Research incomplete - tool calling not supported",
                         key_facts=[f"Model '{self.llm.model}' is incompatible with research agent"],
                         sources=self.sources_gathered,
-                        raw_content=self._compile_raw_content("Error", [f"Tool calling failed - use llama3.1:8b"]),
+                        raw_content=self._compile_raw_content("Error", ["Tool calling failed - configure a compatible model in config.yml"]),
                         success=False,
                         error=error_msg
                     )

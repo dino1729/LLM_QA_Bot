@@ -75,24 +75,14 @@ elif not nvidia_api_key:
     print("WARNING: nvidia_api_key not found in config.yml or NVIDIA_NIM_API_KEY environment variable")
     RIVA_AVAILABLE = False
 
-# Voice mapping for different models (NVIDIA Riva voices)
-# NOTE: NVIDIA's cloud-hosted Magpie TTS service does not support custom voice names.
-# The previous voice names (e.g., "Magpie-Multilingual.EN-US.Echo") were invalid and caused
-# "subvoice requested not found" errors. Setting to None lets the service use its default voice.
-# If NVIDIA adds voice support in the future, update these values with valid voice identifiers.
-VOICE_MAP = {
-    "GEMINI": None,
-    "GPT4": None,
-    "GPT4OMINI": None,
-    "RIVA_ARIA_VOICE": None,
-    "BING+OPENAI": None,
-    "MIXTRAL8x7B": None,
-    "LITELLM_SMART": None,
-    "LITELLM_STRATEGIC": None,
-    "OLLAMA_SMART": None,
-    "OLLAMA_STRATEGIC": None,
-    "DEFAULT": None
-}
+# Riva TTS voice name - configured via config.yml (riva_tts_voice_name)
+# NOTE: NVIDIA's cloud-hosted Magpie TTS service does not currently support custom voice names.
+# Setting to empty/None lets the service use its default voice.
+# If NVIDIA adds voice support in the future, configure via config.yml riva_tts_voice_name key.
+def get_riva_voice_name():
+    """Get the configured Riva TTS voice name from config, or None for default."""
+    voice = config.riva_tts_voice_name if hasattr(config, 'riva_tts_voice_name') else ""
+    return voice if voice else None
 
 
 class TimeoutException(Exception):
@@ -287,9 +277,10 @@ def _break_long_sentence(sentence, max_length):
     return parts
 
 
-def text_to_speech(text, output_path, language, model_name, speed=1.0):
+def text_to_speech(text, output_path, language, model_name=None, speed=1.0):
     """
     Convert text to speech using NVIDIA Riva Magpie TTS model.
+    Voice configured via config.yml riva_tts_voice_name key.
     """
     if not RIVA_AVAILABLE or tts_service is None:
         print("ERROR: NVIDIA Riva TTS service not available")
@@ -298,8 +289,8 @@ def text_to_speech(text, output_path, language, model_name, speed=1.0):
     try:
         print("🔊 Synthesizing speech with NVIDIA Magpie...")
         
-        # Select voice based on model name (None = use service default)
-        voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
+        # Get voice from config (None = use service default)
+        voice_name = get_riva_voice_name()
         
         # Determine language code - NVIDIA Riva Magpie supports multilingual
         language_code = "en-US"
@@ -377,9 +368,10 @@ def text_to_speech(text, output_path, language, model_name, speed=1.0):
         print(f"ERROR in text_to_speech: {e}")
         return False
 
-def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4OMINI", speed=1.0):
+def text_to_speech_nospeak(text, output_path, language="en-US", model_name=None, speed=1.0):
     """
     Convert text to speech using NVIDIA Riva Magpie TTS model without playing audio.
+    Voice configured via config.yml riva_tts_voice_name key.
     
     Handles long text by:
     1. Chunking text into segments respecting TTS limits (2000 chars total, 400 per sentence)
@@ -395,8 +387,8 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name="GPT4
         logger.info(f"🔊 Synthesizing speech for {len(text)} characters of text")
         print("🔊 Synthesizing speech with NVIDIA Magpie (no playback)...")
         
-        # Select voice based on model name (None = use service default)
-        voice_name = VOICE_MAP.get(model_name, VOICE_MAP["DEFAULT"])
+        # Get voice from config (None = use service default)
+        voice_name = get_riva_voice_name()
         logger.debug(f"Using voice: {voice_name if voice_name else 'default'}")
         
         # Determine language code - NVIDIA Riva Magpie supports multilingual

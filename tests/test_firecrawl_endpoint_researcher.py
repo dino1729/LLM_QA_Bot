@@ -122,13 +122,13 @@ def test_search_endpoint(url):
         print_status("Search Test", False, f"Skipped ({str(e)})")
 
 def test_full_research_workflow():
-    """Test the integrated researcher function"""
+    """Test the integrated researcher function - uses config for model names"""
     print_header("4. Full Research Workflow")
     
     query = "latest india-usa tariff deal news"
-    # Use config defaults if available, otherwise fallback
-    provider = "litellm"
-    model_name = config.litellm_smart_llm if hasattr(config, 'litellm_smart_llm') else "gpt-oss-120b"
+    # Use config defaults - model names should be configured in config.yml
+    provider = config.firecrawl_default_provider if hasattr(config, 'firecrawl_default_provider') else "litellm"
+    model_name = config.litellm_smart_llm if hasattr(config, 'litellm_smart_llm') and config.litellm_smart_llm else None
     
     print(f"Query: {query}")
     print(f"Provider: {provider}")
