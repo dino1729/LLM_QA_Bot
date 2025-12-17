@@ -169,7 +169,8 @@ class TestConductResearchFirecrawl:
     def test_conduct_research_success_with_fallback_search(self, mock_get_client, mock_scrape, mock_get_urls):
         """Test successful research flow"""
         mock_get_urls.return_value = ["http://example.com"]
-        mock_scrape.return_value = "Scraped content"
+        # Mock content must be > 100 chars to pass the minimum content threshold
+        mock_scrape.return_value = "This is a comprehensive article with meaningful content that exceeds the minimum character threshold required by the scraper. It contains valuable information about the topic being researched."
         
         mock_llm = Mock()
         mock_llm.chat_completion.return_value = "Research Report"
@@ -186,7 +187,8 @@ class TestConductResearchFirecrawl:
     def test_conduct_research_fallback_search(self, mock_get_client, mock_scrape, mock_get_urls):
         """Test research with fallback search"""
         mock_get_urls.return_value = ["http://fallback.com"]
-        mock_scrape.return_value = "Content"
+        # Mock content must be > 100 chars to pass the minimum content threshold
+        mock_scrape.return_value = "This is detailed fallback content from the fallback search mechanism. It provides comprehensive information needed for the research report generation process."
         
         mock_llm = Mock()
         mock_llm.chat_completion.return_value = "Report"
@@ -203,7 +205,8 @@ class TestConductResearchFirecrawl:
     def test_conduct_research_llm_synthesis(self, mock_get_client, mock_scrape, mock_get_urls):
         """Test LLM synthesis step"""
         mock_get_urls.return_value = ["http://example.com"]
-        mock_scrape.return_value = "Content"
+        # Mock content must be > 100 chars to pass the minimum content threshold
+        mock_scrape.return_value = "This is substantial content that will be synthesized by the language model into a coherent research report. It contains all the necessary information and details."
         
         mock_llm = Mock()
         mock_llm.chat_completion.return_value = "Synthesized Report"
@@ -221,7 +224,8 @@ class TestConductResearchFirecrawl:
         """Test that sources are cited"""
         url = "http://example.com"
         mock_get_urls.return_value = [url]
-        mock_scrape.return_value = "Content"
+        # Mock content must be > 100 chars to pass the minimum content threshold
+        mock_scrape.return_value = "This is high quality research content from a reliable source. It provides comprehensive details and insights that will be cited in the final research report output."
         
         mock_llm = Mock()
         mock_llm.chat_completion.return_value = "Report"

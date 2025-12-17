@@ -1133,19 +1133,42 @@ CRITICAL DATE REQUIREMENTS:
 2. If sources mention older dates (e.g., December 7), you MUST reframe them as "As of [today's date], reports indicate..."
 3. Use present tense and today's perspective throughout
 
-DIVERSITY REQUIREMENTS (VERY IMPORTANT):
-1. Cover MULTIPLE distinct topics/stories (minimum 3-4 different stories)
-2. Limit to 1-2 sources per specific topic/story (avoid over-focusing on one story)
-3. If one story dominates the sources, summarize it BRIEFLY (1-2 paragraphs max) and move on
-4. Prioritize BREADTH over depth - mention various developments across the category
-5. Group related sources together but keep each topic concise
-6. Ensure balanced coverage - don't let any single story consume more than 30% of the summary
+DIVERSITY AND UNIQUENESS REQUIREMENTS (CRITICAL - FOLLOW EXACTLY):
 
-Think deeply about the significance and interconnections of these news items while maintaining today's date context and topic diversity.
+A. TOPIC DEFINITION:
+   - Two sources cover "the same topic" if they discuss the same: company/entity + event/product
+   - Examples of SAME topic: "OpenAI releases GPT-5" and "GPT-5 announced by OpenAI"
+   - Examples of DIFFERENT topics: "OpenAI releases GPT-5" and "Google announces Gemini 2.0"
+
+B. CONDENSATION RULES (MANDATORY):
+   1. If 3+ sources discuss the same topic, CONDENSE them into ONE story in your summary
+   2. When condensing, merge key facts from all sources into a single cohesive narrative (2-3 paragraphs max)
+   3. Cite the range of sources: "According to reports from Reuters, Bloomberg, and TechCrunch..."
+   4. After condensing, move to a COMPLETELY DIFFERENT topic
+
+C. DIVERSITY ENFORCEMENT (MANDATORY):
+   1. Your summary MUST cover at least 4 DISTINCT topics (use the definition above)
+   2. No single topic may exceed 25% of your total word count
+   3. Prioritize breadth over depth - briefly mention 5-6 topics rather than deeply analyzing 2-3
+   4. If all sources cover only 2-3 topics, explicitly state: "Today's {category} news is dominated by [topics]"
+
+D. TOPIC SELECTION PRIORITY:
+   1. First, identify all unique topics in your sources
+   2. Select the 4-5 most impactful/newsworthy topics
+   3. For each selected topic, write 1-2 concise paragraphs (80-120 words each)
+   4. Use clear topic transitions: "In separate developments...", "Meanwhile...", "In other news..."
+
+E. VERIFICATION CHECKLIST (Review before finalizing):
+   - [ ] Have I covered at least 4 distinct topics?
+   - [ ] Have I condensed stories where 3+ sources cover the same topic?
+   - [ ] Does any single topic exceed 25% of my summary?
+   - [ ] Are my topic transitions clear?
+
+Think deeply about topic clustering and diversity while maintaining today's date context.
 
 {context}
 
-Write a professional news summary with explicit date references and diverse topic coverage:"""
+Write a professional news summary with explicit date references, condensed duplicate topics, and diverse coverage:"""
         
         initial_draft = smart_client.chat_completion(
             messages=[{"role": "user", "content": synthesis_prompt}],
@@ -1165,22 +1188,48 @@ Current Date: {current_time.split()[0]}
 Draft:
 {initial_draft}
 
-Your tasks:
-1. VERIFY the opening includes explicit date reference (e.g., "On 9 December" or "December 9 saw")
-2. If missing, ADD an explicit date reference to the opening sentence
-3. VERIFY diverse topic coverage (3-4+ distinct stories, not dominated by one topic)
-4. If one topic is over-represented, condense it and ensure other stories get adequate coverage
-3. Improve clarity and flow
-4. Ensure accuracy and proper context
-5. Add impactful opening and closing statements
-6. Maintain professional tone
-7. Enhance readability without changing core facts
-8. Keep it concise (400-600 words)
-9. Ensure temporal markers are present throughout
+Your tasks (IN THIS ORDER):
 
-CRITICAL: The final version MUST have a clear date reference in the opening.
+1. DATE VERIFICATION:
+   - VERIFY the opening includes explicit date reference (e.g., "On December 9" or "December 9 saw")
+   - If missing, ADD an explicit date reference to the opening sentence
 
-Return the polished, publication-ready version with explicit dates:"""
+2. DIVERSITY VERIFICATION (CRITICAL):
+   - Count the number of DISTINCT topics (use the definition: same company/entity + same event = same topic)
+   - Required: Minimum 4 distinct topics
+   - If you find fewer than 4 distinct topics, REWRITE to add more topics from the source material
+   - Example: If the draft discusses "NVIDIA earnings", "NVIDIA stock", and "NVIDIA guidance", these are ONE topic (NVIDIA Q3 results)
+
+3. CONDENSATION VERIFICATION (CRITICAL):
+   - Identify any topics that appear multiple times in different paragraphs
+   - MERGE these into a single, consolidated paragraph
+   - Remove redundant details while preserving key facts
+   - Example: If paragraphs 2 and 5 both discuss "Federal Reserve rate decisions", merge into one paragraph
+
+4. TOPIC BALANCE VERIFICATION:
+   - Estimate word count per topic
+   - If any topic exceeds 25% of total summary, TRIM it to stay within limits
+   - Redistribute saved space to under-represented topics
+
+5. STANDARD EDITORIAL POLISH:
+   - Improve clarity and flow
+   - Ensure accuracy and proper context
+   - Add impactful opening and closing statements
+   - Maintain professional tone
+   - Enhance readability without changing core facts
+   - Keep it concise (400-600 words)
+   - Ensure temporal markers are present throughout
+
+FINAL VERIFICATION CHECKLIST (You MUST confirm each):
+- [ ] Opens with explicit date reference
+- [ ] Contains 4+ distinct topics
+- [ ] No topic exceeds 25% of content
+- [ ] No duplicate topic discussions
+- [ ] All related sources are condensed into single narratives
+
+CRITICAL: The final version MUST meet all checklist criteria. If the draft fails any check, REWRITE that section.
+
+Return the polished, publication-ready version with explicit dates and diverse, condensed coverage:"""
         
         final_report = strategic_client.chat_completion(
             messages=[{"role": "user", "content": editorial_prompt}],
