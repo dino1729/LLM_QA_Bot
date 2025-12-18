@@ -49,6 +49,59 @@ from helper_functions.quote_utils import generate_quote as _generate_quote, _get
 from helper_functions.weather_utils import get_weather
 from helper_functions.llm_client import get_client
 
+# VibeVoice TTS (lazy-loaded for --jetson mode)
+_vibevoice_tts = None
+
+
+def get_vibevoice_tts(speaker: str = "wayne"):
+    """Get or create a VibeVoice TTS instance (singleton pattern for efficiency)."""
+    global _vibevoice_tts
+    if _vibevoice_tts is None:
+        from helper_functions.tts_vibevoice import VibeVoiceTTS
+        _vibevoice_tts = VibeVoiceTTS(speaker=speaker, use_gpu=True)
+    return _vibevoice_tts
+
+
+def vibevoice_text_to_speech(text: str, output_path: str, speaker: str = "wayne") -> bool:
+    """
+    Convert text to speech using on-device VibeVoice TTS.
+
+    Args:
+        text: Text to synthesize
+        output_path: Path to save the audio file (will be saved as .wav)
+        speaker: Voice preset to use (default: wayne)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import soundfile as sf
+    from pathlib import Path
+
+    try:
+        tts = get_vibevoice_tts(speaker)
+
+        # VibeVoice outputs at 24kHz
+        audio_data = tts.synthesize(text)
+
+        if audio_data is None or len(audio_data) == 0:
+            print("⚠ VibeVoice: No audio generated")
+            return False
+
+        # Save as WAV (convert mp3 path to wav if needed)
+        actual_output = str(output_path).replace('.mp3', '.wav')
+        sf.write(actual_output, audio_data, tts.sample_rate)
+
+        duration_seconds = len(audio_data) / tts.sample_rate
+        print(f"✓ VibeVoice: {duration_seconds:.1f}s audio saved to {actual_output}")
+        return True
+
+    except Exception as e:
+        print(f"⚠ VibeVoice error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 # Configure logging with timestamps
 logging.basicConfig(
     level=logging.DEBUG,
@@ -167,6 +220,22 @@ Examples:
         action='store_true',
         help='Only regenerate HTML from latest bundle (fastest for design iteration)'
     )
+    parser.add_argument(
+        '--jetson',
+        action='store_true',
+        help='Use on-device VibeVoice TTS (Jetson GPU) instead of NVIDIA Riva cloud API'
+    )
+    parser.add_argument(
+        '--voice',
+        type=str,
+        default='en-davis_man',
+        help='Voice preset for VibeVoice TTS (default: en-davis_man). Use --list-voices to see available.'
+    )
+    parser.add_argument(
+        '--list-voices',
+        action='store_true',
+        help='List available VibeVoice voice presets and exit'
+    )
 
     return parser.parse_args()
 
@@ -202,6 +271,26 @@ def main():
             print(f"  Has tech news: {cache_info['has_tech']}")
             print(f"  Has financial news: {cache_info['has_financial']}")
             print(f"  Has India news: {cache_info['has_india']}")
+        print("=" * 60)
+        return
+
+    if args.list_voices:
+        print("\n" + "=" * 60)
+        print("VIBEVOICE AVAILABLE VOICES")
+        print("=" * 60)
+        try:
+            tts = get_vibevoice_tts(speaker=args.voice)
+            voices = tts.list_speakers()
+            if voices:
+                print(f"  Found {len(voices)} voice presets:")
+                for voice in voices:
+                    marker = " (current)" if voice == tts.speaker else ""
+                    print(f"    - {voice}{marker}")
+            else:
+                print("  No voice presets found.")
+                print("  Check that VibeVoice demo/voices/streaming_model/ directory exists.")
+        except Exception as e:
+            print(f"  Error loading VibeVoice: {e}")
         print("=" * 60)
         return
 
@@ -244,6 +333,8 @@ def main():
         mode_flags.append("SKIP_AUDIO")
     if args.refresh_cache:
         mode_flags.append("REFRESH_CACHE")
+    if args.jetson:
+        mode_flags.append(f"JETSON_TTS(voice={args.voice})")
 
     if mode_flags:
         print(f"\n⚙️  Mode: {', '.join(mode_flags)}")
@@ -408,11 +499,14 @@ def main():
     if args.skip_audio:
         print("\n🔊 Audio generation skipped (--skip-audio)")
     else:
-        print("\n🔊 Generating audio files...")
+        if args.jetson:
+            print(f"\n🔊 Generating audio files with VibeVoice (on-device, voice={args.voice})...")
+        else:
+            print("\n🔊 Generating audio files with NVIDIA Riva (cloud API)...")
 
         year_progress_message_prompt = f"""
         Here is a year progress report for {datetime.now().strftime("%B %d, %Y")}:
-        
+
         Days completed: {days_completed}
         Weeks completed: {weeks_completed:.1f}
         Days remaining: {days_left}
@@ -428,20 +522,50 @@ def main():
 
         year_progress_gpt_response = generate_gpt_response(year_progress_message_prompt, LLM_PROVIDER)
         yearprogress_tts_output_path = str(OUTPUT_DIR / "year_progress_report.mp3")
-        model_name = random.choice(model_names)
-        tts_result = text_to_speech_nospeak(year_progress_gpt_response, yearprogress_tts_output_path, model_name=model_name, speed=1.5)
-        if tts_result:
-            print(f"✓ Progress audio: {yearprogress_tts_output_path}")
+
+        if args.jetson:
+            # Use on-device VibeVoice TTS
+            tts_result = vibevoice_text_to_speech(
+                year_progress_gpt_response,
+                yearprogress_tts_output_path,
+                speaker=args.voice
+            )
+            if tts_result:
+                actual_path = yearprogress_tts_output_path.replace('.mp3', '.wav')
+                print(f"✓ Progress audio: {actual_path}")
+            else:
+                print("⚠ Progress audio: VibeVoice TTS failed")
         else:
-            print("⚠ Progress audio: TTS unavailable (requires NVIDIA Riva service)")
+            # Use cloud-based NVIDIA Riva TTS
+            model_name = random.choice(model_names)
+            tts_result = text_to_speech_nospeak(year_progress_gpt_response, yearprogress_tts_output_path, model_name=model_name, speed=1.5)
+            if tts_result:
+                print(f"✓ Progress audio: {yearprogress_tts_output_path}")
+            else:
+                print("⚠ Progress audio: TTS unavailable (requires NVIDIA Riva service)")
 
         news_tts_output_path = str(OUTPUT_DIR / "news_update_report.mp3")
-        model_name = random.choice(model_names)
-        tts_result = text_to_speech_nospeak(voicebot_script, news_tts_output_path, model_name=model_name, speed=1.5)
-        if tts_result:
-            print(f"✓ News audio: {news_tts_output_path}")
+
+        if args.jetson:
+            # Use on-device VibeVoice TTS
+            tts_result = vibevoice_text_to_speech(
+                voicebot_script,
+                news_tts_output_path,
+                speaker=args.voice
+            )
+            if tts_result:
+                actual_path = news_tts_output_path.replace('.mp3', '.wav')
+                print(f"✓ News audio: {actual_path}")
+            else:
+                print("⚠ News audio: VibeVoice TTS failed")
         else:
-            print("⚠ News audio: TTS unavailable (requires NVIDIA Riva service)")
+            # Use cloud-based NVIDIA Riva TTS
+            model_name = random.choice(model_names)
+            tts_result = text_to_speech_nospeak(voicebot_script, news_tts_output_path, model_name=model_name, speed=1.5)
+            if tts_result:
+                print(f"✓ News audio: {news_tts_output_path}")
+            else:
+                print("⚠ News audio: TTS unavailable (requires NVIDIA Riva service)")
 
     print("\n" + "=" * 80)
     print("✓ ALL TASKS COMPLETED SUCCESSFULLY!")
@@ -461,6 +585,8 @@ def main():
     print(f"  View newsletter: firefox {OUTPUT_DIR}/news_newsletter_report.html")
     print(f"  Test mode:       python {__file__} --test")
     print(f"  HTML only:       python {__file__} --html-only")
+    print(f"  Jetson TTS:      python {__file__} --jetson --voice en-davis_man")
+    print(f"  List voices:     python {__file__} --list-voices")
 
 
 if __name__ == "__main__":
