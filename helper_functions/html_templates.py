@@ -12,8 +12,8 @@ def get_luxurious_css():
     """
     return """
         <style>
-            /* Google Fonts with system fallbacks */
-            @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+            /* Google Fonts - Clean SF-inspired typography */
+            @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
             /* ============================================
                DESIGN TOKENS - 8px Spacing Scale
@@ -47,9 +47,9 @@ def get_luxurious_css():
                 --accent-glow: rgba(212, 175, 55, 0.15);
                 --accent-glow-strong: rgba(212, 175, 55, 0.3);
 
-                /* Typography */
-                --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
-                --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                /* Typography - Unified clean sans-serif */
+                --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+                --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
 
                 /* Sizing */
                 --tap-target-min: 44px;
@@ -271,10 +271,13 @@ def get_luxurious_css():
 
             .stat-card {
                 background: var(--bg-card);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
                 border: 1px solid var(--border-subtle);
-                border-radius: var(--border-radius-md);
-                padding: var(--space-sm);
+                border-radius: var(--border-radius-lg);
+                padding: var(--space-md);
                 text-align: center;
+                box-shadow: var(--shadow-sm);
                 transition: all var(--transition-base);
             }
 
@@ -284,8 +287,58 @@ def get_luxurious_css():
 
             .stat-icon {
                 font-size: 28px;
+                height: 28px;
+                line-height: 28px;
                 margin-bottom: var(--space-xs);
-                display: block;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Custom Calendar Icon - Refined to match emoji size */
+            .calendar-icon {
+                width: 28px;
+                height: 28px;
+                background: #FFFFFF;
+                border-radius: 5px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                margin: 0 auto var(--space-xs);
+                box-shadow: 
+                    0 1px 3px rgba(0, 0, 0, 0.12),
+                    0 1px 2px rgba(0, 0, 0, 0.08);
+                border: 1px solid rgba(0, 0, 0, 0.08); /* Slightly darker border for definition */
+                overflow: hidden;
+            }
+
+            .calendar-month {
+                background-color: #DC143C;
+                font-size: 6px;
+                font-weight: 800;
+                color: white;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+                line-height: 1;
+                height: 9px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+            }
+
+            .calendar-day {
+                font-size: 13px;
+                font-weight: 700;
+                color: #111827;
+                line-height: 1;
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding-bottom: 1px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             }
 
             .stat-value {
@@ -374,6 +427,8 @@ def get_luxurious_css():
             .quote-card {
                 position: relative;
                 overflow: hidden;
+                text-align: center;
+                padding-top: var(--space-lg);
             }
 
             .quote-card::before {
@@ -388,73 +443,104 @@ def get_luxurious_css():
 
             blockquote {
                 margin: 0;
-                padding: var(--space-md);
-                background: rgba(255, 255, 255, 0.02);
-                border-radius: var(--border-radius-md);
-                border: 1px solid var(--border-subtle);
-                box-shadow: var(--shadow-sm);
+                padding: 0;
+                background: none;
+                border: none;
+                box-shadow: none;
             }
 
             .quote-icon {
-                font-size: 24px;
+                font-size: 40px;
                 color: var(--accent-gold);
-                display: inline-block;
+                display: block;
                 margin-bottom: var(--space-sm);
                 text-shadow: 0 2px 10px var(--accent-glow);
+                line-height: 1;
             }
 
             .quote-text {
-                font-size: 18px;
-                line-height: 1.7;
+                font-family: var(--font-display);
+                font-size: 22px;
+                line-height: 1.6;
                 color: var(--text-primary);
                 margin: 0 0 var(--space-sm) 0;
+                font-style: italic;
+                font-weight: 400;
+                letter-spacing: -0.01em;
             }
 
             .quote-author {
                 display: block;
+                font-family: var(--font-body);
                 font-size: 13px;
-                color: var(--text-secondary);
+                color: var(--accent-gold);
+                font-weight: 500;
                 letter-spacing: 0.5px;
             }
 
             /* ============================================
-               DAILY WISDOM SECTION
+               DAILY WISDOM SECTION - Steve Jobs Aesthetic
+               Clean, unified cards with consistent styling
                ============================================ */
             .wisdom-grid {
                 display: grid;
-                gap: var(--space-sm);
+                gap: var(--space-md);
             }
 
             .wisdom-section {
-                padding: var(--space-sm);
-                border-radius: var(--border-radius-md);
-                background: rgba(255, 255, 255, 0.02);
+                padding: var(--space-md);
+                border-radius: var(--border-radius-lg);
+                background: var(--bg-card);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
                 border: 1px solid var(--border-subtle);
-                box-shadow: var(--shadow-sm);
+                box-shadow: var(--shadow-md);
+                transition: all var(--transition-base);
             }
 
             .wisdom-label {
+                font-family: var(--font-body);
                 font-size: 11px;
-                letter-spacing: 1px;
+                font-weight: 600;
+                letter-spacing: 1.5px;
+                text-transform: uppercase;
                 color: var(--accent-gold);
-                margin-bottom: var(--space-xs);
-                display: inline-block;
-                padding: 2px 10px;
-                border-radius: 100px;
-                background: rgba(212, 175, 55, 0.08);
-                border: 1px solid rgba(212, 175, 55, 0.3);
+                margin-bottom: var(--space-sm);
+                display: block;
             }
 
             .wisdom-text {
-                color: var(--text-secondary);
-                font-size: 15px;
-                line-height: 1.7;
+                color: var(--text-primary);
+                font-family: var(--font-body);
+                font-size: 16px;
+                line-height: 1.75;
                 margin: 0;
+                font-weight: 400;
             }
 
+            /* Key Insight - Primary emphasis with subtle gold accent */
             .wisdom-insight {
-                background: linear-gradient(135deg, rgba(212, 175, 55, 0.06), rgba(10, 11, 13, 0.95));
-                border-color: rgba(212, 175, 55, 0.2);
+                border-left: 3px solid var(--accent-gold);
+            }
+            
+            .wisdom-insight .wisdom-text {
+                font-size: 18px;
+                font-weight: 500;
+                line-height: 1.7;
+            }
+
+            /* Historical Context - Italic styling for narrative feel */
+            .wisdom-historical .wisdom-text {
+                font-style: italic;
+                font-size: 15px;
+                color: var(--text-secondary);
+                line-height: 1.8;
+            }
+
+            /* Application - Clean, actionable styling */
+            .wisdom-application .wisdom-text {
+                font-size: 15px;
+                color: var(--text-secondary);
             }
 
             /* ============================================
@@ -462,19 +548,33 @@ def get_luxurious_css():
                ============================================ */
             .news-grid {
                 display: grid;
-                gap: var(--space-sm);
+                gap: var(--space-xl);
             }
 
             .news-item {
-                padding: var(--space-sm);
-                border-radius: var(--border-radius-md);
+                padding: var(--space-md);
+                border-radius: var(--border-radius-lg);
                 border: 1px solid var(--border-subtle);
-                background: rgba(255, 255, 255, 0.02);
-                transition: all var(--transition-fast);
+                background: var(--bg-card);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                box-shadow: 
+                    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+                    0 10px 20px -5px rgba(0, 0, 0, 0.25),
+                    0 1px 3px rgba(0, 0, 0, 0.2);
+                transition: all var(--transition-base);
+            }
+
+            .news-item:hover {
+                transform: translateY(-2px);
+                box-shadow: 
+                    0 8px 12px -2px rgba(0, 0, 0, 0.35),
+                    0 16px 32px -8px rgba(0, 0, 0, 0.3),
+                    0 2px 6px rgba(0, 0, 0, 0.2);
             }
 
             .news-item:active {
-                transform: translateY(1px);
+                transform: translateY(0);
             }
 
             .news-source {
@@ -489,9 +589,12 @@ def get_luxurious_css():
 
             .news-headline {
                 margin: var(--space-xs) 0;
-                font-size: 16px;
+                font-size: 17px;
+                font-family: var(--font-body);
+                font-weight: 600;
                 color: var(--text-primary);
-                line-height: 1.5;
+                line-height: 1.45;
+                letter-spacing: -0.01em;
             }
 
             .news-headline a {
@@ -508,44 +611,41 @@ def get_luxurious_css():
             .news-commentary {
                 font-size: 14px;
                 color: var(--text-secondary);
-                line-height: 1.7;
-                background: rgba(255, 255, 255, 0.02);
+                line-height: 1.75;
+                background: rgba(255, 255, 255, 0.03);
                 padding: var(--space-sm);
-                border-radius: var(--border-radius-sm);
+                border-radius: var(--border-radius-md);
                 border-left: 3px solid var(--accent-gold);
                 margin-top: var(--space-sm);
             }
 
-            /* Bulletproof CTA Button - Compact size */
+            /* Subtle ghost-style CTA link */
             .news-cta {
                 display: inline-flex;
                 align-items: center;
-                justify-content: center;
-                height: 32px;
-                padding: 0 var(--space-sm);
-                margin-top: var(--space-xs);
+                gap: 4px;
+                margin-top: var(--space-sm);
                 font-family: var(--font-body);
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 500;
-                letter-spacing: 0.3px;
-                color: var(--bg-primary);
-                background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%);
+                letter-spacing: 0.2px;
+                color: var(--accent-gold);
+                background: transparent;
                 border: none;
-                border-radius: 6px;
                 text-decoration: none;
                 cursor: pointer;
-                transition: all var(--transition-base);
-                box-shadow: 0 2px 8px var(--accent-glow);
+                transition: all var(--transition-fast);
+                opacity: 0.85;
             }
 
             .news-cta:hover,
             .news-cta:focus {
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px var(--accent-glow-strong);
+                opacity: 1;
+                color: var(--accent-gold-light);
             }
 
             .news-cta:active {
-                transform: translateY(0);
+                opacity: 0.7;
             }
 
             /* ============================================
@@ -586,7 +686,7 @@ def get_luxurious_css():
                 }
 
                 .quote-text {
-                    font-size: 22px;
+                    font-size: 26px;
                 }
 
                 .wisdom-insight .wisdom-text {
@@ -612,7 +712,7 @@ def get_luxurious_css():
                 }
 
                 .quote-text {
-                    font-size: 24px;
+                    font-size: 28px;
                     padding: 0 var(--space-md);
                 }
 
@@ -737,8 +837,9 @@ def get_luxurious_css():
             }
 
             .lesson-content {
+                font-family: var(--font-body);
                 font-size: 15px;
-                line-height: 1.7;
+                line-height: 1.75;
                 color: var(--text-secondary);
             }
 
@@ -748,11 +849,12 @@ def get_luxurious_css():
 
             .historical-note {
                 border-left: 3px solid var(--accent-gold);
-                padding: var(--space-sm);
+                padding: var(--space-md);
                 margin: var(--space-sm) 0;
                 color: var(--text-primary);
-                background: var(--accent-glow);
-                border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+                background: var(--bg-card);
+                border-radius: var(--border-radius-lg);
+                box-shadow: var(--shadow-sm);
             }
         </style>
     """
@@ -881,6 +983,10 @@ def generate_html_progress_message(
         else 365
     )
 
+    # Parse date for calendar icon
+    calendar_day = now.strftime("%d").lstrip('0')  # Remove leading zero
+    calendar_month = now.strftime("%b").upper()  # 3-letter month
+
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -910,7 +1016,10 @@ def generate_html_progress_message(
                     </div>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-icon" aria-hidden="true">📅</span>
+                    <div class="calendar-icon" aria-hidden="true">
+                        <div class="calendar-month">{calendar_month}</div>
+                        <div class="calendar-day">{calendar_day}</div>
+                    </div>
                     <div class="stat-value">
                         <strong>Day {days_completed}</strong><br>
                         of {total_days_in_year}
@@ -1291,6 +1400,7 @@ def render_lesson_html(lesson: Dict[str, Any]) -> str:
 def render_year_progress_html_from_bundle(bundle: Dict[str, Any]) -> str:
     """Render the year progress HTML from bundle data."""
     import html as html_module
+    from datetime import datetime as dt
 
     meta = bundle["meta"]
     progress = bundle["progress"]
@@ -1321,6 +1431,11 @@ def render_year_progress_html_from_bundle(bundle: Dict[str, Any]) -> str:
 
     lesson_html = render_lesson_html(lesson)
 
+    # Parse date for calendar icon
+    date_obj = dt.fromisoformat(meta["date_iso"])
+    calendar_day = date_obj.strftime("%d").lstrip('0')  # Remove leading zero
+    calendar_month = date_obj.strftime("%b").upper()  # 3-letter month
+
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -1350,7 +1465,10 @@ def render_year_progress_html_from_bundle(bundle: Dict[str, Any]) -> str:
                     </div>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-icon" aria-hidden="true">📅</span>
+                    <div class="calendar-icon" aria-hidden="true">
+                        <div class="calendar-month">{calendar_month}</div>
+                        <div class="calendar-day">{calendar_day}</div>
+                    </div>
                     <div class="stat-value">
                         <strong>Day {days_completed}</strong><br>
                         of {total_days_in_year}

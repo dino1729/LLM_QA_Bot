@@ -379,11 +379,22 @@ class VibeVoiceTTS:
                         prompt.value_cache[i] = prompt.value_cache[i].to(device=device)
             return prompt
 
-    def synthesize(self, text: str) -> np.ndarray:
-        """Synthesize speech from text.
+    def synthesize(
+        self,
+        text: str,
+        temperature: float = 0.9,
+        top_p: float = 0.9,
+        do_sample: bool = True,
+        cfg_scale: Optional[float] = None,
+    ) -> np.ndarray:
+        """Synthesize speech from text with expressive control.
 
         Args:
             text: Text to synthesize
+            temperature: Sampling temperature (0.1-1.5). Higher = more expressive/varied (default: 0.9)
+            top_p: Nucleus sampling threshold (0.5-1.0). Lower = more focused (default: 0.9)
+            do_sample: Enable sampling for expressiveness. False = deterministic (default: True)
+            cfg_scale: Classifier-free guidance scale override (default: use model's default)
 
         Returns:
             Audio data as float32 numpy array
@@ -395,6 +406,9 @@ class VibeVoiceTTS:
             self._initialize_model()
 
         text = text.replace("'", "'").replace('"', '"').replace('"', '"')
+
+        # Use provided cfg_scale or fall back to instance default
+        effective_cfg_scale = cfg_scale if cfg_scale is not None else self.cfg_scale
 
         try:
             inputs = self._processor.process_input_with_cached_prompt(
@@ -415,9 +429,13 @@ class VibeVoiceTTS:
                 outputs = self._model.generate(
                     **inputs,
                     max_new_tokens=None,
-                    cfg_scale=self.cfg_scale,
+                    cfg_scale=effective_cfg_scale,
                     tokenizer=self._processor.tokenizer,
-                    generation_config={'do_sample': False},
+                    generation_config={
+                        'do_sample': do_sample,
+                        'temperature': temperature if do_sample else 1.0,
+                        'top_p': top_p if do_sample else 1.0,
+                    },
                     verbose=False,
                     all_prefilled_outputs=copy.deepcopy(self._voice_prompt) if self._voice_prompt else None,
                 )

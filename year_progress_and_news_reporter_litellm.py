@@ -49,50 +49,142 @@ from helper_functions.quote_utils import generate_quote as _generate_quote, _get
 from helper_functions.weather_utils import get_weather
 from helper_functions.llm_client import get_client
 
-# VibeVoice TTS (lazy-loaded for --jetson mode)
-_vibevoice_tts = None
+# VibeVoice TTS instances (lazy-loaded for --local-tts mode)
+# Cache one TTS instance per voice for efficiency
+_vibevoice_tts_cache = {}
 
 
 def get_vibevoice_tts(speaker: str = "wayne"):
-    """Get or create a VibeVoice TTS instance (singleton pattern for efficiency)."""
-    global _vibevoice_tts
-    if _vibevoice_tts is None:
-        from helper_functions.tts_vibevoice import VibeVoiceTTS
-        _vibevoice_tts = VibeVoiceTTS(speaker=speaker, use_gpu=True)
-    return _vibevoice_tts
+    """Get or create a VibeVoice TTS instance for the specified speaker.
 
-
-def vibevoice_text_to_speech(text: str, output_path: str, speaker: str = "wayne") -> bool:
+    Uses a cache to reuse TTS instances for the same speaker, improving performance
+    when switching between different voices during a session.
     """
-    Convert text to speech using on-device VibeVoice TTS.
+    global _vibevoice_tts_cache
+
+    # Normalize speaker name
+    speaker_key = speaker.lower()
+
+    # Return cached instance if available
+    if speaker_key in _vibevoice_tts_cache:
+        tts = _vibevoice_tts_cache[speaker_key]
+        # Update speaker if different (allows voice switching on same instance)
+        if tts.speaker != speaker_key:
+            tts.speaker = speaker_key
+            tts._load_voice_prompt()
+        return tts
+
+    # Create new instance and cache it
+    from helper_functions.tts_vibevoice import VibeVoiceTTS
+    tts = VibeVoiceTTS(speaker=speaker, use_gpu=True)
+    _vibevoice_tts_cache[speaker_key] = tts
+    return tts
+
+
+def vibevoice_text_to_speech(
+    text: str,
+    output_path: str,
+    speaker: str = "wayne",
+    temperature: float = 1.1,
+    top_p: float = 0.95,
+    cfg_scale: float = 2.0,
+    excitement_level: str = "high",
+    speed_multiplier: float = 1.15
+) -> bool:
+    """
+    Convert text to speech using on-device VibeVoice TTS with expressive control.
 
     Args:
         text: Text to synthesize
         output_path: Path to save the audio file (will be saved as .wav)
         speaker: Voice preset to use (default: wayne)
+        temperature: Sampling temperature for expressiveness (0.1-1.5, default: 1.1)
+        top_p: Nucleus sampling threshold (0.5-1.0, default: 0.95)
+        cfg_scale: Classifier-free guidance scale (1.0-3.0, default: 2.0)
+        excitement_level: "low", "medium", "high", or "very_high" (default: high)
+        speed_multiplier: Playback speed multiplier (default: 1.15 for 15% faster)
+                         Uses pyrubberband for high-quality time stretching without artifacts
 
     Returns:
         True if successful, False otherwise
     """
     import soundfile as sf
     from pathlib import Path
+    from scipy import signal
+    import numpy as np
+
+    # Map excitement levels to parameters
+    excitement_presets = {
+        "low": {"temperature": 0.7, "top_p": 0.85, "cfg_scale": 1.5},
+        "medium": {"temperature": 0.9, "top_p": 0.9, "cfg_scale": 1.8},
+        "high": {"temperature": 1.1, "top_p": 0.95, "cfg_scale": 2.0},
+        "very_high": {"temperature": 1.3, "top_p": 0.98, "cfg_scale": 2.5},
+    }
+
+    # Use preset if excitement_level is specified
+    if excitement_level in excitement_presets:
+        preset = excitement_presets[excitement_level]
+        temperature = preset["temperature"]
+        top_p = preset["top_p"]
+        cfg_scale = preset["cfg_scale"]
 
     try:
         tts = get_vibevoice_tts(speaker)
 
-        # VibeVoice outputs at 24kHz
-        audio_data = tts.synthesize(text)
+        # Add expressive formatting to text
+        # Use punctuation and caps for emphasis (TTS models respond to text formatting)
+        formatted_text = text
+
+        # VibeVoice outputs at 24kHz with expressive sampling
+        audio_data = tts.synthesize(
+            formatted_text,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=True,
+            cfg_scale=cfg_scale
+        )
 
         if audio_data is None or len(audio_data) == 0:
             print("⚠ VibeVoice: No audio generated")
             return False
 
+        # Apply speed adjustment if not 1.0
+        if speed_multiplier != 1.0:
+            try:
+                # Try pyrubberband first (highest quality, uses Rubber Band library)
+                import pyrubberband as pyrb
+                # pyrubberband provides studio-quality time stretching without artifacts
+                audio_data = pyrb.time_stretch(audio_data, tts.sample_rate, speed_multiplier)
+                print(f"  Using pyrubberband for high-quality time stretch ({speed_multiplier}x)")
+            except ImportError:
+                try:
+                    # Fallback to librosa with improved parameters
+                    import librosa
+                    # Use newer librosa API with explicit sample rate
+                    # Note: librosa's phase vocoder can introduce artifacts at higher speeds
+                    audio_data = librosa.effects.time_stretch(
+                        y=audio_data, 
+                        sr=tts.sample_rate, 
+                        rate=speed_multiplier
+                    )
+                    print(f"  Using librosa time stretch (may have minor artifacts at {speed_multiplier}x)")
+                except ImportError:
+                    print("  Warning: Neither pyrubberband nor librosa available")
+                    print("  Using simple resampling (pitch will change)")
+                    # Fallback: simple resampling (will change pitch)
+                    num_samples = int(len(audio_data) / speed_multiplier)
+                    audio_data = signal.resample(audio_data, num_samples)
+
+            effective_sample_rate = tts.sample_rate
+        else:
+            effective_sample_rate = tts.sample_rate
+
         # Save as WAV (convert mp3 path to wav if needed)
         actual_output = str(output_path).replace('.mp3', '.wav')
-        sf.write(actual_output, audio_data, tts.sample_rate)
+        sf.write(actual_output, audio_data, effective_sample_rate)
 
-        duration_seconds = len(audio_data) / tts.sample_rate
-        print(f"✓ VibeVoice: {duration_seconds:.1f}s audio saved to {actual_output}")
+        original_duration = len(audio_data) / effective_sample_rate
+        print(f"✓ VibeVoice: {original_duration:.1f}s audio saved to {actual_output} (excitement: {excitement_level}, speed: {speed_multiplier}x)")
         return True
 
     except Exception as e:
@@ -196,6 +288,11 @@ Examples:
         help='Use cached news data if available (speeds up iteration)'
     )
     parser.add_argument(
+        '--full-cache',
+        action='store_true',
+        help='Use full bundle cache (skip all LLM generation including quotes and lessons)'
+    )
+    parser.add_argument(
         '--refresh-cache',
         action='store_true',
         help='Force refresh of news cache even if valid cache exists'
@@ -221,9 +318,9 @@ Examples:
         help='Only regenerate HTML from latest bundle (fastest for design iteration)'
     )
     parser.add_argument(
-        '--jetson',
+        '--local-tts',
         action='store_true',
-        help='Use on-device VibeVoice TTS (Jetson GPU) instead of NVIDIA Riva cloud API'
+        help='Use on-device VibeVoice TTS (local GPU) instead of NVIDIA Riva cloud API'
     )
     parser.add_argument(
         '--voice',
@@ -333,13 +430,64 @@ def main():
         mode_flags.append("SKIP_AUDIO")
     if args.refresh_cache:
         mode_flags.append("REFRESH_CACHE")
-    if args.jetson:
-        mode_flags.append(f"JETSON_TTS(voice={args.voice})")
+    if args.local_tts:
+        mode_flags.append(f"LOCAL_TTS(voice={args.voice})")
+
+    if args.full_cache:
+        mode_flags.append("FULL_CACHE")
+
+    logger.info(f"Active Arguments: full_cache={args.full_cache}, use_cache={args.use_cache}, skip_email={args.skip_email}")
 
     if mode_flags:
-        print(f"\n⚙️  Mode: {', '.join(mode_flags)}")
+        logger.info(f"Mode: {', '.join(mode_flags)}")
 
     logger.info("Output directory: %s", OUTPUT_DIR.absolute())
+
+    # Initialize state variables
+    quote_text = None
+    quote_author = None
+    lesson_dict = None
+    lesson_raw = None
+    news_raw_sources = None
+    newsletter_sections = None
+    voicebot_script = None
+
+    if args.full_cache:
+        print("\n" + "=" * 80)
+        print("FULL CACHE MODE - Loading state from latest bundle")
+        print("=" * 80)
+        latest_bundle_path = OUTPUT_DIR / "daily_bundle_latest.json"
+
+        if latest_bundle_path.exists():
+            try:
+                bundle = load_bundle_json(latest_bundle_path)
+
+                # Extract state
+                quote_text = bundle["progress"]["quote"]["text"]
+                quote_author = bundle["progress"]["quote"]["author"]
+
+                lesson_dict = bundle["progress"]["lesson"]
+                # Use topic/content from dict for logging if needed
+                lesson_raw = str(lesson_dict)
+
+                news_raw_sources = bundle["news"]["raw_sources"]
+
+                newsletter_sections = bundle["news"]["newsletter"]["sections"]
+                voicebot_script = bundle["news"]["newsletter"]["voicebot_script"]
+
+                print(f"✓ Loaded full state from {bundle['meta']['date_iso']}")
+                if mode_flags is not None:
+                    mode_flags.append("FULL_CACHE_LOADED")
+
+            except Exception as e:
+                print(f"⚠ Failed to load full cache: {e}")
+                print("Falling back to standard generation...")
+                # Reset to ensure generation
+                quote_text = None
+                news_raw_sources = None
+        else:
+            print(f"⚠ No bundle found at {latest_bundle_path}")
+            print("Falling back to standard generation...")
 
     days_completed, weeks_completed, days_left, weeks_left, percent_days_left = time_left_in_year()
     logger.info("Year progress: %.1f%% complete, %s days remaining", 100 - percent_days_left, days_left)
@@ -353,33 +501,40 @@ def main():
     }
     logger.info("Weather: %s°C, %s", temp, status)
 
-    logger.info("Generating quote and lesson...")
-    random_personality = get_random_personality()
-    logger.info("Selected personality: %s", random_personality)
+    if not quote_text or not quote_author:
+        logger.info("Generating quote and lesson...")
+        random_personality = get_random_personality()
+        quote_author = random_personality
+        logger.info("Selected personality: %s", random_personality)
 
-    quote_text = generate_quote(random_personality)
-    logger.info("Quote result: %s - %s...", "SUCCESS" if quote_text else "EMPTY", quote_text[:80] if quote_text else "N/A")
+        quote_text = generate_quote(random_personality)
+        logger.info("Quote result: %s - %s...", "SUCCESS" if quote_text else "EMPTY", quote_text[:80] if quote_text else "N/A")
+    else:
+        print(f"\n✓ Using cached quote from {quote_author}")
+        random_personality = quote_author
 
-    topic, lesson_raw = get_random_lesson(LLM_PROVIDER)
-    logger.info("Topic: %s...", topic[:50])
-    logger.info("Lesson result: %s - %s chars", "SUCCESS" if lesson_raw else "EMPTY", len(lesson_raw) if lesson_raw else 0)
+    if not lesson_dict:
+        topic, lesson_raw = get_random_lesson(LLM_PROVIDER)
+        logger.info("Topic: %s...", topic[:50])
+        logger.info("Lesson result: %s - %s chars", "SUCCESS" if lesson_raw else "EMPTY", len(lesson_raw) if lesson_raw else 0)
 
-    lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
+        lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
+    else:
+        print(f"✓ Using cached lesson: {lesson_dict.get('topic', 'Unknown')}")
 
     print("\n" + "=" * 80)
     print("FETCHING NEWS UPDATES")
     print("=" * 80)
 
-    news_raw_sources = None
-
-    if args.use_cache and not args.refresh_cache:
-        cached_news = load_news_cache(output_dir=OUTPUT_DIR)
-        if cached_news:
-            print("\n📦 Using cached news data...")
-            news_raw_sources = cached_news
-            print(f"✓ Tech news: {len(news_raw_sources.get('technology', ''))} characters (cached)")
-            print(f"✓ Financial news: {len(news_raw_sources.get('financial', ''))} characters (cached)")
-            print(f"✓ India news: {len(news_raw_sources.get('india', ''))} characters (cached)")
+    if news_raw_sources is None:
+        if args.use_cache and not args.refresh_cache:
+            cached_news = load_news_cache(output_dir=OUTPUT_DIR)
+            if cached_news:
+                print("\n📦 Using cached news data...")
+                news_raw_sources = cached_news
+                print(f"✓ Tech news: {len(news_raw_sources.get('technology', ''))} characters (cached)")
+                print(f"✓ Financial news: {len(news_raw_sources.get('financial', ''))} characters (cached)")
+                print(f"✓ India news: {len(news_raw_sources.get('india', ''))} characters (cached)")
 
     if news_raw_sources is None:
         news_provider = "litellm" if LLM_PROVIDER == "litellm" else "ollama"
@@ -431,32 +586,45 @@ def main():
     print("GENERATING NEWSLETTER")
     print("=" * 80)
 
-    print("\n📝 Generating newsletter sections...")
-    newsletter_sections = generate_newsletter_sections(
-        news_update_tech,
-        news_update_financial,
-        news_update_india,
-        LLM_PROVIDER,
-    )
+    if not newsletter_sections:
+        print("\n📝 Generating newsletter sections...")
+        newsletter_sections = generate_newsletter_sections(
+            news_update_tech,
+            news_update_financial,
+            news_update_india,
+            LLM_PROVIDER,
+        )
+    else:
+        print("\n✓ Using cached newsletter sections")
     print(f"✓ Newsletter sections: tech={len(newsletter_sections['tech'])}, financial={len(newsletter_sections['financial'])}, india={len(newsletter_sections['india'])}")
 
-    print("\n🎙️ Generating voicebot script...")
-    voicebot_prompt = f"""
-    Here are today's key updates across technology, financial markets, and India:
-    
-    Technology Updates:
-    {news_update_tech}
+    if not voicebot_script:
+        print("\n🎙️ Generating voicebot script...")
+        voicebot_prompt = f"""
+        Transform these news updates into an ENGAGING, DYNAMIC news briefing!
+        Speak like an enthusiastic news anchor who makes every story exciting.
 
-    Financial Market Headlines:
-    {news_update_financial}
+        Technology Updates:
+        {news_update_tech}
 
-    Latest from India:
-    {news_update_india}
-    
-    Please present this information in a natural, conversational way suitable for speaking.
-    """
-    voicebot_script = generate_gpt_response_voicebot(voicebot_prompt, LLM_PROVIDER)
-    print(f"✓ Voicebot script: {len(voicebot_script)} characters")
+        Financial Market Headlines:
+        {news_update_financial}
+
+        Latest from India:
+        {news_update_india}
+
+        INSTRUCTIONS:
+        - Start with an energetic greeting (e.g., "Good morning! Here's what's making headlines today!")
+        - Use conversational, natural language with varied pacing
+        - Add enthusiasm for exciting developments
+        - Use transitions between topics (e.g., "Now turning to...", "In other news...")
+        - End with a strong closing statement
+        - Make it sound like a real person talking, not reading a script!
+        """
+        voicebot_script = generate_gpt_response_voicebot(voicebot_prompt, LLM_PROVIDER)
+        print(f"✓ Voicebot script: {len(voicebot_script)} characters")
+    else:
+        print("\n✓ Using cached voicebot script")
 
     print("\n📦 Building daily bundle...")
     bundle = build_daily_bundle(
@@ -499,13 +667,14 @@ def main():
     if args.skip_audio:
         print("\n🔊 Audio generation skipped (--skip-audio)")
     else:
-        if args.jetson:
+        if args.local_tts:
             print(f"\n🔊 Generating audio files with VibeVoice (on-device, voice={args.voice})...")
         else:
             print("\n🔊 Generating audio files with NVIDIA Riva (cloud API)...")
 
         year_progress_message_prompt = f"""
-        Here is a year progress report for {datetime.now().strftime("%B %d, %Y")}:
+        Transform this year progress report into an ENGAGING and EXCITING spoken announcement for {datetime.now().strftime("%B %d, %Y")}!
+        Use an enthusiastic, motivational tone with natural speech patterns.
 
         Days completed: {days_completed}
         Weeks completed: {weeks_completed:.1f}
@@ -518,17 +687,22 @@ def main():
 
         Today's lesson:
         {lesson_raw}
+
+        Make it sound exciting and motivating! Use natural pauses, emphasis, and conversational language.
+        Start with an energetic greeting!
         """
 
         year_progress_gpt_response = generate_gpt_response(year_progress_message_prompt, LLM_PROVIDER)
         yearprogress_tts_output_path = str(OUTPUT_DIR / "year_progress_report.mp3")
 
-        if args.jetson:
-            # Use on-device VibeVoice TTS
+        if args.local_tts:
+            # Use on-device VibeVoice TTS with energetic male voice
+            print("  Using en-frank_man (energetic voice) for year progress...")
             tts_result = vibevoice_text_to_speech(
                 year_progress_gpt_response,
                 yearprogress_tts_output_path,
-                speaker=args.voice
+                speaker="en-frank_man",  # Energetic male voice
+                excitement_level="very_high"  # Maximum expressiveness
             )
             if tts_result:
                 actual_path = yearprogress_tts_output_path.replace('.mp3', '.wav')
@@ -546,12 +720,14 @@ def main():
 
         news_tts_output_path = str(OUTPUT_DIR / "news_update_report.mp3")
 
-        if args.jetson:
-            # Use on-device VibeVoice TTS
+        if args.local_tts:
+            # Use on-device VibeVoice TTS with professional news voice
+            print("  Using en-mike_man (professional voice) for news briefing...")
             tts_result = vibevoice_text_to_speech(
                 voicebot_script,
                 news_tts_output_path,
-                speaker=args.voice
+                speaker="en-mike_man",  # Professional news anchor voice
+                excitement_level="high"  # Engaging but professional
             )
             if tts_result:
                 actual_path = news_tts_output_path.replace('.mp3', '.wav')
@@ -585,7 +761,7 @@ def main():
     print(f"  View newsletter: firefox {OUTPUT_DIR}/news_newsletter_report.html")
     print(f"  Test mode:       python {__file__} --test")
     print(f"  HTML only:       python {__file__} --html-only")
-    print(f"  Jetson TTS:      python {__file__} --jetson --voice en-davis_man")
+    print(f"  Local TTS:       python {__file__} --local-tts --voice en-davis_man")
     print(f"  List voices:     python {__file__} --list-voices")
 
 

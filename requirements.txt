@@ -32,6 +32,9 @@ selenium             # only for misc_scripts/farnam_scraper.py
 torch                # required by Whisper
 openai-whisper       # Audio transcription
 nvidia-riva-client   # NVIDIA Riva ASR/TTS (includes grpcio-tools)
+pyrubberband         # High-quality time stretching for TTS speed adjustment
+librosa              # Audio processing (fallback for time stretching)
+scipy                # Signal processing
 
 # Tests
 pytest
