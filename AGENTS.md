@@ -1,36 +1,46 @@
 # Repository Guidelines
 
-This guide explains how to work in LLM_QA_Bot, keep changes consistent, and ship updates safely.
-
 ## Project Structure & Module Organization
-- Backend entry points: `gradio_ui_full.py` (main) and `misc_scripts/azure_gradioui.py` (Azure-first layout).
-- Core logic in `helper_functions/` (analyzers, chat, planners, image tools, Memory Palace connectors) and `config/` for runtime settings and prompts.
-- Tests live in `tests/` with shared fixtures in `tests/conftest.py`; see `tests/README.md` for commands and coverage notes.
-- Frontend experiments sit in `frontend/` (Vite + React); assets and reference screenshots live in `screenshots/` and `holybook/`.
+
+- `gradio_ui_full.py`: main FastAPI/Gradio entrypoint (serves `/api/*` and optionally `frontend/dist`).
+- `helper_functions/`: core backend modules (LLM routing, analyzers, web research, TTS, Memory Palace).
+- `misc_scripts/`: one-off tools and experiments (keep changes isolated and well-named).
+- `frontend/`: React + TypeScript + Vite UI (calls backend via `/api`).
+- `tests/`: pytest suite and fixtures (see `tests/README.md`).
+- `config/`: config templates and prompts (`config/config.example.yml`, `config/prompts.yml`).
+- Runtime data is ignored by git: `data/`, `web_search_cache/`, `newsletter_research_data/`, etc.
 
 ## Build, Test, and Development Commands
-- Python setup: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
-- Run the primary UI: `python gradio_ui_full.py`; Azure-focused variant: `python misc_scripts/azure_gradioui.py`.
-- Docker: `docker build -t llmqabot . && docker run -p 7860:7860 --name llmqabot llmqabot`.
-- Frontend: `cd frontend && npm install && npm run dev` (Vite dev server).
-- Tests: `pytest tests -v`; add `--cov=helper_functions --cov-report=term-missing` before opening a PR.
+
+- Backend setup: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+- Run backend (full UI): `python gradio_ui_full.py`
+- Run backend (Azure-focused UI): `python misc_scripts/azure_gradioui.py`
+- Fullstack bootstrap (builds frontend + runs backend): `./start_fullstack.sh`
+- Tests: `pytest tests -v` (use `-m "not slow"` or `-m "not integration"` as needed)
+- Frontend dev: `cd frontend && npm install && npm run dev`
+- Frontend lint/build: `cd frontend && npm run lint && npm run build`
+- Docker: `docker build -t llmqabot . && docker run -p 7860:7860 llmqabot`
 
 ## Coding Style & Naming Conventions
-- Python: follow PEP 8 with 4-space indents, prefer type hints, f-strings, and small, single-purpose functions. Keep module-level configuration in `config/` rather than scattering constants.
-- React/TypeScript: use PascalCase for components, camelCase for variables, and keep hooks near the feature they serve. Run `npm run lint` in `frontend/` before committing UI changes.
-- Naming: functions describe intent (`generate_trip_plan`, `query_memorypalace_stream`); tests mirror the function under test (`test_clearallfiles_with_files`).
+
+- Python: 4-space indentation, keep functions small and I/O boundaries clear (API calls, filesystem, ffmpeg).
+- Prefer explicit names over abbreviations; mirror existing module names in `helper_functions/`.
+- TypeScript/React: follow ESLint guidance (`frontend/eslint.config.js`); keep API shapes centralized in `frontend/src/api.ts`.
+- Tests: name files `tests/test_*.py`, classes `Test*`, functions `test_*` (enforced in `pytest.ini`).
 
 ## Testing Guidelines
-- Add or update tests alongside any behavioral change. Favor unit tests in `tests/` that rely on existing fixtures (mocked OpenAI, Supabase, Firecrawl, NVIDIA services) to stay offline.
-- Name tests `test_<module>.py` and functions `test_<scenario>`. Use parameterization for edge cases instead of duplicating code.
-- Aim to maintain or increase current coverage (~80% overall, targeting 90%+). Run focused commands from `tests/README.md` for coverage or slow-test triage.
+
+- Framework: pytest. Use fixtures in `tests/conftest.py` to mock external services (tests should run offline).
+- When adding features, add/adjust tests in the matching `tests/test_<module>.py`.
+- Coverage: aim for high coverage on core paths; see `tests/README.md` for `--cov` examples.
 
 ## Commit & Pull Request Guidelines
-- Commits use imperative mood and present tense (e.g., `Add supabase streaming guard`, `Refine planner prompts`); keep them scoped and readable.
-- PRs include: summary of changes, steps to reproduce/run, tests executed (`pytest ...`), config keys touched, and screenshots for UI-visible updates.
-- Link related issues or TODOs in the description; note any follow-up work so reviewers can plan sequencing.
+
+- Commits in history are plain-English, imperative summaries (e.g., “Refactor …”, “Add …”, “Update …”); keep the first line ≤72 chars and scope the change.
+- PRs: include a short description, how to run relevant tests, and screenshots for UI changes (`screenshots/`).
+- If a change touches config, update `config/config.example.yml` and document new env vars (never commit real keys).
 
 ## Security & Configuration Tips
-- Never commit secrets; populate `config/config.yml` or `config/.env` locally and redact keys from logs and screenshots.
-- If adding new providers, gate credentials behind env vars and document the required keys in `config/config.example.yml`.
-- Clear or ignore transient artifacts (`web_search_cache`, `UPLOAD_FOLDER`, generated indexes) before committing to keep the repo clean.
+
+- Secrets belong in `config/.env` or `.env` (both git-ignored); keep `config/config.yml` local.
+- Avoid introducing network calls in tests; gate optional integrations behind configuration and provide mocks.
