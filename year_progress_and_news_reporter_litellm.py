@@ -308,6 +308,11 @@ Examples:
         help='Skip generating TTS audio (for testing)'
     )
     parser.add_argument(
+        '--skip-news-audio',
+        action='store_true',
+        help='Skip generating news TTS audio only (still generates year progress audio)'
+    )
+    parser.add_argument(
         '--cache-info',
         action='store_true',
         help='Show cache status and exit'
@@ -718,30 +723,33 @@ def main():
             else:
                 print("⚠ Progress audio: TTS unavailable (requires NVIDIA Riva service)")
 
-        news_tts_output_path = str(OUTPUT_DIR / "news_update_report.mp3")
-
-        if args.local_tts:
-            # Use on-device VibeVoice TTS with professional news voice
-            print("  Using en-mike_man (professional voice) for news briefing...")
-            tts_result = vibevoice_text_to_speech(
-                voicebot_script,
-                news_tts_output_path,
-                speaker="en-mike_man",  # Professional news anchor voice
-                excitement_level="high"  # Engaging but professional
-            )
-            if tts_result:
-                actual_path = news_tts_output_path.replace('.mp3', '.wav')
-                print(f"✓ News audio: {actual_path}")
-            else:
-                print("⚠ News audio: VibeVoice TTS failed")
+        if args.skip_news_audio:
+            print("\n🔊 News audio generation skipped (--skip-news-audio)")
         else:
-            # Use cloud-based NVIDIA Riva TTS
-            model_name = random.choice(model_names)
-            tts_result = text_to_speech_nospeak(voicebot_script, news_tts_output_path, model_name=model_name, speed=1.5)
-            if tts_result:
-                print(f"✓ News audio: {news_tts_output_path}")
+            news_tts_output_path = str(OUTPUT_DIR / "news_update_report.mp3")
+
+            if args.local_tts:
+                # Use on-device VibeVoice TTS with professional news voice
+                print("  Using en-mike_man (professional voice) for news briefing...")
+                tts_result = vibevoice_text_to_speech(
+                    voicebot_script,
+                    news_tts_output_path,
+                    speaker="en-mike_man",  # Professional news anchor voice
+                    excitement_level="high"  # Engaging but professional
+                )
+                if tts_result:
+                    actual_path = news_tts_output_path.replace('.mp3', '.wav')
+                    print(f"✓ News audio: {actual_path}")
+                else:
+                    print("⚠ News audio: VibeVoice TTS failed")
             else:
-                print("⚠ News audio: TTS unavailable (requires NVIDIA Riva service)")
+                # Use cloud-based NVIDIA Riva TTS
+                model_name = random.choice(model_names)
+                tts_result = text_to_speech_nospeak(voicebot_script, news_tts_output_path, model_name=model_name, speed=1.5)
+                if tts_result:
+                    print(f"✓ News audio: {news_tts_output_path}")
+                else:
+                    print("⚠ News audio: TTS unavailable (requires NVIDIA Riva service)")
 
     print("\n" + "=" * 80)
     print("✓ ALL TASKS COMPLETED SUCCESSFULLY!")
