@@ -265,6 +265,9 @@ class UnifiedLLMClient:
             base_url=self.base_url,
             api_key=self.api_key
         )
+        
+        # Log the model being used for debugging
+        print(f"  🤖 LLM Client initialized: provider={provider}, tier={model_tier}, model={self.model}")
 
     def chat_completion(self, messages, temperature=0.7, max_tokens=1024, **kwargs):
         """

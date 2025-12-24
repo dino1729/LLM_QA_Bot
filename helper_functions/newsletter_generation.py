@@ -11,16 +11,47 @@ from helper_functions.newsletter_parsing import (
 logger = logging.getLogger(__name__)
 
 
-def generate_gpt_response(user_message: str, llm_provider: str) -> str:
-    """Generate a speech-friendly response from EDITH."""
-    client = get_client(provider=llm_provider, model_tier="smart")
+def generate_gpt_response(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False) -> str:
+    """Generate a speech-friendly response from EDITH (or persona when using Chatterbox)."""
+    client = get_client(provider=llm_provider, model_tier=model_tier)
 
-    syspromptmessage = """You are EDITH, Tony Stark's AI assistant, speaking to Dinesh through his smart speaker.
+    # When Chatterbox is enabled with a persona, use the persona's identity instead of EDITH
+    if use_chatterbox and voice_persona:
+        persona_name = voice_persona.replace('_', ' ').title()
+        identity_intro = f"You are {persona_name}, speaking to Dinesh through his smart speaker."
+        style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style."
+    else:
+        persona_name = "EDITH"
+        identity_intro = "You are EDITH, Tony Stark's AI assistant, speaking to Dinesh through his smart speaker."
+        if voice_persona:
+            identity_intro += f" You are speaking as {voice_persona.replace('_', ' ').title()}."
+        style_instruction = "Use Tony's confidence and wit, blended with the essence of the target persona if provided."
+    
+    # Chatterbox TTS supports paralinguistic tags for more natural speech
+    chatterbox_instruction = ""
+    if use_chatterbox:
+        chatterbox_instruction = """
+
+PARALINGUISTIC EXPRESSION TAGS (Chatterbox TTS):
+You can use these special tags to add natural vocal expressions:
+- [laugh] - for moments of genuine amusement or joy
+- [chuckle] - for lighter, subtle humor or ironic observations
+- [cough] - for dramatic pauses or clearing throat before important points
+
+Use these sparingly and naturally - maybe 2-4 times total in a response.
+Examples:
+- "And get this [chuckle] the AI actually beat its own creator at chess."
+- "[laugh] I know, it sounds crazy, but the numbers don't lie."
+- "Now [cough] this next part is important..."
+"""
+    
+    syspromptmessage = f"""{identity_intro}
 
 Your response will be converted to speech (TTS), so you MUST:
 - Write in flowing, conversational prose - NO formatting whatsoever
-- Use Tony's confidence and wit
+- {style_instruction}
 - Start with a unique, attention-grabbing greeting
+- Adopt your signature vocabulary, rhythm, and style throughout.
 
 CRITICAL TTS FORMATTING RULES - The text will be read aloud, so NEVER use:
 - Asterisks (*) for emphasis or bullets - TTS reads these as "asterisk"
@@ -38,7 +69,7 @@ Instead of formatting, use natural speech patterns:
 Write ONLY plain text that sounds natural when spoken aloud. No visual formatting of any kind.
 
 Do NOT include meta-commentary like "The user wants..." - just speak directly to Dinesh.
-"""
+{chatterbox_instruction}"""
 
     conversation = [
         {"role": "system", "content": syspromptmessage},
@@ -78,13 +109,13 @@ Do NOT include meta-commentary like "The user wants..." - just speak directly to
     return cleaned
 
 
-def generate_gpt_response_newsletter(user_message: str, llm_provider: str) -> str:
+def generate_gpt_response_newsletter(user_message: str, llm_provider: str, model_tier: str) -> str:
     """
     Generate newsletter-formatted news content with error handling.
     Returns formatted text content or empty string if generation fails.
     """
     try:
-        client = get_client(provider=llm_provider, model_tier="smart")
+        client = get_client(provider=llm_provider, model_tier=model_tier)
 
         syspromptmessage = """You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant designed by Tony Stark. For the newsletter format, follow these rules strictly:
 
@@ -128,7 +159,7 @@ def generate_gpt_response_newsletter(user_message: str, llm_provider: str) -> st
 
 
 def generate_newsletter_sections(
-    news_tech: str, news_financial: str, news_india: str, llm_provider: str
+    news_tech: str, news_financial: str, news_india: str, llm_provider: str, model_tier: str
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Generate newsletter sections as structured data.
@@ -171,7 +202,7 @@ def generate_newsletter_sections(
     (5 points from India news using format above)
     '''
 
-    newsletter_text = generate_gpt_response_newsletter(newsletter_prompt, llm_provider)
+    newsletter_text = generate_gpt_response_newsletter(newsletter_prompt, llm_provider, model_tier)
 
     if not newsletter_text:
         logger.warning("Newsletter generation failed, using fallback sections")
@@ -193,27 +224,58 @@ def generate_newsletter_sections(
     return sections
 
 
-def generate_gpt_response_voicebot(user_message: str, llm_provider: str) -> str:
+def generate_gpt_response_voicebot(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False) -> str:
     """
     Generate voice-friendly news content with error handling.
     Returns formatted content or fallback summary if generation fails.
     """
     try:
-        client = get_client(provider=llm_provider, model_tier="smart")
+        client = get_client(provider=llm_provider, model_tier=model_tier)
 
-        syspromptmessage = """
-You are EDITH, speaking through a voicebot. For the voice format:
+        # When Chatterbox is enabled with a persona, use the persona's identity instead of EDITH
+        if use_chatterbox and voice_persona:
+            persona_name = voice_persona.replace('_', ' ').title()
+            identity_intro = f"You are {persona_name}, delivering a news briefing through a voicebot."
+            style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style throughout."
+        else:
+            identity_intro = "You are EDITH, speaking through a voicebot."
+            if voice_persona:
+                identity_intro += f" You are speaking as {voice_persona.replace('_', ' ').title()}."
+            style_instruction = "If a persona is provided, adopt their signature vocabulary, rhythm, and style (e.g., if Morgan Freeman, use wise, calm, and rhythmic phrasing)."
+        
+        # Chatterbox TTS supports paralinguistic tags for more expressive delivery
+        chatterbox_instruction = ""
+        if use_chatterbox:
+            chatterbox_instruction = """
+
+PARALINGUISTIC EXPRESSION TAGS (Chatterbox TTS):
+You can use these special tags to add natural vocal expressions throughout your delivery:
+- [laugh] - for moments of genuine amusement, surprising news, or ironic situations
+- [chuckle] - for lighter humor, witty observations, or amusing market quirks
+- [cough] - for dramatic pauses before big reveals or clearing throat before important points
+
+Use these naturally throughout the script - aim for 4-6 uses across the full briefing.
+They make the delivery feel more human and engaging. Place them where a real news anchor might naturally react.
+Examples:
+- "And here's the kicker [chuckle] the stock actually went UP after the scandal."
+- "[laugh] Yes, you heard that right - a trillion dollars."
+- "Now [cough] pay attention to this next part..."
+"""
+        
+        syspromptmessage = f"""
+{identity_intro} For the voice format:
     1. Use conversational, natural speaking tone (e.g., "Today in tech news..." or "Moving on to financial markets...")
-    2. Break down complex information into simple, clear sentences
-    3. Use verbal transitions between topics (e.g., "Now, let's look at..." or "In other news...")
-    4. Avoid technical jargon unless necessary
-    5. Keep points brief and easy to follow
-    6. Never mention URLs, citations, or technical markers
-    7. Use natural date formats (e.g., "today" or "yesterday" instead of MM/DD/YYYY)
-    8. Focus on the story and its impact rather than sources
-    9. End each section with a brief overview or key takeaway
-    10. Use listener-friendly phrases like "As you might have heard" or "Interestingly"
-    
+    2. {style_instruction}
+    3. Break down complex information into simple, clear sentences
+    4. Use verbal transitions between topics (e.g., "Now, let's look at..." or "In other news...")
+    5. Avoid technical jargon unless necessary
+    6. Keep points brief and easy to follow
+    7. Never mention URLs, citations, or technical markers
+    8. Use natural date formats (e.g., "today" or "yesterday" instead of MM/DD/YYYY)
+    9. Focus on the story and its impact rather than sources
+    10. End each section with a brief overview or key takeaway
+    11. Use listener-friendly phrases like "As you might have heard" or "Interestingly"
+{chatterbox_instruction}
 CRITICAL: You MUST generate a substantial voice script (at least 500 words). Start speaking immediately.
     """
         conversation = [{"role": "system", "content": syspromptmessage}]

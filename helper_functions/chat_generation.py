@@ -2,7 +2,8 @@
 Chat Generation Module
 Supports multiple LLM providers: LiteLLM, Ollama, Gemini, and Groq
 """
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from groq import Groq
 from config import config
 from helper_functions.llm_client import get_client
@@ -94,33 +95,31 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
 
     # Gemini models
     elif model_name == "GEMINI":
-        genai.configure(api_key=google_api_key)
-        generation_config = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-            "top_p": 0.9,
-            "top_k": 1,
-        }
-        gemini = genai.GenerativeModel(
-            model_name=gemini_model_name,
-            generation_config=generation_config
+        client = genai.Client(api_key=google_api_key)
+        response = client.models.generate_content(
+            model=gemini_model_name,
+            contents=str(conversation).replace("'", '"'),
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                top_p=0.9,
+                top_k=1,
+            )
         )
-        response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
 
     elif model_name == "GEMINI_THINKING":
-        genai.configure(api_key=google_api_key)
-        generation_config = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-            "top_p": 0.9,
-            "top_k": 1,
-        }
-        gemini = genai.GenerativeModel(
-            model_name=gemini_thinkingmodel_name,
-            generation_config=generation_config
+        client = genai.Client(api_key=google_api_key)
+        response = client.models.generate_content(
+            model=gemini_thinkingmodel_name,
+            contents=str(conversation).replace("'", '"'),
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                top_p=0.9,
+                top_k=1,
+            )
         )
-        response = gemini.generate_content(str(conversation).replace("'", '"'))
         return response.text
 
     # Groq

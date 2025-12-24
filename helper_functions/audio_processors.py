@@ -7,6 +7,7 @@ import logging
 import time
 import signal
 from contextlib import contextmanager
+from typing import Any
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
@@ -598,3 +599,98 @@ def translate_and_speak(assistant_reply, detected_audio_language, tts_output_pat
     except Exception as e:
         print("Translation error:", str(e))
         text_to_speech("Sorry, I couldn't answer that.", tts_output_path, "en-US", model_name)
+
+def assemble_podcast_audio(
+    turns_audio: list[np.ndarray], 
+    sample_rate: int, 
+    config: Any
+) -> np.ndarray:
+    """
+    Assembles individual dialogue turns into a single podcast stream.
+    Applies crossfading, normalization, and background music with ducking.
+    """
+    import pyloudnorm as pyln
+    from scipy.io import wavfile
+    import io
+
+    if not turns_audio:
+        return np.zeros(0, dtype=np.float32)
+
+    overlap_ms = config.podcast_overlap_ms
+    overlap_samples = int((overlap_ms / 1000.0) * sample_rate)
+    
+    # 1. Concatenation with Crossfading
+    combined_audio = turns_audio[0]
+    
+    for i in range(1, len(turns_audio)):
+        next_turn = turns_audio[i]
+        
+        if overlap_samples > 0 and len(combined_audio) > overlap_samples and len(next_turn) > overlap_samples:
+            # Simple linear crossfade
+            fade_out = np.linspace(1.0, 0.0, overlap_samples)
+            fade_in = np.linspace(0.0, 1.0, overlap_samples)
+            
+            # Apply fade to the overlapping sections
+            combined_audio[-overlap_samples:] *= fade_out
+            next_turn_fade_in = next_turn[:overlap_samples] * fade_in
+            
+            # Mix the overlapping parts
+            combined_audio[-overlap_samples:] += next_turn_fade_in
+            
+            # Append the rest of the next turn
+            combined_audio = np.concatenate([combined_audio, next_turn[overlap_samples:]])
+        else:
+            combined_audio = np.concatenate([combined_audio, next_turn])
+
+    # 2. Normalization (LUFS)
+    # Convert to float64 for pyloudnorm if needed
+    meter = pyln.Meter(sample_rate)
+    loudness = meter.integrated_loudness(combined_audio)
+    
+    target_loudness = config.podcast_normalization_lufs
+    normalized_audio = pyln.normalize.loudness(combined_audio, loudness, target_loudness)
+
+    # 3. Background Music Integration
+    bg_music_path = config.podcast_background_music_path
+    if bg_music_path and os.path.exists(bg_music_path):
+        try:
+            # Load background music
+            bg_sr, bg_data = wavfile.read(bg_music_path)
+            
+            # Ensure background music is same sample rate and mono
+            if bg_sr != sample_rate:
+                from scipy import signal
+                num_samples = int(len(bg_data) * sample_rate / bg_sr)
+                bg_data = signal.resample(bg_data, num_samples)
+            
+            if len(bg_data.shape) > 1:
+                bg_data = bg_data.mean(axis=1) # Convert to mono
+                
+            # Normalize bg data to float32
+            if bg_data.dtype != np.float32:
+                bg_data = bg_data.astype(np.float32) / np.iinfo(bg_data.dtype).max
+
+            # Loop bg music to match podcast length
+            total_samples = len(normalized_audio)
+            loops = (total_samples // len(bg_data)) + 1
+            bg_looped = np.tile(bg_data, loops)[:total_samples]
+            
+            # Apply ducking (-30dB default)
+            ducking_gain = 10**(config.podcast_ducking_db / 20.0)
+            bg_looped *= ducking_gain
+            
+            # Mix
+            final_podcast = normalized_audio + bg_looped
+            
+            # Re-normalize if clipping
+            max_val = np.abs(final_podcast).max()
+            if max_val > 1.0:
+                final_podcast /= max_val
+                
+            return final_podcast
+            
+        except Exception as e:
+            logger.error(f"Error mixing background music: {e}")
+            return normalized_audio
+            
+    return normalized_audio

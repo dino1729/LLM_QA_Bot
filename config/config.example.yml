@@ -67,6 +67,52 @@ whisper_model_name: "base"
 # Leave empty to use Riva service default voice
 riva_tts_voice_name: ""
 
+# Chatterbox TTS (GPU-accelerated on-device TTS)
+chatterbox_tts_model_type: "turbo"
+chatterbox_tts_cfg_weight: 0.5
+chatterbox_tts_exaggeration: 0.5
+chatterbox_tts_audio_prompt_path: ""
+
+# Newsletter TTS Voice Configuration
+newsletter_progress_voice: ""
+newsletter_news_voice: ""
+
+# Newsletter LLM Tier Configuration
+# Options: "fast", "smart", "strategic" (maps to litellm_fast_llm, litellm_smart_llm, litellm_strategic_llm)
+newsletter_progress_llm_tier: "smart"   # LLM tier for year progress script generation
+newsletter_news_llm_tier: "smart"       # LLM tier for news briefing script generation
+
+# Podcast Configuration
+podcast_enabled: false
+podcast_voice_a: ""
+podcast_voice_a_provider: ""
+podcast_voice_a_model_name: ""
+podcast_voice_b: ""
+podcast_voice_b_provider: ""
+podcast_voice_b_model_name: ""
+podcast_target_duration_seconds: 600
+podcast_max_turns: 20
+podcast_context_window_turns: 6
+podcast_max_sentences_per_turn: 4
+podcast_overlap_ms: 100
+podcast_normalization_lufs: -16.0
+podcast_background_music_path: ""
+podcast_intro_music_path: ""
+podcast_outro_music_path: ""
+podcast_ducking_db: -30
+
+# Azure OpenAI Configuration
+azure_api_key: ""
+azure_api_base: ""
+azure_chatapi_version: ""
+azure_gpt4_deploymentid: ""
+azure_embeddingapi_version: ""
+azure_embedding_deploymentid: ""
+
+# Supabase Configuration
+supabase_service_role_key: ""
+public_supabase_url: ""
+
 # CORS Configuration
 # ALLOWED_ORIGINS: Comma-separated list of allowed origins (e.g., "https://example.com,https://app.example.com")
 # Set to "*" ONLY for development. In production, always specify explicit origins.

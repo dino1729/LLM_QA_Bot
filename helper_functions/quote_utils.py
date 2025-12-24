@@ -6,10 +6,10 @@ from helper_functions.llm_client import get_client
 logger = logging.getLogger(__name__)
 
 
-def generate_quote(random_personality: str, llm_provider: str) -> str:
+def generate_quote(random_personality: str, llm_provider: str, model_tier: str) -> str:
     """Generate an inspirational quote from the given personality."""
     logger.info("Generating quote for personality: %s", random_personality)
-    client = get_client(provider=llm_provider, model_tier="fast")
+    client = get_client(provider=llm_provider, model_tier=model_tier)
 
     conversation = [
         {

@@ -757,7 +757,7 @@ def get_random_topic():
     return topic
 
 
-def get_random_lesson(llm_provider: str) -> Tuple[str, str]:
+def get_random_lesson(llm_provider: str, model_tier: str) -> Tuple[str, str]:
     """
     Generate a comprehensive daily lesson using LLM's knowledge.
     Returns (topic, lesson_text).
@@ -785,16 +785,16 @@ CRITICAL RULES:
 4. Keep each section brief - this is for a newsletter
 5. Do NOT skip any section - all three are required"""
 
-    lesson_learned = generate_lesson_response(prompt, llm_provider)
+    lesson_learned = generate_lesson_response(prompt, llm_provider, model_tier=model_tier)
     return topic, lesson_learned
 
 
-def generate_lesson_response(user_message: str, llm_provider: str) -> str:
+def generate_lesson_response(user_message: str, llm_provider: str, model_tier: str) -> str:
     """
     Generate a comprehensive lesson/learning content with historical context.
     """
     logger.info("Generating lesson for topic: %s...", user_message[:100])
-    client = get_client(provider=llm_provider, model_tier="fast")
+    client = get_client(provider=llm_provider, model_tier=model_tier)
 
     syspromptmessage = """You are EDITH, an expert teacher helping Dinesh master timeless principles of success.
 
