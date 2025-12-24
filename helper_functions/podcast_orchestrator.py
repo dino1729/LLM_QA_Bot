@@ -15,17 +15,26 @@ class PodcastOrchestrator:
     Orchestrates the generation of a two-persona podcast news briefing.
     """
     
-    # Expressive TTS settings for dramatic podcast delivery
-    # Lower cfg_weight + higher exaggeration = more expressive, dramatic speech
-    PODCAST_CFG_WEIGHT = 0.3
-    PODCAST_EXAGGERATION = 0.7
-    
     def __init__(self, config: Any, use_chatterbox: bool = True):
         self.config = config
         self.use_chatterbox = use_chatterbox
         self.engine = DialogueEngine(config, use_chatterbox=use_chatterbox)
         self.output_dir = Path("newsletter_research_data")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # TTS settings from config - for expressive podcast delivery
+        # Lower cfg_weight + higher exaggeration = more expressive, dramatic speech
+        self.podcast_cfg_weight = getattr(config, 'podcast_tts_cfg_weight', None)
+        self.podcast_exaggeration = getattr(config, 'podcast_tts_exaggeration', None)
+        self.default_voice = getattr(config, 'chatterbox_tts_default_voice', None)
+        
+        # Validate required config
+        if self.podcast_cfg_weight is None:
+            raise ValueError("Missing required config: 'podcast_tts_cfg_weight' in config.yml")
+        if self.podcast_exaggeration is None:
+            raise ValueError("Missing required config: 'podcast_tts_exaggeration' in config.yml")
+        if self.default_voice is None:
+            raise ValueError("Missing required config: 'chatterbox_tts_default_voice' in config.yml (used as fallback when character voice is not found)")
 
     def generate_podcast(self, topic: str, context: str, output_filename: str = "news_podcast.wav", pregenerated_turns: List[DialogueTurn] = None) -> tuple[str, List[DialogueTurn]]:
         """
@@ -54,7 +63,7 @@ class PodcastOrchestrator:
             voice_path = Path(f"voices/{turn.character_id}.wav")
             if not voice_path.exists():
                 logger.warning(f"Voice file not found for {turn.character_id}: {voice_path}. Using fallback.")
-                voice_path = Path("voices/morgan_freeman.wav")
+                voice_path = Path(f"voices/{self.default_voice}.wav")
 
             # Use expressive TTS settings for dramatic podcast delivery
             # Lower cfg_weight (~0.3) + higher exaggeration (~0.7) = more expressive speech
@@ -62,8 +71,8 @@ class PodcastOrchestrator:
             audio_data = tts.synthesize(
                 turn.text,
                 audio_prompt_path=str(voice_path),
-                cfg_weight=self.PODCAST_CFG_WEIGHT,
-                exaggeration=self.PODCAST_EXAGGERATION,
+                cfg_weight=self.podcast_cfg_weight,
+                exaggeration=self.podcast_exaggeration,
             )
             
             if audio_data is not None and len(audio_data) > 0:

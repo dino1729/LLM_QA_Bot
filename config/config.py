@@ -35,7 +35,7 @@ cohere_model_name = config_yaml.get("cohere_model_name")
 groq_api_key = config_yaml.get("groq_api_key")
 groq_model_name = config_yaml.get("groq_model_name")
 groq_llama_model_name = config_yaml.get("groq_llama_model_name")
-groq_mixtral_model_name = config_yaml.get("groq_mixtral_model_name")
+groq_qwen_model_name = config_yaml.get("groq_qwen_model_name")
 
 # LiteLLM Configuration - all model names must be specified in config.yml
 litellm_base_url = config_yaml.get("litellm_base_url")
@@ -53,6 +53,23 @@ ollama_smart_llm = config_yaml.get("ollama_smart_llm")
 ollama_strategic_llm = config_yaml.get("ollama_strategic_llm")
 ollama_embedding = config_yaml.get("ollama_embedding")
 ollama_default_model = config_yaml.get("ollama_default_model")
+
+# LLM Tier Configuration - controls fallback behavior for tier selection
+llm_tiers_config = config_yaml.get("llm_tiers", {})
+default_llm_tier = llm_tiers_config.get("default_tier", "smart")
+default_analyzers_tier = llm_tiers_config.get("default_analyzers_tier", "fast")
+default_analyzers_provider = llm_tiers_config.get("default_analyzers_provider", "litellm")
+default_embeddings_tier = llm_tiers_config.get("default_embeddings_tier", "smart")
+default_internet_chat_provider = llm_tiers_config.get("default_internet_chat_provider", "litellm")
+default_internet_chat_tier = llm_tiers_config.get("default_internet_chat_tier", "smart")
+default_parse_fallback_tier = llm_tiers_config.get("default_parse_fallback_tier", "fast")
+default_parse_fallback_provider = llm_tiers_config.get("default_parse_fallback_provider", "litellm")
+
+# News Curation Pipeline Configuration - controls which tier is used at each stage
+news_curation_config = config_yaml.get("news_curation", {})
+news_research_tier = news_curation_config.get("research_tier", "fast")
+news_synthesis_tier = news_curation_config.get("synthesis_tier", "smart")
+news_enhancement_tier = news_curation_config.get("enhancement_tier", "strategic")
 
 # Retriever Configuration
 retriever = config_yaml.get("retriever")
@@ -80,10 +97,13 @@ whisper_model_name = config_yaml.get("whisper_model_name")
 riva_tts_voice_name = config_yaml.get("riva_tts_voice_name", "")
 
 # Chatterbox TTS Configuration (GPU-accelerated on-device TTS)
-chatterbox_tts_model_type = config_yaml.get("chatterbox_tts_model_type")
-chatterbox_tts_cfg_weight = config_yaml.get("chatterbox_tts_cfg_weight", 0.5)
-chatterbox_tts_exaggeration = config_yaml.get("chatterbox_tts_exaggeration", 0.5)
+# All settings are required when using Chatterbox TTS - no hardcoded defaults
+chatterbox_tts_model_type = config_yaml.get("chatterbox_tts_model_type")  # Required: 'turbo', 'standard', or 'multilingual'
+chatterbox_tts_cfg_weight = config_yaml.get("chatterbox_tts_cfg_weight")  # Required: 0.0-1.0 (lower = faster speech)
+chatterbox_tts_exaggeration = config_yaml.get("chatterbox_tts_exaggeration")  # Required: 0.0-1.0 (higher = more expressive)
 chatterbox_tts_audio_prompt_path = config_yaml.get("chatterbox_tts_audio_prompt_path")
+chatterbox_tts_device = config_yaml.get("chatterbox_tts_device")  # Required: 'cuda' or 'cpu'
+chatterbox_tts_default_voice = config_yaml.get("chatterbox_tts_default_voice")  # Required: fallback voice name
 
 # Newsletter TTS Voice Configuration
 newsletter_progress_voice = config_yaml.get("newsletter_progress_voice")
@@ -112,6 +132,9 @@ podcast_background_music_path = config_yaml.get("podcast_background_music_path")
 podcast_intro_music_path = config_yaml.get("podcast_intro_music_path")
 podcast_outro_music_path = config_yaml.get("podcast_outro_music_path")
 podcast_ducking_db = config_yaml.get("podcast_ducking_db", -30)
+podcast_tts_cfg_weight = config_yaml.get("podcast_tts_cfg_weight")  # Required for podcast: 0.0-1.0
+podcast_tts_exaggeration = config_yaml.get("podcast_tts_exaggeration")  # Required for podcast: 0.0-1.0
+podcast_speech_wpm = config_yaml.get("podcast_speech_wpm")  # Required for podcast: words per minute for duration estimation
 
 # Azure Configuration
 azure_api_key = config_yaml.get("azure_api_key")
@@ -163,14 +186,26 @@ VECTOR_FOLDER = config_yaml['paths']['VECTOR_FOLDER']
 MEMORY_PALACE_FOLDER = config_yaml['paths'].get('MEMORY_PALACE_FOLDER')
 
 # Settings
-temperature = config_yaml['settings']['temperature']
-max_tokens = config_yaml['settings']['max_tokens']
-model_name = config_yaml['settings']['model_name']
-num_output = config_yaml['settings']['num_output']
-max_chunk_overlap_ratio = config_yaml['settings']['max_chunk_overlap_ratio']
-max_input_size = config_yaml['settings']['max_input_size']
-context_window = config_yaml['settings']['context_window']
-default_chatbot_model = config_yaml['settings'].get('default_chatbot_model')
+settings_config = config_yaml.get('settings', {})
+temperature = settings_config.get('temperature', 0.7)
+max_tokens = settings_config.get('max_tokens', 4096)
+model_name = settings_config.get('model_name', 'LITELLM_SMART')
+num_output = settings_config.get('num_output', 512)
+max_chunk_overlap_ratio = settings_config.get('max_chunk_overlap_ratio', 0.1)
+max_input_size = settings_config.get('max_input_size', 4096)
+context_window = settings_config.get('context_window', 4096)
+llm_context_window = settings_config.get('llm_context_window', 128000)
+embed_batch_size = settings_config.get('embed_batch_size', 10)
+similarity_top_k = settings_config.get('similarity_top_k', 10)
+default_chatbot_model = settings_config.get('default_chatbot_model')
+
+# News Researcher Performance Settings
+news_researcher_config = config_yaml.get('news_researcher', {})
+news_scrape_timeout = news_researcher_config.get('scrape_timeout', 15)
+news_connect_timeout = news_researcher_config.get('connect_timeout', 10)
+news_search_timeout = news_researcher_config.get('search_timeout', 90)
+news_max_retries = news_researcher_config.get('max_retries', 1)
+news_max_concurrent_scrapes = news_researcher_config.get('max_concurrent_scrapes', 5)
 
 # Load prompts.yml config
 prompts_file_path = os.path.join(config_dir, "prompts.yml")

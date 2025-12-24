@@ -54,8 +54,10 @@ class DialogueEngine:
         self.character_b = config.podcast_voice_b
         self.turn_order = [self.character_a, self.character_b]
         
-        # Heuristic for duration estimation: 150 words per minute
-        self.wpm = 150
+        # Heuristic for duration estimation (configurable via podcast_speech_wpm)
+        self.wpm = getattr(config, 'podcast_speech_wpm', None)
+        if self.wpm is None:
+            raise ValueError("Missing required config: 'podcast_speech_wpm' in config.yml (words per minute for speech duration estimation)")
         self.words_per_second = self.wpm / 60.0
         
     def run_conversation(self, topic: str, context: str) -> List[DialogueTurn]:

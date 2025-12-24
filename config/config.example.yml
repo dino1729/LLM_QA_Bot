@@ -11,7 +11,7 @@ cohere_model_name: ""
 groq_api_key: ""
 groq_model_name: ""
 groq_llama_model_name: ""
-groq_mixtral_model_name: ""
+groq_qwen_model_name: ""
 
 # weather agent
 openweather_api_key: ""
@@ -40,10 +40,37 @@ ollama_strategic_llm: ""
 ollama_embedding: ""
 ollama_default_model: ""
 
+# Default LLM tier settings (tiers: "fast", "smart", "strategic")
+# These control fallback behavior when specific tiers are not specified
+# "fast" - Quick operations like keyword extraction, cheaper models
+# "smart" - Standard reasoning, balanced cost/quality (recommended default)
+# "strategic" - Complex reasoning, premium models for final output
+llm_tiers:
+  default_tier: ""                    # Fallback tier when unknown tier is specified
+  default_analyzers_tier: ""           # Tier for document analysis/indexing operations
+  default_analyzers_provider: ""    # Provider for document analysis (litellm or ollama)
+  default_embeddings_tier: ""         # Tier for embedding generation (e.g., Gita chatbot)
+  default_internet_chat_provider: ""  # Provider for internet-connected chat
+  default_internet_chat_tier: ""      # Tier for internet-connected chat
+  default_parse_fallback_tier: ""      # Tier when model name parsing fails
+  default_parse_fallback_provider: ""  # Provider when model name parsing fails
+
+# News Curation Multi-Model Pipeline Configuration
+# The news researcher uses a 3-stage pipeline with different LLM tiers for optimal cost/quality balance
+# 
+# Use Cases:
+#   Development (Fast & Cheap): Set all to "fast"
+#   Balanced Production: research=fast, synthesis=smart, enhancement=strategic
+#   Premium Quality: research=smart, synthesis=strategic, enhancement=strategic
+news_curation:
+  research_tier: ""       # Stage 1: Keyword extraction, source ranking, headline analysis
+  synthesis_tier: ""     # Stage 2: Deep reasoning, content synthesis, story connections
+  enhancement_tier: ""  # Stage 3: Editorial polish, fact-checking, coherence improvement
+
 # Retriever and Firecrawl
 retriever: ""
 firecrawl_server_url: ""
-firecrawl_default_provider: "litellm"
+firecrawl_default_provider: ""
 firecrawl_default_model_name: ""
 
 # Tavily (optional - for GPT Researcher web search)
@@ -61,45 +88,51 @@ openai_image_model: ""
 openai_image_enhancement_model: ""
 
 # Whisper (for audio transcription)
-whisper_model_name: "base"
+whisper_model_name: ""
 
 # Riva TTS (for text-to-speech)
 # Leave empty to use Riva service default voice
 riva_tts_voice_name: ""
 
 # Chatterbox TTS (GPU-accelerated on-device TTS)
-chatterbox_tts_model_type: "turbo"
-chatterbox_tts_cfg_weight: 0.5
-chatterbox_tts_exaggeration: 0.5
-chatterbox_tts_audio_prompt_path: ""
+# All settings below are REQUIRED when using Chatterbox TTS - no hardcoded defaults
+chatterbox_tts_model_type: ""          # REQUIRED: 'turbo', 'standard', or 'multilingual'
+chatterbox_tts_cfg_weight: 0.5              # REQUIRED: 0.0-1.0 (lower = faster speech)
+chatterbox_tts_exaggeration: 0.5            # REQUIRED: 0.0-1.0 (higher = more expressive)
+chatterbox_tts_audio_prompt_path: ""        # Path to reference audio for turbo model
+chatterbox_tts_device: ""               # REQUIRED: 'cuda' for GPU, 'cpu' for CPU-only
+chatterbox_tts_default_voice: ""            # REQUIRED: fallback voice name (e.g., 'morgan_freeman')
 
 # Newsletter TTS Voice Configuration
-newsletter_progress_voice: ""
-newsletter_news_voice: ""
+newsletter_progress_voice: ""       # REQUIRED: Voice for year progress script (e.g., "jensen_huang")
+newsletter_news_voice: ""           # REQUIRED: Voice for news briefing script (e.g., "morgan_freeman")
 
 # Newsletter LLM Tier Configuration
 # Options: "fast", "smart", "strategic" (maps to litellm_fast_llm, litellm_smart_llm, litellm_strategic_llm)
-newsletter_progress_llm_tier: "smart"   # LLM tier for year progress script generation
-newsletter_news_llm_tier: "smart"       # LLM tier for news briefing script generation
+newsletter_progress_llm_tier: ""   # LLM tier for year progress script generation
+newsletter_news_llm_tier: ""       # LLM tier for news briefing script generation
 
 # Podcast Configuration
 podcast_enabled: false
-podcast_voice_a: ""
-podcast_voice_a_provider: ""
-podcast_voice_a_model_name: ""
-podcast_voice_b: ""
-podcast_voice_b_provider: ""
-podcast_voice_b_model_name: ""
+podcast_voice_a: ""                 # Voice persona for speaker A (e.g., "rick_sanchez")
+podcast_voice_a_provider: "" # LLM provider for speaker A
+podcast_voice_a_model_name: ""      # Model for speaker A
+podcast_voice_b: ""                 # Voice persona for speaker B (e.g., "morty_smith")
+podcast_voice_b_provider: "" # LLM provider for speaker B
+podcast_voice_b_model_name: ""      # Model for speaker B
 podcast_target_duration_seconds: 600
 podcast_max_turns: 20
 podcast_context_window_turns: 6
 podcast_max_sentences_per_turn: 4
 podcast_overlap_ms: 100
 podcast_normalization_lufs: -16.0
-podcast_background_music_path: ""
-podcast_intro_music_path: ""
-podcast_outro_music_path: ""
+podcast_background_music_path: ""   # Optional: path to background music for podcast
+podcast_intro_music_path: ""        # Optional: path to intro jingle
+podcast_outro_music_path: ""        # Optional: path to outro jingle
 podcast_ducking_db: -30
+podcast_tts_cfg_weight: 0.3         # REQUIRED for podcast: cfg_weight for expressive delivery (0.0-1.0)
+podcast_tts_exaggeration: 0.7       # REQUIRED for podcast: exaggeration level (0.0-1.0)
+podcast_speech_wpm: 150             # REQUIRED for podcast: words per minute for duration estimation
 
 # Azure OpenAI Configuration
 azure_api_key: ""
@@ -121,39 +154,52 @@ public_supabase_url: ""
 cors:
   allowed_origins: ""
   allow_origin_regex: ""
-  environment: "production"
+  environment: ""
 
 # Default model selectors for API endpoints (used as Pydantic defaults)
 # These are selector tokens like "LITELLM", "LITELLM_SMART", "OLLAMA_FAST", etc.
 defaults:
-  analyze_model_name: "LITELLM"
-  chat_model_name: "LITELLM_SMART"
-  internet_chat_model_name: "LITELLM_SMART"
-  trip_model_name: "LITELLM_FAST"
-  cravings_model_name: "LITELLM_FAST"
-  memory_model_name: "LITELLM"
-  image_provider: "nvidia"
+  analyze_model_name: ""
+  chat_model_name: ""
+  internet_chat_model_name: ""
+  trip_model_name: ""
+  cravings_model_name: ""
+  memory_model_name: ""
+  image_provider: ""
 
 # Research agent configuration
 research_agent_tool_calling_hint: "Ensure you are using a model that supports tool calling in config.yml"
 
 paths:
-  UPLOAD_FOLDER: ""
-  WEB_SEARCH_FOLDER: ""
-  SUMMARY_FOLDER: ""
-  VECTOR_FOLDER: ""
-  MEMORY_PALACE_FOLDER: "./memory_palace"
+  UPLOAD_FOLDER: "./data"                     # Base folder for uploaded files
+  WEB_SEARCH_FOLDER: "./web_search_data"      # Folder for web search results
+  BING_FOLDER: "./bing_data"                  # Folder for Bing search data
+  SUMMARY_FOLDER: "./data/summary_index"      # Folder for summary indices
+  VECTOR_FOLDER: "./data/vector_index"        # Folder for vector indices
+  MEMORY_PALACE_FOLDER: "./memory_palace"     # Folder for Memory Palace data
 
 settings:
-  temperature: 0.0
-  max_tokens: 0
-  model_name: ""
-  num_output: 0
-  max_chunk_overlap_ratio: 0.0
-  max_input_size: 0
-  context_window: 0
-  summary_token_limit: 0
-  total_words: 0
-  curate_sources: false
-  language: ""
-  default_chatbot_model: ""
+  temperature: 0.7                    # Default LLM temperature (0.0-2.0)
+  max_tokens: 4096                    # Maximum tokens for LLM responses
+  model_name: ""         # Default model selector token
+  num_output: 512                     # Number of output tokens for LlamaIndex
+  max_chunk_overlap_ratio: 0.1        # Overlap ratio for text chunking
+  max_input_size: 4096                # Maximum input size for text processing
+  context_window: 4096                # Context window for document processing
+  llm_context_window: 128000          # Context window for LLM client (LlamaIndex wrapper)
+  embed_batch_size: 10                # Batch size for embedding operations
+  similarity_top_k: 10                # Default number of similar results for vector search
+  summary_token_limit: 1000           # Token limit for summaries
+  total_words: 500                    # Target word count for generated content
+  curate_sources: false               # Whether to curate/filter sources
+  language: "en"                      # Default language code
+  default_chatbot_model: ""  # Default model for chatbot interface
+
+# News Researcher Performance Settings
+# These control async scraping behavior and timeouts
+news_researcher:
+  scrape_timeout: 15                  # Timeout for individual URL scrapes (seconds)
+  connect_timeout: 10                 # Connection establishment timeout (seconds)
+  search_timeout: 90                  # Search API timeout (seconds)
+  max_retries: 1                      # Maximum retries for failed requests
+  max_concurrent_scrapes: 5           # Maximum parallel scraping connections

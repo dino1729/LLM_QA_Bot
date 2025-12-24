@@ -2,6 +2,13 @@
 """
 Test script for dynamic model listing functionality
 Tests the new list_available_models function with LiteLLM and Ollama
+
+This is a manual integration test script (not a pytest test) that verifies
+connectivity to LiteLLM and Ollama services. The provider names "litellm"
+and "ollama" are intentionally hardcoded as these are the supported providers
+in the llm_client module.
+
+Usage: python tests/test_model_listing.py
 """
 
 from helper_functions.llm_client import list_available_models, get_client

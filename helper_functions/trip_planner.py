@@ -2,21 +2,25 @@
 Trip Planner
 Uses unified LLM client via chat_generation
 """
+from config import config
 from helper_functions.chat_generation import generate_chat
 
 
-def generate_trip_plan(city, days, model_name="LITELLM_SMART"):
+def generate_trip_plan(city, days, model_name=None):
     """
     Generate a trip plan for a city
 
     Args:
         city: City name
         days: Number of days
-        model_name: Model to use (default: LITELLM_SMART)
+        model_name: Model to use (default: from config.default_trip_model_name)
 
     Returns:
         Trip plan string
     """
+    # Use config default if no model specified
+    if model_name is None:
+        model_name = config.default_trip_model_name
     # Check if days input is a number
     try:
         days = int(days)

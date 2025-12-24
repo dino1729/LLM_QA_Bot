@@ -20,10 +20,12 @@ class CustomOpenAIEmbedding(BaseEmbedding):
     Supports asymmetric embedding models (like NVIDIA NIM) that require input_type parameter.
     """
     
-    def __init__(self, model_name: str, api_key: str, api_base: str, embed_batch_size: int = 10):
+    def __init__(self, model_name: str, api_key: str, api_base: str, embed_batch_size: int = None):
+        # Use config value if not specified
+        actual_batch_size = embed_batch_size if embed_batch_size is not None else getattr(config, 'embed_batch_size', 10)
         super().__init__(
             model_name=model_name,
-            embed_batch_size=embed_batch_size
+            embed_batch_size=actual_batch_size
         )
         # Store client creation parameters instead of client itself to avoid Pydantic validation
         self._api_key = api_key
@@ -85,13 +87,16 @@ class CustomOpenAILLM(CustomLLM):
     """
     
     def __init__(self, model_name: str, api_key: str, api_base: str, 
-                 temperature: float = 0.7, max_tokens: int = 1024):
+                 temperature: float = 0.7, max_tokens: int = 1024,
+                 context_window: int = None):
         super().__init__()
         self._model_name = model_name
         self._api_key = api_key
         self._api_base = api_base
         self._temperature = temperature
         self._max_tokens = max_tokens
+        # Use config value if not specified, fallback to 128000 for large context models
+        self._context_window = context_window if context_window is not None else getattr(config, 'llm_context_window', 128000)
         self._client = None
     
     def _get_client(self):
@@ -104,7 +109,7 @@ class CustomOpenAILLM(CustomLLM):
     def metadata(self) -> LLMMetadata:
         """LLM metadata."""
         return LLMMetadata(
-            context_window=128000,  # Large context window
+            context_window=self._context_window,
             num_output=self._max_tokens,
             model_name=self._model_name,
         )
@@ -239,7 +244,14 @@ class UnifiedLLMClient:
             elif model_tier == "strategic":
                 self.model = config.litellm_strategic_llm
             else:
-                self.model = config.litellm_smart_llm  # default to smart
+                # Use configured default tier instead of hardcoded "smart"
+                default_tier = config.default_llm_tier
+                if default_tier == "fast":
+                    self.model = config.litellm_fast_llm
+                elif default_tier == "strategic":
+                    self.model = config.litellm_strategic_llm
+                else:
+                    self.model = config.litellm_smart_llm
 
         elif provider == "ollama":
             self.base_url = config.ollama_base_url
@@ -256,7 +268,14 @@ class UnifiedLLMClient:
             elif model_tier == "strategic":
                 self.model = config.ollama_strategic_llm
             else:
-                self.model = config.ollama_smart_llm  # default to smart
+                # Use configured default tier instead of hardcoded "smart"
+                default_tier = config.default_llm_tier
+                if default_tier == "fast":
+                    self.model = config.ollama_fast_llm
+                elif default_tier == "strategic":
+                    self.model = config.ollama_strategic_llm
+                else:
+                    self.model = config.ollama_smart_llm
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -366,11 +385,11 @@ class UnifiedLLMClient:
         
         # Use our custom embedding class that bypasses LlamaIndex's model validation
         # This allows any model available on LiteLLM/Ollama to work
+        # embed_batch_size will use config.embed_batch_size default
         return CustomOpenAIEmbedding(
             model_name=model_name,
             api_key=self.api_key,
-            api_base=self.base_url,
-            embed_batch_size=10
+            api_base=self.base_url
         )
 
 def get_client(provider="litellm", model_tier="smart", model_name=None):

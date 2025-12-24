@@ -12,7 +12,8 @@ pinecone_api_key = config.pinecone_api_key if hasattr(config, 'pinecone_api_key'
 pinecone_environment = config.pinecone_environment if hasattr(config, 'pinecone_environment') else ""
 
 # Initialize unified client for embeddings
-embedding_client = get_client(provider="litellm", model_tier="smart")
+# Uses configured default_embeddings_tier from config.yml
+embedding_client = get_client(provider="litellm", model_tier=config.default_embeddings_tier)
 
 
 def extract_context_frompinecone(query):

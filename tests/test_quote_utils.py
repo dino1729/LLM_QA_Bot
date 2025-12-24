@@ -1,9 +1,14 @@
 """
 Tests for quote_utils.py - Quote generation functionality
+
+Note: These tests intentionally use specific provider values ("litellm", "ollama")
+to test the provider-specific code paths. This is correct behavior for unit tests.
+For integration tests that need actual config values, use fixtures from conftest.py.
 """
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from helper_functions import quote_utils
+from config import config
 
 
 class TestGenerateQuote:

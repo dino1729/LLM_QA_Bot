@@ -3,6 +3,13 @@ Tests for Chatterbox TTS integration.
 
 These tests verify the Chatterbox TTS module functionality including
 initialization, synthesis, and voice cloning capabilities.
+
+Note: These tests intentionally use specific model types ("turbo", "multilingual")
+and devices ("cuda", "cpu") to test model-specific behavior. This is correct
+for unit tests - we're testing the ChatterboxTTS class handles each model type
+correctly, not that the config values are used.
+
+For integration tests that verify config loading, use fixtures from conftest.py.
 """
 
 import pytest
@@ -15,6 +22,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helper_functions.tts_chatterbox import ChatterboxTTS, get_chatterbox_tts
+from config import config
 
 
 class TestChatterboxTTSInitialization:
@@ -157,14 +165,17 @@ class TestChatterboxTTSCaching:
 
     @patch('helper_functions.tts_chatterbox.ChatterboxTTS')
     def test_get_chatterbox_tts_caches_instance(self, mock_chatterbox_class):
-        """Test that get_chatterbox_tts caches instances."""
+        """Test that get_chatterbox_tts caches instances.
+        
+        Uses explicit model_type/device to test caching logic.
+        """
         # Clear cache first
         import helper_functions.tts_chatterbox as tts_module
         tts_module._chatterbox_tts_cache.clear()
 
-        # Get instance twice
-        tts1 = get_chatterbox_tts(model_type="turbo")
-        tts2 = get_chatterbox_tts(model_type="turbo")
+        # Get instance twice with explicit params (testing cache key logic)
+        tts1 = get_chatterbox_tts(model_type="turbo", device="cpu")
+        tts2 = get_chatterbox_tts(model_type="turbo", device="cpu")
 
         # Should only create one instance
         assert mock_chatterbox_class.call_count == 1
@@ -172,17 +183,43 @@ class TestChatterboxTTSCaching:
 
     @patch('helper_functions.tts_chatterbox.ChatterboxTTS')
     def test_get_chatterbox_tts_different_models(self, mock_chatterbox_class):
-        """Test that different model types create separate cache entries."""
+        """Test that different model types create separate cache entries.
+        
+        Uses explicit model types to verify cache key includes model_type.
+        """
         # Clear cache first
         import helper_functions.tts_chatterbox as tts_module
         tts_module._chatterbox_tts_cache.clear()
 
-        # Get different model types
-        tts1 = get_chatterbox_tts(model_type="turbo")
-        tts2 = get_chatterbox_tts(model_type="multilingual")
+        # Get different model types (testing different cache keys)
+        tts1 = get_chatterbox_tts(model_type="turbo", device="cpu")
+        tts2 = get_chatterbox_tts(model_type="multilingual", device="cpu")
 
         # Should create two instances
         assert mock_chatterbox_class.call_count == 2
+    
+    @patch('helper_functions.tts_chatterbox.ChatterboxTTS')
+    def test_get_chatterbox_tts_uses_config_defaults(self, mock_chatterbox_class):
+        """Test that get_chatterbox_tts uses config values when no params provided.
+        
+        This test verifies the integration with config.yml.
+        """
+        # Clear cache first
+        import helper_functions.tts_chatterbox as tts_module
+        tts_module._chatterbox_tts_cache.clear()
+
+        # Skip test if config values not set
+        if not config.chatterbox_tts_model_type or not config.chatterbox_tts_device:
+            pytest.skip("Requires chatterbox_tts_model_type and chatterbox_tts_device in config.yml")
+
+        # Get instance without params - should use config values
+        tts = get_chatterbox_tts()
+
+        # Verify ChatterboxTTS was called with config values
+        mock_chatterbox_class.assert_called_once_with(
+            model_type=config.chatterbox_tts_model_type,
+            device=config.chatterbox_tts_device
+        )
 
 
 class TestChatterboxTTSMultilingual:

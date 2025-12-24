@@ -11,6 +11,101 @@ from unittest.mock import Mock, MagicMock, patch
 # Add the parent directory to sys.path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from config import config
+
+
+# ============================================================================
+# Test Configuration Fixtures
+# These fixtures provide access to config values for tests
+# Tests should use these instead of hardcoding values like "litellm", "morgan_freeman", etc.
+# ============================================================================
+
+@pytest.fixture
+def test_llm_provider():
+    """Get the default LLM provider from config (e.g., 'litellm' or 'ollama')"""
+    return getattr(config, 'default_analyzers_provider', None) or 'litellm'
+
+
+@pytest.fixture
+def test_llm_tier():
+    """Get the default LLM tier from config (e.g., 'fast', 'smart', 'strategic')"""
+    return getattr(config, 'default_llm_tier', None) or 'smart'
+
+
+@pytest.fixture
+def test_tts_model_type():
+    """Get the Chatterbox TTS model type from config (e.g., 'turbo', 'standard', 'multilingual')"""
+    return getattr(config, 'chatterbox_tts_model_type', None) or 'turbo'
+
+
+@pytest.fixture
+def test_tts_device():
+    """Get the Chatterbox TTS device from config (e.g., 'cuda', 'cpu')"""
+    return getattr(config, 'chatterbox_tts_device', None) or 'cpu'
+
+
+@pytest.fixture
+def test_default_voice():
+    """Get the default voice from config"""
+    return getattr(config, 'chatterbox_tts_default_voice', None)
+
+
+@pytest.fixture
+def test_progress_voice():
+    """Get the newsletter progress voice from config"""
+    return getattr(config, 'newsletter_progress_voice', None)
+
+
+@pytest.fixture
+def test_news_voice():
+    """Get the newsletter news voice from config"""
+    return getattr(config, 'newsletter_news_voice', None)
+
+
+@pytest.fixture
+def test_podcast_voice_a():
+    """Get the podcast voice A from config"""
+    return getattr(config, 'podcast_voice_a', None)
+
+
+@pytest.fixture
+def test_podcast_voice_b():
+    """Get the podcast voice B from config"""
+    return getattr(config, 'podcast_voice_b', None)
+
+
+@pytest.fixture
+def test_podcast_provider():
+    """Get the podcast provider from config"""
+    return getattr(config, 'podcast_voice_a_provider', None) or 'litellm'
+
+
+@pytest.fixture
+def test_podcast_model():
+    """Get the podcast model name from config"""
+    return getattr(config, 'podcast_voice_a_model_name', None)
+
+
+# ============================================================================
+# Notes on Hardcoded Values in Tests
+# ============================================================================
+# Some tests intentionally use hardcoded values like "litellm", "turbo", etc.
+# These are NOT bugs - they're testing specific code paths:
+#
+# 1. INTENTIONAL HARDCODED VALUES (keep as-is):
+#    - "litellm", "ollama" in provider tests - testing provider-specific logic
+#    - "turbo", "multilingual" in TTS tests - testing model-specific behavior
+#    - "LITELLM_FAST", "OLLAMA_SMART" - testing tier routing
+#    - Model name patterns like "LITELLM:model-name" - testing parsing
+#
+# 2. USE CONFIG FIXTURES for:
+#    - Integration tests that need real config values
+#    - Tests that verify config is being used correctly
+#    - Tests for features that have configurable voices/models
+#
+# When adding new tests, use the fixtures above when testing config-dependent
+# behavior, and use explicit values when testing specific code paths.
+
 
 @pytest.fixture
 def temp_upload_folder():

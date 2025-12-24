@@ -37,12 +37,12 @@ logger = logging.getLogger(__name__)
 # Configuration
 firecrawl_server_url = config.firecrawl_server_url
 
-# Async performance tuning constants (aggressive timeouts for speed)
-SCRAPE_TIMEOUT = 15  # Reduced from 30s - aggressive timeout
-CONNECT_TIMEOUT = 10  # Connection establishment timeout
-SEARCH_TIMEOUT = 90   # Search API timeout (searches take longer)
-MAX_RETRIES = 1       # Reduced from 2 - fail fast
-MAX_CONCURRENT_SCRAPES = 5  # Semaphore limit for parallel scraping
+# Async performance tuning constants (configurable via config.yml news_researcher section)
+SCRAPE_TIMEOUT = getattr(config, 'news_scrape_timeout', 15)  # Timeout for individual URL scrapes
+CONNECT_TIMEOUT = getattr(config, 'news_connect_timeout', 10)  # Connection establishment timeout
+SEARCH_TIMEOUT = getattr(config, 'news_search_timeout', 90)   # Search API timeout (searches take longer)
+MAX_RETRIES = getattr(config, 'news_max_retries', 1)       # Maximum retries for failed requests
+MAX_CONCURRENT_SCRAPES = getattr(config, 'news_max_concurrent_scrapes', 5)  # Semaphore limit for parallel scraping
 
 # Category-specific query sets for diverse topic coverage
 CATEGORY_QUERIES = {
@@ -446,7 +446,8 @@ def extract_keywords_from_headlines(headlines: List[Dict[str, str]], provider: s
         return []
     
     try:
-        client = get_client(provider=provider, model_tier="fast")
+        # Stage 1: Research tier - keyword extraction from headlines
+        client = get_client(provider=provider, model_tier=config.news_research_tier)
         
         headlines_text = "\n".join([f"- {h['title']}" for h in headlines])
         
@@ -1024,7 +1025,8 @@ def analyze_source_relevance(sources: List[Dict], category: str, provider: str =
         Filtered and ranked sources
     """
     try:
-        fast_client = get_client(provider=provider, model_tier="fast")
+        # Stage 1: Research tier - source ranking and relevance analysis
+        research_client = get_client(provider=provider, model_tier=config.news_research_tier)
         
         # Create source summary for analysis
         sources_text = ""
@@ -1042,7 +1044,7 @@ Sources:
 
 Relevance scores (comma-separated, e.g., "9,7,8,6,9"):"""
         
-        response = fast_client.chat_completion(
+        response = research_client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=100
@@ -1084,13 +1086,13 @@ def synthesize_news_report(sources: List[Dict], category: str, provider: str = "
         Comprehensive news summary as markdown
     """
     try:
-        # Step 1: Use fast model to rank sources by relevance
-        logger.info("Step 1: Ranking sources with fast model...")
+        # Step 1: Research tier - rank sources by relevance
+        logger.info(f"Step 1: Ranking sources with {config.news_research_tier} model...")
         sources = analyze_source_relevance(sources, category, provider)
         
-        # Step 2: Use smart model for initial synthesis
-        logger.info("Step 2: Synthesizing news with smart model...")
-        smart_client = get_client(provider=provider, model_tier="smart")
+        # Step 2: Synthesis tier - deep reasoning and content synthesis
+        logger.info(f"Step 2: Synthesizing news with {config.news_synthesis_tier} model...")
+        synthesis_client = get_client(provider=provider, model_tier=config.news_synthesis_tier)
         
         # Prepare context
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1170,15 +1172,15 @@ Think deeply about topic clustering and diversity while maintaining today's date
 
 Write a professional news summary with explicit date references, condensed duplicate topics, and diverse coverage:"""
         
-        initial_draft = smart_client.chat_completion(
+        initial_draft = synthesis_client.chat_completion(
             messages=[{"role": "user", "content": synthesis_prompt}],
             temperature=0.3,
             max_tokens=3000
         )
         
-        # Step 3: Use strategic model for final polish
-        logger.info("Step 3: Enhancing report with strategic model...")
-        strategic_client = get_client(provider=provider, model_tier="strategic")
+        # Step 3: Enhancement tier - editorial polish and fact-checking
+        logger.info(f"Step 3: Enhancing report with {config.news_enhancement_tier} model...")
+        enhancement_client = get_client(provider=provider, model_tier=config.news_enhancement_tier)
         
         editorial_prompt = f"""You are an expert editor reviewing a news summary. Enhance this draft to make it publication-ready.
 
@@ -1231,7 +1233,7 @@ CRITICAL: The final version MUST meet all checklist criteria. If the draft fails
 
 Return the polished, publication-ready version with explicit dates and diverse, condensed coverage:"""
         
-        final_report = strategic_client.chat_completion(
+        final_report = enhancement_client.chat_completion(
             messages=[{"role": "user", "content": editorial_prompt}],
             temperature=0.2,
             max_tokens=3000

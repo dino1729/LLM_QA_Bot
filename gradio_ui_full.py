@@ -219,14 +219,15 @@ def parse_model_name(model_name):
         tier = model_name.replace("LITELLM_", "").lower()
         return "litellm", tier, None
     elif model_name == "LITELLM":
-        return "litellm", "fast", None
+        return "litellm", config.default_parse_fallback_tier, None
     elif model_name.startswith("OLLAMA_"):
         tier = model_name.replace("OLLAMA_", "").lower()
         return "ollama", tier, None
     elif model_name == "OLLAMA":
-        return "ollama", "fast", None
+        return "ollama", config.default_parse_fallback_tier, None
     else:
-        return "litellm", "fast", None
+        # Use configured fallback provider and tier
+        return config.default_parse_fallback_provider, config.default_parse_fallback_tier, None
 
 async def set_model_context(model_name: str):
     """Set the LLM model for the current session (Thread/Async safe wrapper)"""
@@ -237,8 +238,11 @@ async def set_model_context(model_name: str):
         LlamaSettings.embed_model = client.get_llamaindex_embedding()
         logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
 
-def ask_query(question, model_name="LITELLM_SMART"):
+def ask_query(question, model_name=None):
     """Query the vector index using the specified model"""
+    # Use config default if no model specified
+    if model_name is None:
+        model_name = config.default_chat_model_name
     # Note: This function runs synchronously as per original logic.
     # In FastAPI we wrap it or just run it. LlamaIndex is mostly sync.
     provider, tier, actual_model = parse_model_name(model_name)

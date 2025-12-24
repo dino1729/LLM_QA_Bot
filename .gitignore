@@ -151,3 +151,6 @@ vectors/
 
 voices/
 personas/
+
+pytest.ini
+.gitattributes
