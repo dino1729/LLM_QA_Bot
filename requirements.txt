@@ -14,7 +14,7 @@ moviepy
 youtube_transcript_api
 wget
 pyowm
-google.generativeai
+google-genai
 groq
 pinecone
 supabase
@@ -35,6 +35,8 @@ nvidia-riva-client   # NVIDIA Riva ASR/TTS (includes grpcio-tools)
 pyrubberband         # High-quality time stretching for TTS speed adjustment
 librosa              # Audio processing (fallback for time stretching)
 scipy                # Signal processing
+pydub                # Audio manipulation
+pyloudnorm           # Audio normalization (LUFS)
 
 # Tests
 pytest

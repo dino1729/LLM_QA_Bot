@@ -48,8 +48,15 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 - Companion Memory Palace app: https://github.com/dino1729/mymemorypalace
 
 ### Multi-provider Chat and Live Search
-- Swap between Azure OpenAI, Gemini, Cohere, Groq (Llama/Mixtral), LiteLLM, or local Ollama tiers for chat completions.
+- Swap between Azure OpenAI, Gemini (migrated to modern `google-genai` SDK), Cohere, Groq (Llama/Mixtral), LiteLLM, or local Ollama tiers for chat completions.
 - Trigger Firecrawl/Tavily-powered browsing to ground the conversation with fresh web data or Bing news headlines.
+
+### Daily Reporter & Podcast Engine
+- **Automated Briefings**: Generates daily Year Progress and News reports with motivational quotes and historical lessons.
+- **Podcast Mode**: Transforms news updates into a natural, multi-turn dialogue between two AI personas (e.g., Rick and Morty) using a state-machine dialogue engine.
+- **Persona Infusion**: Transcripts are dynamically rewritten to match the signature style, rhythm, and vocabulary of selected voices.
+- **High-Fidelity audio**: Uses **Chatterbox TTS** for GPU-accelerated, zero-shot voice cloning from 10s reference samples.
+- **Smart Caching**: Full transcript caching in JSON bundles ensures zero token cost for repeat audio generation or reviews.
 
 ![LLM Latest News](./screenshots/news.png)
 
@@ -115,8 +122,9 @@ All runtime settings live in `config/config.yml`. The most important sections ar
 | Section | Keys (examples) | Purpose |
 | --- | --- | --- |
 | Gemini / Cohere / Groq | `google_api_key`, `cohere_api_key`, `groq_api_key`, `groq_model_name`, etc. | Enables alternative LLM backends. |
-| LiteLLM | `litellm_base_url`, `litellm_api_key`, `litellm_fast_llm`, `litellm_smart_llm`, `litellm_strategic_llm`, `litellm_embedding` | Route chat, document Q&A, and embeddings through a LiteLLM gateway. |
-| Ollama | `ollama_base_url`, tier-specific defaults | Point the UI to local models. |
+| LiteLLM / Ollama | `litellm_*`, `ollama_*` | Route chat, document Q&A, and embeddings through a gateway. |
+| Chatterbox TTS | `chatterbox_tts_model_type`, `newsletter_progress_voice`, `newsletter_news_voice` | GPU-accelerated on-device TTS with voice cloning. |
+| Podcast Engine | `podcast_enabled`, `podcast_voice_a_*`, `podcast_voice_b_*`, `podcast_target_duration_seconds` | Configure dual-persona dialogue, including independent LLM/provider selection for each character. |
 | Retriever / Firecrawl / Tavily | `retriever`, `firecrawl_server_url`, `tavily_api_key` | Power web research and ingestion. |
 | Image generation | `nvidia_*`, `openai_image_model`, `openai_image_enhancement_model` | Configure the Image Studio tab. |
 | Weather / Email | `openweather_api_key`, `pyowm_api_key`, `yahoo_id`, `yahoo_app_password` | Used by the planner and notification helpers. |
@@ -158,7 +166,11 @@ docker run --restart always -p 7860:7860 --name llmqabot llmqabot
 Mount a volume for the `paths` directories if you want to persist indexes or uploads between container restarts.
 
 ## Running Recipes
-- **One-shot full stack**: from repo root run `./start_fullstack.sh`. It creates/uses `.venv`, installs Python deps, builds the frontend, and launches `gradio_ui_full.py` (serves `/api` and `frontend/dist` on port 7860).
+- **Daily Reporter (Single Voice)**: `python year_progress_and_news_reporter_litellm.py --chatterbox-tts`
+- **Daily Reporter (Podcast Mode)**: `python year_progress_and_news_reporter_litellm.py --chatterbox-tts --podcast`
+- **Review Mode (No Audio)**: Add `--review` to see transcripts before synthesis.
+- **Fast/Free Re-generation**: Add `--full-cache` to use cached transcripts from `daily_bundle_latest.json`.
+- **One-shot full stack**: from repo root run `./start_fullstack.sh`. It creates/uses `.venv`, installs Python deps, builds the frontend, and launches `gradio_ui_full.py`.
 - **Backend only (dev)**: `source .venv/bin/activate && python gradio_ui_full.py`. This starts FastAPI/Gradio on http://0.0.0.0:7860 with `/api/*` routes and serves a built `frontend/dist` if present.
 - **Frontend dev server**: in another terminal `cd frontend && npm install && npm run dev`. Vite serves the UI on its own port; ensure the backend is running so API calls to `/api` succeed. Use a proxy if the backend lives on a different host/port.
 - **Azure-focused UI**: `python misc_scripts/azure_gradioui.py` for the simplified Azure layout and endpoints.
@@ -181,6 +193,11 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 1. Switch to the Chat tab to pick Azure, Gemini, Cohere, Groq, LiteLLM, or Ollama models.
 2. Enable Firecrawl/Tavily to blend real-time search with the LLM response for breaking news or research tasks.
 3. Hop into the Trip Planner, Food Planner, or Weather tabs for specialized agents that share the same context window.
+
+### Generate a Daily Podcast
+1. Configure `podcast_voice_a` and `podcast_voice_b` in `config.yml`.
+2. Run `python year_progress_and_news_reporter_litellm.py --chatterbox-tts --podcast`.
+3. The engine generates a dialogue script where characters discuss the day's briefing, synthesizes it with voice cloning, and applies crossfading/normalization.
 
 ### Generate or edit images
 1. Provide a prompt (or let the enhanced prompt helper rewrite it) in the Image Studio tab.

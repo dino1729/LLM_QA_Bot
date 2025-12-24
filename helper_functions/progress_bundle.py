@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from helper_functions.weather_utils import get_weather
 
@@ -77,6 +77,8 @@ def build_daily_bundle(
     news_raw_sources: Dict[str, str],
     newsletter_sections: Dict[str, Any],
     voicebot_script: str,
+    year_progress_script: str = "",
+    podcast_transcript: List[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build the complete daily bundle dictionary conforming to the schema.
@@ -118,12 +120,14 @@ def build_daily_bundle(
                 "author": quote_author,
             },
             "lesson": lesson_dict,
+            "year_progress_script": year_progress_script,
         },
         "news": {
             "raw_sources": news_raw_sources,
             "newsletter": {
                 "sections": newsletter_sections,
                 "voicebot_script": voicebot_script,
+                "podcast_transcript": podcast_transcript or [],
             },
         },
     }
