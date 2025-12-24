@@ -1,6 +1,13 @@
 """
 Unit tests for helper_functions/llm_client.py
 Tests unified LLM client for LiteLLM and Ollama
+
+Note: These tests intentionally use specific provider names ("litellm", "ollama")
+and tier names ("fast", "smart", "strategic") to test the provider/tier routing
+logic. This is correct behavior for unit tests - we're testing that the
+UnifiedLLMClient class correctly handles each provider and tier.
+
+For integration tests that use actual config values, use fixtures from conftest.py.
 """
 import pytest
 from unittest.mock import Mock, patch, MagicMock

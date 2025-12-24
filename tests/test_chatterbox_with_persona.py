@@ -4,6 +4,13 @@ Test Chatterbox TTS with persona-based voice cloning.
 
 This script generates text using a specific persona and synthesizes it
 with the corresponding voice reference audio.
+
+Configuration Required (in config.yml):
+- chatterbox_tts_model_type: TTS model type (turbo, standard, multilingual)
+- chatterbox_tts_device: Device for inference (cuda, cpu)
+- chatterbox_tts_default_voice: Default voice to use
+- default_analyzers_provider: LLM provider (litellm, ollama)
+- default_llm_tier: LLM tier (fast, smart, strategic)
 """
 
 import sys
@@ -18,27 +25,59 @@ from config import config
 
 
 def main():
-    # Test with Rick Sanchez persona and voice
-    persona_name = "rick_sanchez"
+    # Validate required config
+    if not config.chatterbox_tts_default_voice:
+        print("ERROR: 'chatterbox_tts_default_voice' must be set in config.yml")
+        return 1
+    if not config.chatterbox_tts_model_type:
+        print("ERROR: 'chatterbox_tts_model_type' must be set in config.yml")
+        return 1
+    if not config.chatterbox_tts_device:
+        print("ERROR: 'chatterbox_tts_device' must be set in config.yml")
+        return 1
+    if not config.default_analyzers_provider:
+        print("ERROR: 'default_analyzers_provider' must be set in config.yml (under llm_tiers)")
+        return 1
+    
+    # Get test persona from config (use default voice as the persona name)
+    persona_name = config.chatterbox_tts_default_voice
     voice_file = f"voices/{persona_name}.wav"
     persona_file = f"personas/{persona_name}.txt"
+    
+    # Get LLM settings from config
+    llm_provider = config.default_analyzers_provider
+    llm_tier = config.default_llm_tier or "fast"
+    
+    # Get TTS settings from config
+    tts_model_type = config.chatterbox_tts_model_type
+    tts_device = config.chatterbox_tts_device
 
     print("=" * 70)
     print("Chatterbox TTS + Persona Test")
     print("=" * 70)
-    print(f"Persona: {persona_name}")
+    print(f"Persona: {persona_name} (from config.chatterbox_tts_default_voice)")
     print(f"Voice file: {voice_file}")
+    print(f"LLM Provider: {llm_provider} (from config)")
+    print(f"LLM Tier: {llm_tier} (from config)")
+    print(f"TTS Model: {tts_model_type} (from config)")
+    print(f"TTS Device: {tts_device} (from config)")
     print("=" * 70)
     print()
 
-    # Read persona
-    print("Loading persona...")
-    with open(persona_file, 'r') as f:
-        persona_text = f.read()
+    # Check if persona file exists
+    if not Path(persona_file).exists():
+        print(f"WARNING: Persona file not found: {persona_file}")
+        print("Using generic system prompt instead.")
+        persona_text = f"You are {persona_name.replace('_', ' ').title()}. Speak in your characteristic style."
+    else:
+        # Read persona
+        print("Loading persona...")
+        with open(persona_file, 'r') as f:
+            persona_text = f.read()
 
-    # Generate Rick-style text using LLM
-    print("Generating Rick Sanchez response using LLM...")
-    client = get_client(provider="litellm", model_tier="fast")
+    # Generate persona-style text using LLM
+    print(f"Generating {persona_name} response using LLM...")
+    client = get_client(provider=llm_provider, model_tier=llm_tier)
 
     prompt = "Explain why text-to-speech technology is important, but in your usual style."
     messages = [
@@ -47,16 +86,16 @@ def main():
     ]
 
     response = client.chat_completion(messages=messages, max_tokens=200, temperature=0.9)
-    rick_text = response.strip()
+    generated_text = response.strip()
 
     print(f"\nGenerated text:\n{'-' * 70}")
-    print(rick_text)
+    print(generated_text)
     print('-' * 70)
     print()
 
-    # Initialize Chatterbox TTS
-    print("Initializing Chatterbox TTS (Turbo model)...")
-    tts = get_chatterbox_tts(model_type="turbo")
+    # Initialize Chatterbox TTS using config settings
+    print(f"Initializing Chatterbox TTS ({tts_model_type} model on {tts_device})...")
+    tts = get_chatterbox_tts(model_type=tts_model_type, device=tts_device)
 
     # Get GPU info
     gpu_info = tts.get_gpu_memory_info()
@@ -64,12 +103,12 @@ def main():
         print(f"GPU: {gpu_info['allocated_gb']:.2f} GB allocated / {gpu_info['total_gb']:.2f} GB total")
     print()
 
-    # Synthesize with Rick's voice
-    print("Synthesizing speech with Rick Sanchez voice...")
+    # Synthesize with configured voice
+    print(f"Synthesizing speech with {persona_name} voice...")
     output_file = f"test_output_{persona_name}.wav"
 
     success = tts.synthesize_to_file(
-        rick_text,
+        generated_text,
         output_file,
         audio_prompt_path=voice_file
     )

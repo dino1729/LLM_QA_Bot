@@ -148,8 +148,15 @@ def chatterbox_text_to_speech(
     try:
         tts = get_chatterbox_tts(model_type=config.chatterbox_tts_model_type)
 
-        # Use provided voice_name, or fall back to config default
-        actual_voice = voice_name or config.newsletter_progress_voice or "morgan_freeman"
+        # Use provided voice_name, or fall back to config defaults
+        actual_voice = voice_name or config.newsletter_progress_voice or config.chatterbox_tts_default_voice
+        if not actual_voice:
+            raise ValueError(
+                "No voice specified for Chatterbox TTS. Please provide one of:\n"
+                "  1. --progress-voice or --news-voice CLI argument\n"
+                "  2. 'newsletter_progress_voice' or 'newsletter_news_voice' in config.yml\n"
+                "  3. 'chatterbox_tts_default_voice' in config.yml"
+            )
         
         # Construct voice prompt path
         voice_path = Path(f"voices/{actual_voice}.wav")

@@ -1,6 +1,11 @@
 """
 Unit tests for helper_functions/chat_generation.py
 Tests for multi-provider LLM chat completion support
+
+Note: These tests intentionally use specific model names like "LITELLM_FAST",
+"OLLAMA_SMART", "LITELLM:test-model" to test the model routing logic.
+This is correct behavior for unit tests - we're testing specific code paths,
+not using actual configuration values.
 """
 import pytest
 from unittest.mock import Mock, MagicMock, patch
@@ -270,7 +275,7 @@ class TestGenerateChat:
         call_args = mock_client.chat.completions.create.call_args
         assert call_args[1]["model"] == "test-groq-llama-model"
     
-    @patch('helper_functions.chat_generation.groq_mixtral_model_name', 'test-groq-mixtral-model')
+    @patch('helper_functions.chat_generation.groq_qwen_model_name', 'test-groq-mixtral-model')
     @patch('helper_functions.chat_generation.groq_api_key', 'test-key')
     @patch('helper_functions.chat_generation.Groq')
     def test_generate_chat_groq_mixtral(self, mock_groq_class):

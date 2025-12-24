@@ -2,21 +2,25 @@
 Food/Craving Satisfier
 Uses unified LLM client via chat_generation
 """
+from config import config
 from helper_functions.chat_generation import generate_chat
 
 
-def craving_satisfier(city, food_craving, model_name="LITELLM_SMART"):
+def craving_satisfier(city, food_craving, model_name=None):
     """
     Find restaurants based on food cravings
 
     Args:
         city: City name
         food_craving: Type of food or "idk" for random
-        model_name: Model to use (default: LITELLM_SMART)
+        model_name: Model to use (default: from config.default_cravings_model_name)
 
     Returns:
         Restaurant recommendations
     """
+    # Use config default if no model specified
+    if model_name is None:
+        model_name = config.default_cravings_model_name
     try:
         # If the food craving is "idk", generate a random food craving
         if food_craving.lower() in ["idk", "i don't know", "i don't know what i want", "i don't know what i want to eat", "i don't know what i want to eat."]:

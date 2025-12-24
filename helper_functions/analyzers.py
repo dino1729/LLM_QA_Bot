@@ -47,8 +47,9 @@ keywords = config.keywords
 # Set a flag for lite mode: Choose lite mode if you don't want to analyze videos without transcripts
 lite_mode = False
 
-# Initialize unified LLM client (using fast model for summary/example generation)
-default_client = get_client(provider="litellm", model_tier="fast")
+# Initialize unified LLM client for summary/example generation
+# Uses configured default_analyzers_provider and default_analyzers_tier from config.yml
+default_client = get_client(provider=config.default_analyzers_provider, model_tier=config.default_analyzers_tier)
 
 Settings.llm = default_client.get_llamaindex_llm()
 Settings.embed_model = default_client.get_llamaindex_embedding()

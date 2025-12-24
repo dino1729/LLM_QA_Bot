@@ -44,7 +44,8 @@ context_window = config.context_window
 keywords = config.keywords
 
 # Initialize default LLM client (will be overridden in functions based on user selection)
-default_client = get_client(provider="litellm", model_tier="smart")
+# Uses configured default_internet_chat_provider and default_internet_chat_tier from config.yml
+default_client = get_client(provider=config.default_internet_chat_provider, model_tier=config.default_internet_chat_tier)
 
 # Configure LlamaIndex Settings with default client
 Settings.llm = default_client.get_llamaindex_llm()

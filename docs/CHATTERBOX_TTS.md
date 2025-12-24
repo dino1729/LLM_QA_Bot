@@ -226,6 +226,19 @@ tts.play_audio_with_amplitude(audio)  # Play with amplitude visualization
 
 ## Troubleshooting
 
+### CPU Inference on WSL2
+
+For detailed instructions on setting up Chatterbox TTS for CPU inference (Intel processors, WSL2), including virtual environment best practices and package installation order, see:
+
+**📖 [TROUBLESHOOTING_CHATTERBOX_TTS_CPU.md](./TROUBLESHOOTING_CHATTERBOX_TTS_CPU.md)**
+
+This comprehensive guide covers:
+- Virtual environment setup and common pitfalls
+- Correct PyTorch CPU installation order
+- Preventing mixed Python version issues
+- Performance expectations for CPU inference
+- Complete troubleshooting steps
+
 ### CUDA Errors on RTX 50-series
 
 If you see `CUDA error: no kernel image is available`:

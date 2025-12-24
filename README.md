@@ -215,6 +215,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 - **Vector index errors**: delete the folders configured in `paths` (or click the Clear button in the UI) to force a rebuild.
 - **Supabase RPC complaints**: ensure the `mp_search` stored procedure exists in your Supabase project and that the service role key has permission to execute it.
 - **Docker GPU/volume needs**: add `--gpus all` if you expect to run Whisper locally, and mount host folders so uploads and indexes are persisted.
+- **Chatterbox TTS on CPU (WSL2)**: see [docs/TROUBLESHOOTING_CHATTERBOX_TTS_CPU.md](./docs/TROUBLESHOOTING_CHATTERBOX_TTS_CPU.md) for a comprehensive guide on setting up Chatterbox TTS for CPU inference, virtual environment best practices, and package installation order.
 
 ## Related Projects
 - Memory Palace UI: https://github.com/dino1729/mymemorypalace

@@ -15,7 +15,7 @@ gemini_thinkingmodel_name = config.gemini_thinkingmodel_name
 groq_api_key = config.groq_api_key
 groq_model_name = config.groq_model_name
 groq_llama_model_name = config.groq_llama_model_name
-groq_mixtral_model_name = config.groq_mixtral_model_name
+groq_qwen_model_name = config.groq_qwen_model_name
 
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
@@ -150,7 +150,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
     elif model_name == "GROQ_MIXTRAL":
         groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
-            model=groq_mixtral_model_name,
+            model=groq_qwen_model_name,
             messages=conversation,
             temperature=temperature,
             max_tokens=max_tokens,
