@@ -100,7 +100,7 @@ chatterbox_tts_model_type: ""          # REQUIRED: 'turbo', 'standard', or 'mult
 chatterbox_tts_cfg_weight: 0.5              # REQUIRED: 0.0-1.0 (lower = faster speech)
 chatterbox_tts_exaggeration: 0.5            # REQUIRED: 0.0-1.0 (higher = more expressive)
 chatterbox_tts_audio_prompt_path: ""        # Path to reference audio for turbo model
-chatterbox_tts_device: ""               # REQUIRED: 'cuda' for GPU, 'cpu' for CPU-only
+chatterbox_tts_device: ""               # REQUIRED: 'cuda' for NVIDIA GPU, 'cpu' for CPU-only, 'macos' for Apple Silicon/macOS-safe mode
 chatterbox_tts_default_voice: ""            # REQUIRED: fallback voice name (e.g., 'morgan_freeman')
 
 # Newsletter TTS Voice Configuration

@@ -7,7 +7,7 @@ with the corresponding voice reference audio.
 
 Configuration Required (in config.yml):
 - chatterbox_tts_model_type: TTS model type (turbo, standard, multilingual)
-- chatterbox_tts_device: Device for inference (cuda, cpu)
+- chatterbox_tts_device: Device for inference (cuda, cpu, macos)
 - chatterbox_tts_default_voice: Default voice to use
 - default_analyzers_provider: LLM provider (litellm, ollama)
 - default_llm_tier: LLM tier (fast, smart, strategic)

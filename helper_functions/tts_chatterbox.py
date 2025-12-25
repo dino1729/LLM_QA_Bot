@@ -13,6 +13,7 @@ Key features:
 from __future__ import annotations
 
 import os
+import sys
 import time
 from typing import List, Optional, Callable
 
@@ -114,7 +115,8 @@ class ChatterboxTTS:
                 Lower values produce faster speech.
             exaggeration: Speech exaggeration level (0.0-1.0, default: 0.5).
                 Higher values produce more dramatic/expressive speech.
-            device: Device to use for inference ('cuda' or 'cpu', default: 'cuda').
+            device: Device to use for inference ('cuda', 'cpu', or 'macos', default: 'cuda').
+                - 'macos': macOS-safe mode; uses MPS if available, otherwise CPU.
         """
         self.model_type = model_type.lower()
         if self.model_type not in ["turbo", "standard", "multilingual"]:
@@ -123,23 +125,124 @@ class ChatterboxTTS:
         self.model_path = model_path
         self.cfg_weight = cfg_weight
         self.exaggeration = exaggeration
-        self.device = device
+        self.requested_device = (device or "cuda").lower()
+        if self.requested_device not in ["cuda", "cpu", "macos"]:
+            raise ValueError(f"Invalid device: {device}. Must be 'cuda', 'cpu', or 'macos'")
+        self.device = self.requested_device
 
         # Lazy-load model components
         self._model = None
         self._torch = None
         self._torchaudio = None
         self.sample_rate = None  # Set during model initialization
+        self._macos_dtype_workaround_applied = False
 
         # Import and validate
         self._import_dependencies()
         self._initialize_model()
+
+    def _apply_macos_dtype_workaround(self) -> None:
+        """Apply a macOS-only dtype workaround for Chatterbox reference-audio conditioning.
+
+        Some macOS audio loading paths can yield float64 tensors which later break inside
+        Chatterbox's S3Tokenizer mel pipeline (float32 filters @ float64 magnitudes).
+        This patch forces waveform tensors to float32 at the tokenizer boundary.
+        """
+        if self._macos_dtype_workaround_applied:
+            return
+        if sys.platform != "darwin":
+            return
+        if self.requested_device != "macos":
+            return
+        if not self._torch:
+            return
+
+        torch = self._torch
+        patched_any = False
+
+        try:
+            from chatterbox.models.s3tokenizer import s3tokenizer as s3tokenizer_module
+        except Exception:
+            s3tokenizer_module = None
+
+        if s3tokenizer_module is not None and not getattr(s3tokenizer_module, "_llmqabot_macos_dtype_patch_applied", False):
+            original_forward = getattr(s3tokenizer_module.S3Tokenizer, "forward", None)
+            if original_forward is not None:
+
+                def patched_forward(tokenizer_self, wavs, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    target_dtype = getattr(getattr(tokenizer_self, "_mel_filters", None), "dtype", torch.float32)
+                    try:
+                        if isinstance(wavs, (list, tuple)):
+                            casted_wavs = []
+                            for w in wavs:
+                                if isinstance(w, torch.Tensor):
+                                    casted_wavs.append(w.to(dtype=target_dtype) if w.dtype != target_dtype else w)
+                                    continue
+                                if isinstance(w, np.ndarray):
+                                    casted_wavs.append(torch.as_tensor(w, dtype=target_dtype))
+                                    continue
+                                casted_wavs.append(torch.as_tensor(w, dtype=target_dtype))
+                            wavs = casted_wavs
+                    except Exception:
+                        pass
+                    return original_forward(tokenizer_self, wavs, *args, **kwargs)
+
+                s3tokenizer_module.S3Tokenizer.forward = patched_forward  # type: ignore[assignment]
+                s3tokenizer_module._llmqabot_macos_dtype_patch_applied = True
+                patched_any = True
+
+        try:
+            from chatterbox.models.voice_encoder import voice_encoder as voice_encoder_module
+        except Exception:
+            voice_encoder_module = None
+
+        if voice_encoder_module is not None and not getattr(voice_encoder_module, "_llmqabot_macos_dtype_patch_applied", False):
+            original_embeds_from_wavs = getattr(voice_encoder_module.VoiceEncoder, "embeds_from_wavs", None)
+            if original_embeds_from_wavs is not None:
+
+                def patched_embeds_from_wavs(encoder_self, wavs, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    try:
+                        if isinstance(wavs, (list, tuple)):
+                            casted = []
+                            for w in wavs:
+                                if isinstance(w, np.ndarray):
+                                    casted.append(w.astype(np.float32, copy=False) if w.dtype != np.float32 else w)
+                                elif isinstance(w, torch.Tensor):
+                                    casted.append(w.to(dtype=torch.float32) if w.dtype != torch.float32 else w)
+                                else:
+                                    casted.append(np.asarray(w, dtype=np.float32))
+                            wavs = casted
+                    except Exception:
+                        pass
+                    return original_embeds_from_wavs(encoder_self, wavs, *args, **kwargs)
+
+                voice_encoder_module.VoiceEncoder.embeds_from_wavs = patched_embeds_from_wavs  # type: ignore[assignment]
+                voice_encoder_module._llmqabot_macos_dtype_patch_applied = True
+                patched_any = True
+
+        if patched_any:
+            self._macos_dtype_workaround_applied = True
 
     def _import_dependencies(self) -> None:
         """Import required dependencies and validate device availability."""
         try:
             import torch
             self._torch = torch
+
+            if self.requested_device == "macos":
+                if sys.platform != "darwin":
+                    print("-> 'macos' device selected on non-macOS; falling back to CPU")
+                    self.device = "cpu"
+                else:
+                    mps_backend = getattr(torch.backends, "mps", None)
+                    mps_available = bool(mps_backend and getattr(mps_backend, "is_available", lambda: False)())
+                    self.device = "mps" if mps_available else "cpu"
+                    if self.device == "mps":
+                        print("-> Using Apple Silicon (MPS) inference")
+                    else:
+                        print("-> Using CPU inference (macOS mode)")
+
+                self._apply_macos_dtype_workaround()
 
             if self.device == "cuda":
                 if not torch.cuda.is_available():
@@ -153,6 +256,8 @@ class ChatterboxTTS:
                 print(f"-> GPU detected: {gpu_name}")
                 print(f"-> GPU memory: {gpu_memory:.2f} GB")
                 print(f"-> CUDA version: {torch.version.cuda}")
+                print(f"-> PyTorch version: {torch.__version__}")
+            elif self.device == "mps":
                 print(f"-> PyTorch version: {torch.__version__}")
             else:
                 print(f"-> Using CPU inference")
@@ -189,7 +294,12 @@ class ChatterboxTTS:
         if self._model is not None:
             return
 
-        device_name = "GPU" if self.device == "cuda" else "CPU"
+        if self.device == "cuda":
+            device_name = "GPU"
+        elif self.device == "mps":
+            device_name = "MPS"
+        else:
+            device_name = "CPU"
         print(f"-> Loading Chatterbox {self.model_type.capitalize()} TTS model on {device_name}...")
 
         try:
@@ -197,6 +307,9 @@ class ChatterboxTTS:
             if self.device == "cuda" and self._torch.cuda.is_available():
                 self._torch.cuda.empty_cache()
                 print("-> Cleared GPU memory cache")
+            elif self.device == "mps" and hasattr(self._torch, "mps") and hasattr(self._torch.mps, "empty_cache"):
+                self._torch.mps.empty_cache()
+                print("-> Cleared MPS memory cache")
 
             # Load the model from pretrained or custom path
             if self.model_path:
@@ -218,7 +331,7 @@ class ChatterboxTTS:
                 print(f"-> GPU memory allocated: {memory_allocated:.2f} GB")
                 print(f"-> GPU memory reserved: {memory_reserved:.2f} GB")
             else:
-                print(f"-> Model loaded on CPU successfully")
+                print(f"-> Model loaded on {device_name} successfully")
 
             print(f"-> Sample rate: {self.sample_rate} Hz")
             print(f"-> Using Chatterbox {self.model_type.capitalize()} TTS")
@@ -549,7 +662,7 @@ def get_chatterbox_tts(
 
     Args:
         model_type: Model variant ('turbo', 'standard', 'multilingual'). Default from config.
-        device: Device to use for inference ('cuda' or 'cpu'). Default from config.
+        device: Device to use for inference ('cuda', 'cpu', or 'macos'). Default from config.
         **kwargs: Additional arguments passed to ChatterboxTTS constructor
 
     Returns:
@@ -568,7 +681,7 @@ def get_chatterbox_tts(
     if actual_device is None:
         raise ValueError(
             "Chatterbox TTS device not specified. Please set:\n"
-            "  1. 'chatterbox_tts_device' in config.yml (options: 'cuda', 'cpu')\n"
+            "  1. 'chatterbox_tts_device' in config.yml (options: 'cuda', 'cpu', 'macos')\n"
             "  2. Or pass device parameter directly"
         )
     
