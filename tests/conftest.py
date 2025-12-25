@@ -40,7 +40,7 @@ def test_tts_model_type():
 
 @pytest.fixture
 def test_tts_device():
-    """Get the Chatterbox TTS device from config (e.g., 'cuda', 'cpu')"""
+    """Get the Chatterbox TTS device from config (e.g., 'cuda', 'cpu', 'macos')"""
     return getattr(config, 'chatterbox_tts_device', None) or 'cpu'
 
 
@@ -304,4 +304,3 @@ def reset_settings():
     from llama_index.core import Settings
     Settings.llm = None
     Settings.embed_model = None
-

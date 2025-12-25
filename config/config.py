@@ -102,7 +102,7 @@ chatterbox_tts_model_type = config_yaml.get("chatterbox_tts_model_type")  # Requ
 chatterbox_tts_cfg_weight = config_yaml.get("chatterbox_tts_cfg_weight")  # Required: 0.0-1.0 (lower = faster speech)
 chatterbox_tts_exaggeration = config_yaml.get("chatterbox_tts_exaggeration")  # Required: 0.0-1.0 (higher = more expressive)
 chatterbox_tts_audio_prompt_path = config_yaml.get("chatterbox_tts_audio_prompt_path")
-chatterbox_tts_device = config_yaml.get("chatterbox_tts_device")  # Required: 'cuda' or 'cpu'
+chatterbox_tts_device = config_yaml.get("chatterbox_tts_device")  # Required: 'cuda', 'cpu', or 'macos'
 chatterbox_tts_default_voice = config_yaml.get("chatterbox_tts_default_voice")  # Required: fallback voice name
 
 # Newsletter TTS Voice Configuration
