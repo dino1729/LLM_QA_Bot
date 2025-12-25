@@ -22,6 +22,68 @@ import pyaudio
 from config import config
 
 
+def split_text_for_chatterbox(text: str, max_chars: int = 300) -> List[str]:
+    """Split text into sentence chunks suitable for Chatterbox TTS generation.
+    
+    This function splits text at sentence boundaries (. ! ?) and further splits
+    long sentences at comma/semicolon boundaries to stay under the max_chars limit.
+    
+    This is the shared splitting algorithm used by both GPU and CPU inference paths.
+    
+    Args:
+        text: Input text to split
+        max_chars: Maximum characters per chunk (default 300)
+        
+    Returns:
+        List of text chunks, each under max_chars length
+    """
+    import re
+    
+    if not text or not text.strip():
+        return []
+    
+    # Split into sentences using lookbehind regex to preserve punctuation
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    
+    chunks = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        
+        # If sentence is within limit, add directly
+        if len(sentence) <= max_chars:
+            chunks.append(sentence)
+        else:
+            # Split long sentences at comma/semicolon boundaries
+            sub_parts = re.split(r'(?<=[,;])\s+', sentence)
+            for part in sub_parts:
+                part = part.strip()
+                if not part:
+                    continue
+                if len(part) <= max_chars:
+                    chunks.append(part)
+                else:
+                    # Last resort: split at word boundaries
+                    words = part.split()
+                    current_chunk = []
+                    current_len = 0
+                    for word in words:
+                        word_len = len(word) + (1 if current_chunk else 0)  # +1 for space
+                        if current_len + word_len <= max_chars:
+                            current_chunk.append(word)
+                            current_len += word_len
+                        else:
+                            if current_chunk:
+                                chunks.append(' '.join(current_chunk))
+                            current_chunk = [word]
+                            current_len = len(word)
+                    if current_chunk:
+                        chunks.append(' '.join(current_chunk))
+    
+    return chunks
+
+
 class ChatterboxTTS:
     """Generate audio using ResembleAI Chatterbox TTS with GPU acceleration.
 
@@ -165,86 +227,6 @@ class ChatterboxTTS:
             print(f"-> Error initializing Chatterbox TTS: {e}")
             raise
 
-    def _chunk_text(self, text: str, max_chars: int = 200) -> List[str]:
-        """Split text into chunks suitable for TTS generation.
-        
-        This is primarily used for CPU inference where long texts can produce
-        gibberish audio. GPU inference typically handles longer texts well.
-        
-        Args:
-            text: Input text to chunk
-            max_chars: Maximum characters per chunk (default 200 for quality)
-            
-        Returns:
-            List of text chunks
-        """
-        import re
-        
-        # Split into sentences
-        sentence_pattern = r'(?<=[.!?;])\s+'
-        sentences = re.split(sentence_pattern, text.strip())
-        
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-            
-            sentence_len = len(sentence)
-            if current_chunk:
-                sentence_len += 1  # Space separator
-            
-            # If single sentence exceeds max, split at commas or spaces
-            if len(sentence) > max_chars:
-                # Save current chunk if exists
-                if current_chunk:
-                    chunks.append(' '.join(current_chunk))
-                    current_chunk = []
-                    current_length = 0
-                
-                # Split long sentence at commas
-                parts = re.split(r'(?<=,)\s+', sentence)
-                for part in parts:
-                    if len(part) > max_chars:
-                        # Split at word boundaries
-                        words = part.split()
-                        temp_chunk = []
-                        temp_len = 0
-                        for word in words:
-                            if temp_len + len(word) + 1 <= max_chars:
-                                temp_chunk.append(word)
-                                temp_len += len(word) + 1
-                            else:
-                                if temp_chunk:
-                                    chunks.append(' '.join(temp_chunk))
-                                temp_chunk = [word]
-                                temp_len = len(word)
-                        if temp_chunk:
-                            chunks.append(' '.join(temp_chunk))
-                    else:
-                        chunks.append(part)
-                continue
-            
-            # Add sentence to current chunk if it fits
-            if current_length + sentence_len <= max_chars:
-                current_chunk.append(sentence)
-                current_length += sentence_len
-            else:
-                # Save current chunk and start new one
-                if current_chunk:
-                    chunks.append(' '.join(current_chunk))
-                current_chunk = [sentence]
-                current_length = len(sentence)
-        
-        # Add final chunk
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        
-        return chunks
-
     def synthesize(
         self,
         text: str,
@@ -288,27 +270,34 @@ class ChatterboxTTS:
         effective_exaggeration = exaggeration if exaggeration is not None else self.exaggeration
 
         try:
-            # Chunk long text for CPU mode only (GPU can handle longer texts efficiently)
-            # CPU struggles with long texts and produces gibberish without chunking
-            if self.device == "cpu":
-                chunks = self._chunk_text(text, max_chars=200)
-                if len(chunks) > 1:
-                    print(f"-> Chunking text into {len(chunks)} parts for CPU quality")
-            else:
-                # GPU mode - use single-pass for optimal performance
-                chunks = [text]
+            # Split text into sentence chunks for both CPU and GPU
+            # This ensures consistent behavior and quality across devices
+            chunks = split_text_for_chatterbox(text, max_chars=300)
+            if not chunks:
+                return np.zeros(0, dtype=np.float32)
+            
+            if len(chunks) > 1:
+                print(f"-> Splitting text into {len(chunks)} segments")
             
             all_audio = []
             total_start_time = time.time()
             
+            # Use autocast only for CUDA, no-op context for CPU
+            from contextlib import nullcontext
+            autocast_context = (
+                self._torch.amp.autocast('cuda') 
+                if self.device == "cuda" 
+                else nullcontext()
+            )
+            
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
-                    print(f"-> Processing chunk {i+1}/{len(chunks)}...")
+                    print(f"-> Processing segment {i+1}/{len(chunks)}...")
                 
                 start_time = time.time()
 
                 # Generate audio based on model type
-                with self._torch.amp.autocast('cuda'):
+                with autocast_context:
                     if self.model_type == "turbo":
                         wav = self._model.generate(
                             chunk,
@@ -352,8 +341,8 @@ class ChatterboxTTS:
             
             # Concatenate all chunks
             if len(all_audio) > 1:
-                # Add small silence between chunks (50ms) for natural pauses
-                silence = np.zeros(int(self.sample_rate * 0.05), dtype=np.float32)
+                # Add silence between segments (100ms) for natural pacing
+                silence = np.zeros(int(self.sample_rate * 0.1), dtype=np.float32)
                 audio_with_pauses = []
                 for i, audio in enumerate(all_audio):
                     audio_with_pauses.append(audio)
@@ -595,4 +584,4 @@ def get_chatterbox_tts(
     return _chatterbox_tts_cache[cache_key]
 
 
-__all__ = ["ChatterboxTTS", "get_chatterbox_tts"]
+__all__ = ["ChatterboxTTS", "get_chatterbox_tts", "split_text_for_chatterbox"]

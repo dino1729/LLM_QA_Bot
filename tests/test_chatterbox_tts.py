@@ -21,7 +21,7 @@ from pathlib import Path
 # Add the parent directory to the path to import helper_functions
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from helper_functions.tts_chatterbox import ChatterboxTTS, get_chatterbox_tts
+from helper_functions.tts_chatterbox import ChatterboxTTS, get_chatterbox_tts, split_text_for_chatterbox
 from config import config
 
 
@@ -117,6 +117,13 @@ def main():
             print(f"GPU memory reserved: {gpu_info['reserved_gb']:.2f} GB")
             print(f"GPU memory total: {gpu_info['total_gb']:.2f} GB")
             print()
+
+        # Show how text will be split for synthesis
+        chunks = split_text_for_chatterbox(args.text, max_chars=300)
+        print(f"Text will be split into {len(chunks)} segment(s):")
+        for i, chunk in enumerate(chunks, 1):
+            print(f"  [{i}] {chunk[:60]}{'...' if len(chunk) > 60 else ''}")
+        print()
 
         # Synthesize speech
         print("Synthesizing speech...")

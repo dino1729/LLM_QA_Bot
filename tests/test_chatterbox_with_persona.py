@@ -19,7 +19,7 @@ from pathlib import Path
 # Add the parent directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from helper_functions.tts_chatterbox import get_chatterbox_tts
+from helper_functions.tts_chatterbox import get_chatterbox_tts, split_text_for_chatterbox
 from helper_functions.llm_client import get_client
 from config import config
 
@@ -101,6 +101,13 @@ def main():
     gpu_info = tts.get_gpu_memory_info()
     if gpu_info:
         print(f"GPU: {gpu_info['allocated_gb']:.2f} GB allocated / {gpu_info['total_gb']:.2f} GB total")
+    print()
+
+    # Show how text will be split for synthesis
+    chunks = split_text_for_chatterbox(generated_text, max_chars=300)
+    print(f"Text will be split into {len(chunks)} segment(s):")
+    for i, chunk in enumerate(chunks, 1):
+        print(f"  [{i}] {chunk[:60]}{'...' if len(chunk) > 60 else ''}")
     print()
 
     # Synthesize with configured voice
