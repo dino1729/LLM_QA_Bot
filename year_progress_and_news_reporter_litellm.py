@@ -133,17 +133,22 @@ def chatterbox_text_to_speech(
 ) -> bool:
     """
     Convert text to speech using Chatterbox TTS with voice cloning.
-    Handles long text by chunking into sentences to avoid engine limits.
+    Uses the shared split_text_for_chatterbox() function for sentence splitting.
     
     Args:
         text: The full transcript to synthesize.
         output_path: Path to save the resulting .wav file.
         voice_name: The voice file to clone (must exist in voices/{voice_name}.wav).
+        cfg_weight: Classifier-free guidance weight (0.0-1.0).
+        exaggeration: Speech exaggeration level (0.0-1.0).
+    
+    Returns:
+        True if audio was successfully generated and saved, False otherwise.
     """
     from pathlib import Path
     from config import config
+    from helper_functions.tts_chatterbox import split_text_for_chatterbox
     import numpy as np
-    import re
 
     try:
         tts = get_chatterbox_tts(model_type=config.chatterbox_tts_model_type)
@@ -166,40 +171,29 @@ def chatterbox_text_to_speech(
 
         print(f"  Using Chatterbox voice: {actual_voice}")
         
-        # Split text into manageable sentences (approx 200-300 chars max)
-        # Using a lookbehind regex to preserve the punctuation marks
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        # Use shared sentence splitting function
+        chunks = split_text_for_chatterbox(text, max_chars=300)
+        if not chunks:
+            print("⚠ Chatterbox: No text to synthesize after splitting")
+            return False
         
         combined_audio = []
-        print(f"  Synthesizing {len(sentences)} segments...")
+        print(f"  Synthesizing {len(chunks)} segments...")
 
-        for i, sentence in enumerate(sentences):
-            if not sentence.strip():
-                continue
-                
-            # Further split very long sentences (safety measure)
-            sub_chunks = []
-            if len(sentence) > 300:
-                sub_chunks = re.split(r'(?<=[,;])\s+', sentence)
-            else:
-                sub_chunks = [sentence]
-
-            for sub_chunk in sub_chunks:
-                if not sub_chunk.strip():
-                    continue
-                    
-                audio_chunk = tts.synthesize(
-                    sub_chunk,
-                    audio_prompt_path=str(voice_path),
-                    cfg_weight=cfg_weight,
-                    exaggeration=exaggeration,
-                )
-                
-                if audio_chunk is not None and len(audio_chunk) > 0:
-                    combined_audio.append(audio_chunk)
-                    # Add a 0.1s silence buffer between sentences for natural pacing
-                    silence = np.zeros(int(tts.sample_rate * 0.1), dtype=np.float32)
-                    combined_audio.append(silence)
+        for chunk in chunks:
+            # Each chunk is already properly sized by split_text_for_chatterbox
+            audio_chunk = tts.synthesize(
+                chunk,
+                audio_prompt_path=str(voice_path),
+                cfg_weight=cfg_weight,
+                exaggeration=exaggeration,
+            )
+            
+            if audio_chunk is not None and len(audio_chunk) > 0:
+                combined_audio.append(audio_chunk)
+                # Add a 0.1s silence buffer between segments for natural pacing
+                silence = np.zeros(int(tts.sample_rate * 0.1), dtype=np.float32)
+                combined_audio.append(silence)
 
         if not combined_audio:
             print("⚠ Chatterbox: No audio generated for any segments")

@@ -5,6 +5,72 @@ from pathlib import Path
 # Import the module to test and config
 import year_progress_and_news_reporter_litellm as reporter
 from config import config
+from helper_functions.tts_chatterbox import split_text_for_chatterbox
+
+
+class TestSplitTextForChatterbox(unittest.TestCase):
+    """Unit tests for the shared sentence splitting function."""
+    
+    def test_empty_text(self):
+        """Empty or whitespace-only text returns empty list."""
+        self.assertEqual(split_text_for_chatterbox(""), [])
+        self.assertEqual(split_text_for_chatterbox("   "), [])
+        self.assertEqual(split_text_for_chatterbox("\n\t"), [])
+    
+    def test_single_short_sentence(self):
+        """Single short sentence is returned as-is."""
+        text = "Hello world."
+        result = split_text_for_chatterbox(text)
+        self.assertEqual(result, ["Hello world."])
+    
+    def test_multiple_sentences_split_on_punctuation(self):
+        """Multiple sentences are split at sentence boundaries."""
+        text = "First sentence. Second sentence! Third sentence?"
+        result = split_text_for_chatterbox(text)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0], "First sentence.")
+        self.assertEqual(result[1], "Second sentence!")
+        self.assertEqual(result[2], "Third sentence?")
+    
+    def test_long_sentence_splits_at_comma_semicolon(self):
+        """Long sentences (>max_chars) are split at comma/semicolon boundaries."""
+        # Create a sentence longer than 50 chars with commas
+        long_sentence = "This is a very long sentence that exceeds the limit, so it should be split at the comma, right here."
+        result = split_text_for_chatterbox(long_sentence, max_chars=50)
+        self.assertGreater(len(result), 1)
+        # Each chunk should be <= 50 chars (or close if word boundaries prevent exact split)
+        for chunk in result:
+            self.assertLessEqual(len(chunk), 60)  # Allow some tolerance for word boundaries
+    
+    def test_very_long_word_falls_back_to_word_split(self):
+        """When commas don't help, splits at word boundaries."""
+        # A sentence with no commas that exceeds the limit
+        words = " ".join(["word"] * 20)  # 99 chars
+        result = split_text_for_chatterbox(words, max_chars=30)
+        self.assertGreater(len(result), 1)
+        for chunk in result:
+            self.assertLessEqual(len(chunk), 35)  # Some tolerance
+    
+    def test_preserves_punctuation(self):
+        """Sentence-ending punctuation is preserved."""
+        text = "Question? Exclamation! Statement."
+        result = split_text_for_chatterbox(text)
+        self.assertTrue(result[0].endswith("?"))
+        self.assertTrue(result[1].endswith("!"))
+        self.assertTrue(result[2].endswith("."))
+    
+    def test_default_max_chars(self):
+        """Default max_chars is 300."""
+        # Create a sentence just under 300 chars
+        short = "A" * 290 + "."
+        result = split_text_for_chatterbox(short)
+        self.assertEqual(len(result), 1)
+        
+        # Create a sentence over 300 chars with a comma
+        long = "A" * 200 + ", " + "B" * 150 + "."
+        result = split_text_for_chatterbox(long)
+        self.assertGreater(len(result), 1)
+
 
 class TestChatterboxPersonaSeparation(unittest.TestCase):
     
