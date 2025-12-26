@@ -79,7 +79,10 @@ def main():
     print(f"Generating {persona_name} response using LLM...")
     client = get_client(provider=llm_provider, model_tier=llm_tier)
 
-    prompt = "Explain why text-to-speech technology is important, but in your usual style."
+    prompt = (
+        "Describe, in your usual style, how you would teach an alien who just landed on Earth "
+        "to order coffee at a noisy Parisian café using only text-to-speech and elaborate gesturing."
+    )
     messages = [
         {"role": "system", "content": persona_text},
         {"role": "user", "content": prompt}
