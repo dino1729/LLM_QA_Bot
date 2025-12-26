@@ -23,13 +23,17 @@ CLI OPTIONS:
 --skip-email, -e        Skip sending emails.
 --skip-audio, -a        Skip generating TTS audio.
 --skip-news-audio       Skip generating news TTS audio only (still does progress audio).
+--progress-only, -p     Run year progress flow only, skip all news generation.
 --cache-info            Show cache status and exit.
 --html-only             Only regenerate HTML from the latest bundle (no API calls).
 --review                Review generated transcripts and wait for confirmation before audio synthesis.
---local-tts             Use on-device VibeVoice TTS (local GPU) instead of cloud Riva.
---chatterbox-tts        Use Chatterbox TTS (GPU-accelerated voice cloning) with reference audio.
-                        When enabled, LLM text generation will include paralinguistic tags
-                        ([laugh], [chuckle], [cough]) for more expressive speech synthesis.
+
+TTS OPTIONS (Chatterbox is the default):
+--riva-tts              Use NVIDIA Riva cloud TTS instead of default Chatterbox.
+--local-tts             Use on-device VibeVoice TTS (local GPU) instead of Chatterbox.
+--chatterbox-tts        Explicit Chatterbox TTS (default behavior, kept for compatibility).
+                        LLM text generation includes paralinguistic tags
+                        ([laugh], [chuckle], [cough]) for expressive speech synthesis.
 --podcast               Transform the news briefing into a two-persona dialogue (Rick and Morty style).
 --voice VOICE           Voice preset for VibeVoice TTS (default: en-davis_man).
 --progress-voice VOICE  Voice for year progress report (Chatterbox mode).
@@ -118,6 +122,7 @@ def get_chatterbox_tts(model_type: str = "turbo"):
             model_type=model_type,
             cfg_weight=config.chatterbox_tts_cfg_weight,
             exaggeration=config.chatterbox_tts_exaggeration,
+            device=config.chatterbox_tts_device,
         )
         _chatterbox_tts_cache[model_type] = tts
 
@@ -363,11 +368,13 @@ def parse_arguments():
     parser.add_argument('--skip-email', '-e', action='store_true', help='Skip sending emails')
     parser.add_argument('--skip-audio', '-a', action='store_true', help='Skip generating TTS audio')
     parser.add_argument('--skip-news-audio', action='store_true', help='Skip news TTS audio only')
+    parser.add_argument('--progress-only', '-p', action='store_true', help='Run year progress flow only, skip all news generation')
     parser.add_argument('--cache-info', action='store_true', help='Show cache status and exit')
     parser.add_argument('--html-only', action='store_true', help='Regenerate HTML from latest bundle')
     parser.add_argument('--review', action='store_true', help='Review transcripts before audio generation')
     parser.add_argument('--local-tts', action='store_true', help='Use VibeVoice local TTS')
-    parser.add_argument('--chatterbox-tts', action='store_true', help='Use Chatterbox GPU-accelerated voice cloning')
+    parser.add_argument('--chatterbox-tts', action='store_true', help='Use Chatterbox TTS (default, kept for compatibility)')
+    parser.add_argument('--riva-tts', action='store_true', help='Use NVIDIA Riva cloud TTS instead of Chatterbox')
     parser.add_argument('--podcast', action='store_true', help='Generate two-persona news podcast dialogue')
     parser.add_argument('--voice', type=str, default='en-davis_man', help='VibeVoice preset')
     parser.add_argument('--progress-voice', type=str, default=None, help='Chatterbox progress voice')
@@ -385,6 +392,9 @@ def main():
         args.use_cache = True
         args.skip_email = True
         args.skip_audio = True
+
+    # Chatterbox is now the default TTS - use_chatterbox is True unless riva-tts or local-tts is specified
+    use_chatterbox = not args.riva_tts and not args.local_tts
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     news_cache_file = OUTPUT_DIR / NEWS_CACHE_FILENAME
@@ -483,56 +493,65 @@ def main():
         topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
         lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
 
-    # [CACHING] Handle raw news sources
-    if news_raw_sources is None:
-        if args.use_cache and not args.refresh_cache:
-            news_raw_sources = load_news_cache(output_dir=OUTPUT_DIR)
-    
-    if news_raw_sources is None:
-        news_provider = "litellm" if LLM_PROVIDER == "litellm" else "ollama"
-        news_raw_sources = {
-            "technology": gather_daily_news(category="technology", provider=news_provider),
-            "financial": gather_daily_news(category="financial", provider=news_provider),
-            "india": gather_daily_news(category="india", provider=news_provider),
-        }
-        save_news_cache(news_raw_sources, output_dir=OUTPUT_DIR)
+    # [NEWS GENERATION] Skip entirely if --progress-only mode
+    news_update_tech = ""
+    news_update_financial = ""
+    news_update_india = ""
+    is_podcast = False
 
-    news_update_tech = news_raw_sources.get("technology", "")
-    news_update_financial = news_raw_sources.get("financial", "")
-    news_update_india = news_raw_sources.get("india", "")
+    if not args.progress_only:
+        # [CACHING] Handle raw news sources
+        if news_raw_sources is None:
+            if args.use_cache and not args.refresh_cache:
+                news_raw_sources = load_news_cache(output_dir=OUTPUT_DIR)
 
-    # [CACHING] Newsletter Sections Generation
-    if not newsletter_sections:
-        print(f"📝 Generating newsletter sections using LLM tier: {config.newsletter_news_llm_tier}")
-        newsletter_sections = generate_newsletter_sections(news_update_tech, news_update_financial, news_update_india, LLM_PROVIDER, config.newsletter_news_llm_tier)
+        if news_raw_sources is None:
+            news_provider = "litellm" if LLM_PROVIDER == "litellm" else "ollama"
+            news_raw_sources = {
+                "technology": gather_daily_news(category="technology", provider=news_provider),
+                "financial": gather_daily_news(category="financial", provider=news_provider),
+                "india": gather_daily_news(category="india", provider=news_provider),
+            }
+            save_news_cache(news_raw_sources, output_dir=OUTPUT_DIR)
 
-    # [CACHING] Voicebot script (Single Voice)
-    if not voicebot_script:
-        voicebot_prompt = f"Transform news into an anchor-style script:\n{news_update_tech}\n{news_update_financial}\n{news_update_india}"
-        # Use CLI arg first, then config, for persona (voice cloning uses same persona for text generation)
-        news_persona = (args.news_voice or config.newsletter_news_voice) if args.chatterbox_tts else None
-        print(f"📝 Generating news voicebot script using LLM tier: {config.newsletter_news_llm_tier}, persona: {news_persona}")
-        voicebot_script = generate_gpt_response_voicebot(
-            voicebot_prompt, LLM_PROVIDER, config.newsletter_news_llm_tier,
-            voice_persona=news_persona, 
-            use_chatterbox=args.chatterbox_tts
-        )
+        news_update_tech = news_raw_sources.get("technology", "")
+        news_update_financial = news_raw_sources.get("financial", "")
+        news_update_india = news_raw_sources.get("india", "")
 
-    # [CACHING] Podcast Dialogue Generation (Two Personas)
-    is_podcast = args.podcast or config.podcast_enabled
-    
-    if is_podcast and not podcast_turns:
-        print("\n🎙️ Generating two-persona podcast dialogue...")
-        from helper_functions.dialogue_engine import DialogueEngine
-        engine = DialogueEngine(config, use_chatterbox=args.chatterbox_tts)
-        context = f"NEWS BRIEFING TRANSCRIPT:\n{voicebot_script}\n\nRAW DATA:\n{news_update_tech}\n{news_update_financial}\n{news_update_india}"
-        topic = f"News Briefing for {datetime.now().strftime('%B %d, %Y')}"
-        podcast_turns = engine.run_conversation(topic, context)
+        # [CACHING] Newsletter Sections Generation
+        if not newsletter_sections:
+            print(f"📝 Generating newsletter sections using LLM tier: {config.newsletter_news_llm_tier}")
+            newsletter_sections = generate_newsletter_sections(news_update_tech, news_update_financial, news_update_india, LLM_PROVIDER, config.newsletter_news_llm_tier)
+
+        # [CACHING] Voicebot script (Single Voice)
+        if not voicebot_script:
+            voicebot_prompt = f"Transform news into an anchor-style script:\n{news_update_tech}\n{news_update_financial}\n{news_update_india}"
+            # Use CLI arg first, then config, for persona (voice cloning uses same persona for text generation)
+            news_persona = (args.news_voice or config.newsletter_news_voice) if use_chatterbox else None
+            print(f"📝 Generating news voicebot script using LLM tier: {config.newsletter_news_llm_tier}, persona: {news_persona}")
+            voicebot_script = generate_gpt_response_voicebot(
+                voicebot_prompt, LLM_PROVIDER, config.newsletter_news_llm_tier,
+                voice_persona=news_persona,
+                use_chatterbox=use_chatterbox
+            )
+
+        # [CACHING] Podcast Dialogue Generation (Two Personas)
+        is_podcast = args.podcast or config.podcast_enabled
+
+        if is_podcast and not podcast_turns:
+            print("\n🎙️ Generating two-persona podcast dialogue...")
+            from helper_functions.dialogue_engine import DialogueEngine
+            engine = DialogueEngine(config, use_chatterbox=use_chatterbox)
+            context = f"NEWS BRIEFING TRANSCRIPT:\n{voicebot_script}\n\nRAW DATA:\n{news_update_tech}\n{news_update_financial}\n{news_update_india}"
+            topic = f"News Briefing for {datetime.now().strftime('%B %d, %Y')}"
+            podcast_turns = engine.run_conversation(topic, context)
+    else:
+        print("\n📅 Progress-only mode: skipping news generation")
 
     # [CACHING] Year Progress script
     if not year_progress_gpt_response:
         # Use CLI arg first, then config, for persona (voice cloning uses same persona for text generation)
-        progress_persona = (args.progress_voice or config.newsletter_progress_voice) if args.chatterbox_tts else None
+        progress_persona = (args.progress_voice or config.newsletter_progress_voice) if use_chatterbox else None
         
         # Build comprehensive prompt with all progress data
         lesson_text = ""
@@ -571,8 +590,8 @@ Make it conversational, motivating, and tie everything together naturally."""
         print(f"📝 Generating year progress script using LLM tier: {config.newsletter_progress_llm_tier}, persona: {progress_persona}")
         year_progress_gpt_response = generate_gpt_response(
             progress_prompt, LLM_PROVIDER, config.newsletter_progress_llm_tier,
-            voice_persona=progress_persona, 
-            use_chatterbox=args.chatterbox_tts
+            voice_persona=progress_persona,
+            use_chatterbox=use_chatterbox
         )
 
     # Build and Save the Daily Bundle (The primary cache source)
@@ -587,43 +606,54 @@ Make it conversational, motivating, and tie everything together naturally."""
     # Render HTML
     year_progress_html = render_year_progress_html_from_bundle(bundle)
     save_to_output_dir(year_progress_html, "year_progress_report.html")
-    newsletter_html = render_newsletter_html_from_bundle(bundle)
-    save_to_output_dir(newsletter_html, "news_newsletter_report.html")
+
+    newsletter_html = None
+    if not args.progress_only:
+        newsletter_html = render_newsletter_html_from_bundle(bundle)
+        save_to_output_dir(newsletter_html, "news_newsletter_report.html")
 
     # [REVIEW] Handle transcript review before final steps
     if args.review:
         print("\n" + "=" * 80 + "\nTRANSCRIPT REVIEW\n" + "=" * 80)
-        print(f"--- PROGRESS ---\n{year_progress_gpt_response}\n--- NEWS ---\n{voicebot_script}")
-        if podcast_turns:
-            print("\n--- PODCAST ---\n" + "\n".join([f"[{t.character_id}]: {t.text}" for t in podcast_turns]))
+        print(f"--- PROGRESS ---\n{year_progress_gpt_response}")
+        if not args.progress_only and voicebot_script:
+            print(f"\n--- NEWS ---\n{voicebot_script}")
+            if podcast_turns:
+                print("\n--- PODCAST ---\n" + "\n".join([f"[{t.character_id}]: {t.text}" for t in podcast_turns]))
         input("\nPress Enter to proceed with audio and email...")
 
     # Email reporting
     send_email("Year Progress Report 📅", year_progress_html, is_html=True, skip_send=args.skip_email)
-    send_email("Your Daily News Briefing 📰", newsletter_html, is_html=True, skip_send=args.skip_email)
+    if not args.progress_only and newsletter_html:
+        send_email("Your Daily News Briefing 📰", newsletter_html, is_html=True, skip_send=args.skip_email)
 
-    # [TTS] Audio generation phase
+    # [TTS] Audio generation phase - Chatterbox is the default
     if not args.skip_audio:
-        if args.chatterbox_tts:
-            # Generate Progress Audio
+        if args.riva_tts:
+            # NVIDIA Riva cloud TTS
+            text_to_speech_nospeak(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.mp3"), speed=1.5)
+            if not args.progress_only and voicebot_script:
+                text_to_speech_nospeak(voicebot_script, str(OUTPUT_DIR / "news_update_report.mp3"), speed=1.5)
+        elif args.local_tts:
+            # VibeVoice local TTS
+            vibevoice_text_to_speech(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.wav"), speaker="en-frank_man")
+            if not args.progress_only and voicebot_script:
+                vibevoice_text_to_speech(voicebot_script, str(OUTPUT_DIR / "news_update_report.wav"), speaker="en-mike_man")
+        else:
+            # Chatterbox TTS (default) - GPU-accelerated voice cloning
             progress_voice = args.progress_voice or config.newsletter_progress_voice
             chatterbox_text_to_speech(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.wav"), voice_name=progress_voice)
-            
-            # Generate News Audio (Podcast or Single)
-            if is_podcast:
-                from helper_functions.podcast_orchestrator import PodcastOrchestrator
-                orchestrator = PodcastOrchestrator(config, use_chatterbox=True)
-                context = f"Transcript:\n{voicebot_script}"
-                orchestrator.generate_podcast("News Podcast", context, output_filename="news_update_report.wav", pregenerated_turns=podcast_turns)
-            else:
-                news_voice = args.news_voice or config.newsletter_news_voice
-                chatterbox_text_to_speech(voicebot_script, str(OUTPUT_DIR / "news_update_report.wav"), voice_name=news_voice)
-        elif args.local_tts:
-            vibevoice_text_to_speech(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.wav"), speaker="en-frank_man")
-            vibevoice_text_to_speech(voicebot_script, str(OUTPUT_DIR / "news_update_report.wav"), speaker="en-mike_man")
-        else:
-            text_to_speech_nospeak(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.mp3"), speed=1.5)
-            text_to_speech_nospeak(voicebot_script, str(OUTPUT_DIR / "news_update_report.mp3"), speed=1.5)
+
+            # Generate News Audio (Podcast or Single) - skip if progress-only
+            if not args.progress_only and not args.skip_news_audio:
+                if is_podcast and podcast_turns:
+                    from helper_functions.podcast_orchestrator import PodcastOrchestrator
+                    orchestrator = PodcastOrchestrator(config, use_chatterbox=True)
+                    context = f"Transcript:\n{voicebot_script}"
+                    orchestrator.generate_podcast("News Podcast", context, output_filename="news_update_report.wav", pregenerated_turns=podcast_turns)
+                elif voicebot_script:
+                    news_voice = args.news_voice or config.newsletter_news_voice
+                    chatterbox_text_to_speech(voicebot_script, str(OUTPUT_DIR / "news_update_report.wav"), voice_name=news_voice)
 
     print("\n" + "=" * 80 + "\n✓ ALL TASKS COMPLETED SUCCESSFULLY!\n" + "=" * 80)
 
