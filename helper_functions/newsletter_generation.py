@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
 from helper_functions.llm_client import get_client
@@ -11,15 +12,40 @@ from helper_functions.newsletter_parsing import (
 logger = logging.getLogger(__name__)
 
 
+def load_persona_content(voice_persona: str, personas_dir: str = "personas") -> str | None:
+    """Load persona instructions from file if available.
+
+    Args:
+        voice_persona: Voice/persona name (e.g., "rick_sanchez")
+        personas_dir: Directory containing persona text files
+
+    Returns:
+        Persona file content if found, None otherwise
+    """
+    persona_path = Path(personas_dir) / f"{voice_persona}.txt"
+    if persona_path.exists():
+        logger.info(f"Loading persona file: {persona_path}")
+        return persona_path.read_text()
+    logger.debug(f"No persona file found at {persona_path}, using name-based prompt")
+    return None
+
+
 def generate_gpt_response(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False) -> str:
     """Generate a speech-friendly response from EDITH (or persona when using Chatterbox)."""
     client = get_client(provider=llm_provider, model_tier=model_tier)
 
-    # When Chatterbox is enabled with a persona, use the persona's identity instead of EDITH
+    # When Chatterbox is enabled with a persona, try to load detailed persona file
     if use_chatterbox and voice_persona:
-        persona_name = voice_persona.replace('_', ' ').title()
-        identity_intro = f"You are {persona_name}, speaking to Dinesh through his smart speaker."
-        style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style."
+        persona_content = load_persona_content(voice_persona)
+        if persona_content:
+            # Use rich persona file content with context about the listener
+            identity_intro = f"{persona_content}\n\nYou are speaking to Dinesh through his smart speaker."
+            style_instruction = "Stay completely in character throughout."
+        else:
+            # Fallback to simple name-based prompt when no persona file exists
+            persona_name = voice_persona.replace('_', ' ').title()
+            identity_intro = f"You are {persona_name}, speaking to Dinesh through his smart speaker."
+            style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style."
     else:
         persona_name = "EDITH"
         identity_intro = "You are EDITH, Tony Stark's AI assistant, speaking to Dinesh through his smart speaker."
@@ -232,11 +258,18 @@ def generate_gpt_response_voicebot(user_message: str, llm_provider: str, model_t
     try:
         client = get_client(provider=llm_provider, model_tier=model_tier)
 
-        # When Chatterbox is enabled with a persona, use the persona's identity instead of EDITH
+        # When Chatterbox is enabled with a persona, try to load detailed persona file
         if use_chatterbox and voice_persona:
-            persona_name = voice_persona.replace('_', ' ').title()
-            identity_intro = f"You are {persona_name}, delivering a news briefing through a voicebot."
-            style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style throughout."
+            persona_content = load_persona_content(voice_persona)
+            if persona_content:
+                # Use rich persona file content with context about the delivery format
+                identity_intro = f"{persona_content}\n\nYou are delivering a news briefing through a voicebot to Dinesh."
+                style_instruction = "Stay completely in character throughout the news delivery."
+            else:
+                # Fallback to simple name-based prompt when no persona file exists
+                persona_name = voice_persona.replace('_', ' ').title()
+                identity_intro = f"You are {persona_name}, delivering a news briefing through a voicebot."
+                style_instruction = f"Fully embody {persona_name}'s personality, vocabulary, rhythm, and speaking style throughout."
         else:
             identity_intro = "You are EDITH, speaking through a voicebot."
             if voice_persona:
