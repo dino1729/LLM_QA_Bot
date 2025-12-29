@@ -123,7 +123,7 @@ All runtime settings live in `config/config.yml`. The most important sections ar
 | --- | --- | --- |
 | Gemini / Cohere / Groq | `google_api_key`, `cohere_api_key`, `groq_api_key`, `groq_model_name`, etc. | Enables alternative LLM backends. |
 | LiteLLM / Ollama | `litellm_*`, `ollama_*` | Route chat, document Q&A, and embeddings through a gateway. |
-| Chatterbox TTS | `chatterbox_tts_model_type`, `newsletter_progress_voice`, `newsletter_news_voice` | GPU-accelerated on-device TTS with voice cloning. |
+| Chatterbox TTS | `chatterbox_tts_model_type`, `newsletter_progress_voice`, `newsletter_progress_voice_randomize`, `newsletter_news_voice` | GPU-accelerated on-device TTS with voice cloning and optional voice randomization. |
 | Podcast Engine | `podcast_enabled`, `podcast_voice_a_*`, `podcast_voice_b_*`, `podcast_target_duration_seconds` | Configure dual-persona dialogue, including independent LLM/provider selection for each character. |
 | Retriever / Firecrawl / Tavily | `retriever`, `firecrawl_server_url`, `tavily_api_key` | Power web research and ingestion. |
 | Image generation | `nvidia_*`, `openai_image_model`, `openai_image_enhancement_model` | Configure the Image Studio tab. |
@@ -168,6 +168,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 ## Running Recipes
 - **Daily Reporter (Single Voice)**: `python year_progress_and_news_reporter_litellm.py --chatterbox-tts`
 - **Daily Reporter (Podcast Mode)**: `python year_progress_and_news_reporter_litellm.py --chatterbox-tts --podcast`
+- **Voice Randomization**: Set `newsletter_progress_voice_randomize: true` in `config.yml` to randomly select a different progress voice from `voices/` folder on each run. The CLI `--progress-voice` flag overrides both config and randomization.
 - **Review Mode (No Audio)**: Add `--review` to see transcripts before synthesis.
 - **Fast/Free Re-generation**: Add `--full-cache` to use cached transcripts from `daily_bundle_latest.json`.
 - **One-shot full stack**: from repo root run `./start_fullstack.sh`. It creates/uses `.venv`, installs Python deps, builds the frontend, and launches `gradio_ui_full.py`.

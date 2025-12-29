@@ -16,8 +16,12 @@ groq_qwen_model_name: ""
 # weather agent
 openweather_api_key: ""
 
-# pyowm
+# pyowm - OpenWeatherMap configuration
 pyowm_api_key: ""
+pyowm_city_id: ""               # City ID from OpenWeatherMap
+pyowm_city_name: ""             # Display name for the location 
+pyowm_lat: ""                   # Latitude
+pyowm_lon: ""                   # Longitude
 
 # yahoo smtp server
 yahoo_id: ""
@@ -105,6 +109,7 @@ chatterbox_tts_default_voice: ""            # REQUIRED: fallback voice name (e.g
 
 # Newsletter TTS Voice Configuration
 newsletter_progress_voice: ""       # REQUIRED: Voice for year progress script (e.g., "jensen_huang")
+newsletter_progress_voice_randomize: false  # When true, randomizes progress voice from voices/ folder (ignores newsletter_progress_voice)
 newsletter_news_voice: ""           # REQUIRED: Voice for news briefing script (e.g., "morgan_freeman")
 
 # Newsletter LLM Tier Configuration

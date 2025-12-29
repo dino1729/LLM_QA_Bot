@@ -37,15 +37,22 @@ TTS OPTIONS (Chatterbox is the default):
 --podcast               Transform the news briefing into a two-persona dialogue (Rick and Morty style).
 --voice VOICE           Voice preset for VibeVoice TTS (default: en-davis_man).
 --progress-voice VOICE  Voice for year progress report (Chatterbox mode).
+                        Overrides both config setting and randomization.
 --news-voice VOICE      Voice for news briefing (Chatterbox mode).
 --list-voices           List available VibeVoice voice presets and exit.
 --list-chatterbox-voices List available Chatterbox voice files in voices/ folder and exit.
+
+VOICE RANDOMIZATION:
+Set 'newsletter_progress_voice_randomize: true' in config.yml to randomly select
+a different voice from the voices/ folder for each run. CLI --progress-voice
+overrides this setting. The news voice is never randomized.
 """
 
 import argparse
 import logging
 import random
 from datetime import datetime
+from pathlib import Path
 from pathlib import Path
 
 # Helper functions for audio, email, and HTML rendering
@@ -95,7 +102,7 @@ from helper_functions.progress_bundle import (
     write_bundle_json,
 )
 from helper_functions.quote_utils import generate_quote as _generate_quote, _get_fallback_quote
-from helper_functions.weather_utils import get_weather
+from helper_functions.weather_utils import get_weather, get_weather_forecast, get_weather_location
 from helper_functions.llm_client import get_client
 
 # VibeVoice TTS instances (lazy-loaded for --local-tts mode)
@@ -105,6 +112,34 @@ _vibevoice_tts_cache = {}
 # Chatterbox TTS instances (lazy-loaded for --chatterbox-tts mode)
 # Cache one TTS instance per model type
 _chatterbox_tts_cache = {}
+
+
+def get_random_voice_from_folder(voices_folder: str = "voices") -> str:
+    """Get a random voice name from the voices folder.
+    
+    Args:
+        voices_folder: Path to the voices folder (default: "voices")
+        
+    Returns:
+        Voice name without extension (e.g., "c3po", "morgan_freeman")
+        Falls back to "c3po" if no voices found
+    """
+    voices_path = Path(voices_folder)
+    if not voices_path.exists():
+        logger.warning(f"Voices folder not found: {voices_path}")
+        return "c3po"
+    
+    # Get all .wav files in the voices folder
+    voice_files = list(voices_path.glob("*.wav"))
+    if not voice_files:
+        logger.warning(f"No voice files found in {voices_path}")
+        return "c3po"
+    
+    # Pick a random voice and return name without extension
+    random_voice = random.choice(voice_files)
+    voice_name = random_voice.stem
+    logger.info(f"🎲 Randomized progress voice: {voice_name}")
+    return voice_name
 
 
 def get_chatterbox_tts(model_type: str = "turbo"):
@@ -475,7 +510,13 @@ def main():
     # Core data fetching
     days_completed, weeks_completed, days_left, weeks_left, percent_days_left = time_left_in_year()
     temp, status = get_weather()
-    weather_data = {"temp_c": temp, "status": status, "location": "North Plains, OR"}
+    forecast = get_weather_forecast()
+    weather_data = {
+        "temp_c": temp,
+        "status": status,
+        "location": get_weather_location(),
+        "forecast": forecast,  # today/tomorrow outlook + alerts
+    }
 
     # Import config early for accessing tier settings
     from config import config
@@ -550,8 +591,16 @@ def main():
 
     # [CACHING] Year Progress script
     if not year_progress_gpt_response:
-        # Use CLI arg first, then config, for persona (voice cloning uses same persona for text generation)
-        progress_persona = (args.progress_voice or config.newsletter_progress_voice) if use_chatterbox else None
+        # Use CLI arg first, then randomize if enabled, then config, for persona (voice cloning uses same persona for text generation)
+        if use_chatterbox:
+            if args.progress_voice:
+                progress_persona = args.progress_voice
+            elif config.newsletter_progress_voice_randomize:
+                progress_persona = get_random_voice_from_folder()
+            else:
+                progress_persona = config.newsletter_progress_voice
+        else:
+            progress_persona = None
         
         # Build comprehensive prompt with all progress data
         lesson_text = ""
@@ -563,6 +612,15 @@ Historical Example: {lesson_dict.get('historical', '')}
 Application: {lesson_dict.get('application', '')}
 """
         
+        # Build weather forecast section for prompt
+        forecast_text = ""
+        forecast_data = weather_data.get("forecast", {})
+        if forecast_data.get("outlook"):
+            forecast_text = f"\nWEATHER OUTLOOK:\n{forecast_data['outlook']}"
+            if forecast_data.get("alerts"):
+                alert_names = [a["event"] for a in forecast_data["alerts"][:2]]
+                forecast_text += f"\nActive Alerts: {', '.join(alert_names)}"
+        
         progress_prompt = f"""Create a spoken year progress announcement that covers ALL of the following:
 
 YEAR PROGRESS:
@@ -571,21 +629,22 @@ YEAR PROGRESS:
 - Weeks completed: {weeks_completed}
 - Percent complete: {round(100 - percent_days_left, 1)}%
 
-WEATHER TODAY:
+CURRENT WEATHER:
 - Location: {weather_data.get('location', 'Unknown')}
 - Temperature: {weather_data.get('temp_c', 'N/A')}°C
 - Conditions: {weather_data.get('status', 'Unknown')}
+{forecast_text}
 
 INSPIRATIONAL QUOTE:
 "{quote_text}" - {quote_author}
 {lesson_text}
 YOU MUST include and discuss:
 1. The year progress statistics (days completed, days left, percentage)
-2. Today's weather conditions
+2. Today's weather conditions AND the forecast outlook for today and tomorrow (high/low temps, precipitation chances, any weather alerts)
 3. The inspirational quote and its meaning
 4. The daily lesson - explain the key insight, share the historical example, and describe how to apply it
 
-Make it conversational, motivating, and tie everything together naturally."""
+Make it conversational, motivating, and tie everything together naturally. When discussing weather, give practical advice based on the forecast (e.g., dress warmly, bring an umbrella, etc.)."""
         
         print(f"📝 Generating year progress script using LLM tier: {config.newsletter_progress_llm_tier}, persona: {progress_persona}")
         year_progress_gpt_response = generate_gpt_response(
@@ -601,6 +660,11 @@ Make it conversational, motivating, and tie everything together naturally."""
         weather_data, quote_text, quote_author, lesson_dict, news_raw_sources, 
         newsletter_sections, voicebot_script, year_progress_gpt_response, podcast_transcript_dicts
     )
+    
+    # Add voice metadata to bundle for tracking (especially useful when randomization is enabled)
+    if use_chatterbox and 'progress_persona' in locals():
+        bundle.setdefault('meta', {})['progress_voice_used'] = progress_persona
+    
     write_bundle_json(bundle, OUTPUT_DIR)
 
     # Render HTML
@@ -641,7 +705,14 @@ Make it conversational, motivating, and tie everything together naturally."""
                 vibevoice_text_to_speech(voicebot_script, str(OUTPUT_DIR / "news_update_report.wav"), speaker="en-mike_man")
         else:
             # Chatterbox TTS (default) - GPU-accelerated voice cloning
-            progress_voice = args.progress_voice or config.newsletter_progress_voice
+            # Determine progress voice: CLI arg > randomize (if enabled) > config
+            if args.progress_voice:
+                progress_voice = args.progress_voice
+            elif config.newsletter_progress_voice_randomize:
+                progress_voice = get_random_voice_from_folder()
+            else:
+                progress_voice = config.newsletter_progress_voice
+            
             chatterbox_text_to_speech(year_progress_gpt_response, str(OUTPUT_DIR / "year_progress_report.wav"), voice_name=progress_voice)
 
             # Generate News Audio (Podcast or Single) - skip if progress-only
