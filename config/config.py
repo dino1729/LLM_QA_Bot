@@ -107,6 +107,7 @@ chatterbox_tts_default_voice = config_yaml.get("chatterbox_tts_default_voice")  
 
 # Newsletter TTS Voice Configuration
 newsletter_progress_voice = config_yaml.get("newsletter_progress_voice")
+newsletter_progress_voice_randomize = config_yaml.get("newsletter_progress_voice_randomize", False)
 newsletter_news_voice = config_yaml.get("newsletter_news_voice")
 
 # Newsletter LLM Tier Configuration
@@ -159,6 +160,10 @@ cors_environment = os.environ.get("ENVIRONMENT", cors_config.get("environment", 
 # Weather and other services
 openweather_api_key = config_yaml.get("openweather_api_key")
 pyowm_api_key = config_yaml.get("pyowm_api_key")
+pyowm_city_id = config_yaml.get("pyowm_city_id")
+pyowm_city_name = config_yaml.get("pyowm_city_name", "Unknown")
+pyowm_lat = config_yaml.get("pyowm_lat")
+pyowm_lon = config_yaml.get("pyowm_lon")
 
 # Email configuration
 yahoo_id = config_yaml.get("yahoo_id")
