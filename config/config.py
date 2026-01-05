@@ -169,6 +169,21 @@ pyowm_lon = config_yaml.get("pyowm_lon")
 yahoo_id = config_yaml.get("yahoo_id")
 yahoo_app_password = config_yaml.get("yahoo_app_password")
 
+# Telegram Bot Token
+telegram_bot_token = config_yaml.get("telegram_bot_token")
+
+# Memory Palace Configuration
+memory_palace_config = config_yaml.get("memory_palace", {})
+memory_palace_telegram_user_id = memory_palace_config.get("telegram_user_id")
+memory_palace_provider = memory_palace_config.get("provider", "litellm")
+memory_palace_primary_model = memory_palace_config.get("primary_model", "nemotron-3-nano-30b-a3b")
+memory_palace_fallback_model = memory_palace_config.get("fallback_model", "gemini-2.5-flash-lite")
+memory_palace_model_tier = memory_palace_config.get("model_tier", "fast")
+memory_palace_similarity_threshold = memory_palace_config.get("similarity_threshold", 0.75)
+memory_palace_recency_window_days = memory_palace_config.get("recency_window_days", 30)
+memory_palace_blend_with_generated = memory_palace_config.get("blend_with_generated", True)
+memory_palace_index_folder = memory_palace_config.get("index_folder", "./memory_palace/lessons_index")
+
 # Default model selectors for API endpoints
 # These are loaded from the 'defaults' section in config.yml
 defaults_config = config_yaml.get("defaults", {})
