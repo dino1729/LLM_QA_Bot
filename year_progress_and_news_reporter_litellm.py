@@ -105,6 +105,13 @@ from helper_functions.quote_utils import generate_quote as _generate_quote, _get
 from helper_functions.weather_utils import get_weather, get_weather_forecast, get_weather_location
 from helper_functions.llm_client import get_client
 
+# Memory Palace integration for curated lesson recall
+try:
+    from helper_functions.memory_palace_db import MemoryPalaceDB, CATEGORIES
+    MEMORY_PALACE_AVAILABLE = True
+except ImportError:
+    MEMORY_PALACE_AVAILABLE = False
+
 # VibeVoice TTS instances (lazy-loaded for --local-tts mode)
 # Cache one TTS instance per voice for efficiency
 _vibevoice_tts_cache = {}
@@ -389,6 +396,49 @@ def generate_lesson_response(user_message, model_tier: str):
         lu.get_client = original
 
 
+def get_memory_palace_lesson(mark_shown: bool = True) -> dict | None:
+    """
+    Fetch a random lesson from the Memory Palace database with recency exclusion.
+
+    Args:
+        mark_shown: If True, marks the lesson as shown to prevent repeats.
+
+    Returns:
+        A dict with keys: topic, key_insight, category, source, id
+        or None if Memory Palace is unavailable or empty.
+    """
+    if not MEMORY_PALACE_AVAILABLE:
+        logger.info("Memory Palace not available, skipping")
+        return None
+
+    try:
+        db = MemoryPalaceDB()
+        lesson = db.get_random_lesson(exclude_recent=True)
+
+        if not lesson:
+            logger.info("No lessons available in Memory Palace (or all recently shown)")
+            return None
+
+        # Mark as shown for recency tracking
+        if mark_shown:
+            db.mark_as_shown(lesson.id)
+
+        # Get category display name
+        cat_value = lesson.metadata.category.value
+        cat_display = CATEGORIES.get(cat_value, {}).get("display", cat_value)
+
+        return {
+            "topic": cat_display,
+            "key_insight": lesson.distilled_text,
+            "category": cat_value,
+            "source": lesson.metadata.source or "Memory Palace",
+            "id": lesson.id,
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch Memory Palace lesson: {e}")
+        return None
+
+
 def parse_arguments():
     """Defines and parses CLI arguments for the reporter."""
     parser = argparse.ArgumentParser(
@@ -416,6 +466,7 @@ def parse_arguments():
     parser.add_argument('--news-voice', type=str, default=None, help='Chatterbox news voice')
     parser.add_argument('--list-voices', action='store_true', help='List VibeVoice presets')
     parser.add_argument('--list-chatterbox-voices', action='store_true', help='List Chatterbox voices')
+    parser.add_argument('--no-memory-palace', action='store_true', help='Skip Memory Palace lesson (use generated lesson only)')
 
     return parser.parse_args()
 
@@ -530,9 +581,34 @@ def main():
     else:
         random_personality = quote_author
 
+    # Memory Palace lesson (curated insights from past learning)
+    mp_lesson = None
+    if not args.no_memory_palace and MEMORY_PALACE_AVAILABLE:
+        mp_lesson = get_memory_palace_lesson(mark_shown=True)
+        if mp_lesson:
+            print(f"📚 Memory Palace lesson: [{mp_lesson['topic']}] {mp_lesson['key_insight'][:60]}...")
+
     if not lesson_dict:
-        topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
-        lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
+        # Blend strategy: if Memory Palace lesson exists and blend is enabled, use both
+        # Otherwise, generate a new lesson from existing JSON files
+        if mp_lesson and config.memory_palace_blend_with_generated:
+            # Use Memory Palace lesson as primary, still generate for variety
+            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
+            lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
+            # Add Memory Palace insight as bonus key insight
+            lesson_dict["mp_insight"] = mp_lesson["key_insight"]
+            lesson_dict["mp_topic"] = mp_lesson["topic"]
+        elif mp_lesson:
+            # Memory Palace only (no blend)
+            lesson_dict = {
+                "topic": mp_lesson["topic"],
+                "key_insight": mp_lesson["key_insight"],
+                "mp_id": mp_lesson["id"],
+            }
+        else:
+            # Fallback to generated lesson
+            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
+            lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
 
     # [NEWS GENERATION] Skip entirely if --progress-only mode
     news_update_tech = ""
@@ -605,7 +681,31 @@ def main():
         # Build comprehensive prompt with all progress data
         lesson_text = ""
         if lesson_dict:
-            lesson_text = f"""
+            # Check if we have Memory Palace insight (blended mode)
+            mp_insight = lesson_dict.get('mp_insight', '')
+            mp_topic = lesson_dict.get('mp_topic', '')
+
+            if mp_insight:
+                # Blended mode: generated lesson + Memory Palace insight
+                lesson_text = f"""
+DAILY LESSON - Topic: {lesson_dict.get('topic', 'Leadership')}
+Key Insight: {lesson_dict.get('key_insight', '')}
+Historical Example: {lesson_dict.get('historical', '')}
+Application: {lesson_dict.get('application', '')}
+
+MEMORY PALACE WISDOM - Topic: {mp_topic}
+Curated Insight: {mp_insight}
+"""
+            elif lesson_dict.get('mp_id'):
+                # Memory Palace only mode
+                lesson_text = f"""
+MEMORY PALACE WISDOM - Topic: {lesson_dict.get('topic', 'Wisdom')}
+Key Insight: {lesson_dict.get('key_insight', '')}
+(From your curated Memory Palace collection)
+"""
+            else:
+                # Standard generated lesson
+                lesson_text = f"""
 DAILY LESSON - Topic: {lesson_dict.get('topic', 'Leadership')}
 Key Insight: {lesson_dict.get('key_insight', '')}
 Historical Example: {lesson_dict.get('historical', '')}
@@ -642,7 +742,8 @@ YOU MUST include and discuss:
 1. The year progress statistics (days completed, days left, percentage)
 2. Today's weather conditions AND the forecast outlook for today and tomorrow (high/low temps, precipitation chances, any weather alerts)
 3. The inspirational quote and its meaning
-4. The daily lesson - explain the key insight, share the historical example, and describe how to apply it
+4. The daily lesson - explain the key insight, share the historical example (if provided), and describe how to apply it
+5. If MEMORY PALACE WISDOM is included, weave it naturally into the discussion as a timeless piece of curated wisdom
 
 Make it conversational, motivating, and tie everything together naturally. When discussing weather, give practical advice based on the forecast (e.g., dress warmly, bring an umbrella, etc.)."""
         

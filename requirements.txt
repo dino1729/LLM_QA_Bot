@@ -42,3 +42,6 @@ pyloudnorm           # Audio normalization (LUFS)
 pytest
 pytest-dotenv
 lxml_html_clean
+
+# Telegram Bot
+python-telegram-bot>=20.0

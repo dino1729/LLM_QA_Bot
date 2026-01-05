@@ -154,3 +154,5 @@ personas/
 
 pytest.ini
 .gitattributes
+
+memory_palace/

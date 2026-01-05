@@ -1393,6 +1393,18 @@ def render_lesson_html(lesson: Dict[str, Any]) -> str:
             <div class="wisdom-text">{safe_application}</div>
         </div>''')
 
+    # Memory Palace wisdom section (curated insights from past learning)
+    mp_insight = lesson.get("mp_insight", "")
+    mp_topic = lesson.get("mp_topic", "")
+    if mp_insight:
+        safe_mp_insight = html_module.escape(mp_insight)
+        safe_mp_topic = html_module.escape(mp_topic) if mp_topic else "Memory Palace"
+        html_parts.append(f'''
+        <div class="wisdom-section wisdom-memory-palace" style="border-left: 3px solid #9333EA; margin-top: var(--space-md);">
+            <div class="wisdom-label" style="color: #9333EA;">🏛️ MEMORY PALACE — {safe_mp_topic}</div>
+            <div class="wisdom-text">{safe_mp_insight}</div>
+        </div>''')
+
     html_parts.append("</div>")
     return "\n".join(html_parts)
 
