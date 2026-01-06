@@ -4,7 +4,7 @@ Memory Palace Telegram Bot
 A Telegram bot for adding, searching, and managing lessons in the Memory Palace.
 
 Features:
-- Natural language lesson input
+- Natural language intent detection (NL agent routes to appropriate action)
 - LLM-powered distillation into single-line insights
 - Approve/Edit/Reject confirmation workflow
 - Category suggestion with user override
@@ -25,10 +25,12 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
-from enum import IntEnum, auto
+from dataclasses import dataclass
+from enum import IntEnum, StrEnum, auto
 from functools import wraps
-from typing import Callable, TypeVar, ParamSpec
+from typing import Callable, Optional, TypeVar, ParamSpec
 
 from telegram import (
     InlineKeyboardButton,
@@ -46,6 +48,7 @@ from telegram.ext import (
 )
 
 from config import config
+from helper_functions.llm_client import get_client
 from helper_functions.memory_palace_db import (
     CATEGORIES,
     Lesson,
@@ -56,6 +59,101 @@ from helper_functions.memory_palace_db import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class UserIntent(StrEnum):
+    """Possible user intents detected from natural language."""
+
+    ADD_LESSON = "add_lesson"
+    GET_RANDOM = "get_random"
+    SEARCH = "search"
+    GET_STATS = "get_stats"
+    HELP = "help"
+
+
+@dataclass
+class IntentResult:
+    """Result of intent detection."""
+
+    intent: UserIntent
+    search_query: Optional[str] = None  # Extracted search query if intent is SEARCH
+    confidence: float = 1.0
+
+
+def detect_intent(user_message: str) -> IntentResult:
+    """
+    Use LLM to detect user intent from natural language message.
+
+    This enables the bot to understand requests like:
+    - "Tell me a random lesson" -> GET_RANDOM
+    - "What do I know about game theory?" -> SEARCH
+    - "Show me my stats" -> GET_STATS
+    - "I learned that X today" -> ADD_LESSON
+
+    Args:
+        user_message: The user's raw message text
+
+    Returns:
+        IntentResult with detected intent and optional search query
+    """
+    provider = config.memory_palace_provider
+    model_name = config.memory_palace_primary_model
+
+    client = get_client(provider=provider, model_name=model_name)
+
+    prompt = f"""You are an intent classifier for a "Memory Palace" bot that stores personal lessons and insights.
+
+Classify the user's message into ONE of these intents:
+- add_lesson: User wants to SAVE a new insight, lesson, quote, or piece of wisdom they learned
+- get_random: User wants to RETRIEVE a random lesson from their collection
+- search: User wants to SEARCH/FIND specific lessons (extract the search query)
+- get_stats: User wants to see STATISTICS about their lessons
+- help: User is asking for HELP or how to use the bot
+
+IMPORTANT DISTINCTIONS:
+- "Tell me a lesson" / "Give me something I learned" / "What's a random lesson?" = get_random (RETRIEVAL)
+- "I learned that X" / "Here's an insight: X" / "Save this: X" = add_lesson (SAVING new content)
+- "What do I know about X?" / "Find lessons about X" = search (SEARCHING)
+
+Respond with JSON only:
+{{"intent": "<intent>", "search_query": "<query if search, else null>"}}
+
+User message: {user_message}"""
+
+    try:
+        response = client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+
+        # Parse JSON response
+        content = response.strip()
+        # Handle markdown code blocks if present
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        content = content.strip()
+
+        result = json.loads(content)
+        intent_str = result.get("intent", "add_lesson").lower()
+        search_query = result.get("search_query")
+
+        # Map to enum
+        intent_map = {
+            "add_lesson": UserIntent.ADD_LESSON,
+            "get_random": UserIntent.GET_RANDOM,
+            "search": UserIntent.SEARCH,
+            "get_stats": UserIntent.GET_STATS,
+            "help": UserIntent.HELP,
+        }
+
+        intent = intent_map.get(intent_str, UserIntent.ADD_LESSON)
+        return IntentResult(intent=intent, search_query=search_query)
+
+    except Exception as e:
+        logger.warning(f"Intent detection failed: {e}, defaulting to ADD_LESSON")
+        return IntentResult(intent=UserIntent.ADD_LESSON)
 
 # Type hints for decorator
 P = ParamSpec("P")
@@ -98,10 +196,9 @@ def authorized_only(func: Callable[P, R]) -> Callable[P, R]:
         if authorized_id is None:
             # Discovery mode - accept all users and show their ID
             await update.message.reply_text(
-                f"Your Telegram User ID: `{user_id}`\n\n"
+                f"Your Telegram User ID: {user_id}\n\n"
                 "Add this to your config.yml under memory_palace.telegram_user_id "
-                "to enable access control.",
-                parse_mode="Markdown"
+                "to enable access control."
             )
             return ConversationHandler.END
 
@@ -290,8 +387,134 @@ class MemoryPalaceBot:
     async def receive_lesson_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        """Handle incoming lesson text for distillation."""
+        """Handle incoming text with intent detection.
+
+        Routes to appropriate handler based on detected intent:
+        - ADD_LESSON: Distill and save a new lesson
+        - GET_RANDOM: Return a random lesson
+        - SEARCH: Search lessons by query
+        - GET_STATS: Show statistics
+        - HELP: Show help message
+        """
         text = update.message.text
+
+        # Detect user intent
+        logger.info(f"Detecting intent for: {text[:50]}...")
+        intent_result = detect_intent(text)
+        logger.info(f"Detected intent: {intent_result.intent}")
+
+        # Route based on intent
+        if intent_result.intent == UserIntent.GET_RANDOM:
+            return await self._handle_get_random(update, context)
+
+        elif intent_result.intent == UserIntent.SEARCH:
+            query = intent_result.search_query or text
+            return await self._handle_search(update, context, query)
+
+        elif intent_result.intent == UserIntent.GET_STATS:
+            return await self._handle_stats(update, context)
+
+        elif intent_result.intent == UserIntent.HELP:
+            return await self._handle_help(update, context)
+
+        # Default: ADD_LESSON - distill and save
+        return await self._handle_add_lesson(update, context, text)
+
+    async def _handle_get_random(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle get_random intent."""
+        lesson = self.db.get_random_lesson(exclude_recent=False)
+
+        if not lesson:
+            await update.message.reply_text("No lessons in your Memory Palace yet!")
+            return State.AWAITING_LESSON
+
+        cat_display = CATEGORIES.get(
+            lesson.metadata.category.value, {}
+        ).get("display", lesson.metadata.category.value)
+
+        await update.message.reply_text(
+            f"📚 Here's a lesson from your Memory Palace:\n\n"
+            f"[{cat_display}]\n"
+            f"{lesson.distilled_text}"
+        )
+        return State.AWAITING_LESSON
+
+    async def _handle_search(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+    ) -> int:
+        """Handle search intent."""
+        results = self.db.find_similar(query, top_k=5)
+
+        if not results:
+            await update.message.reply_text(
+                f"No lessons found matching: {query}"
+            )
+            return State.AWAITING_LESSON
+
+        response = f"🔍 Found {len(results)} lessons:\n\n"
+        for i, result in enumerate(results, 1):
+            cat_display = CATEGORIES.get(
+                result.lesson.metadata.category.value, {}
+            ).get("display", result.lesson.metadata.category.value)
+            response += (
+                f"{i}. [{cat_display}]\n"
+                f"   {result.lesson.distilled_text}\n\n"
+            )
+
+        await update.message.reply_text(response)
+        return State.AWAITING_LESSON
+
+    async def _handle_stats(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle get_stats intent."""
+        stats = self.db.get_category_stats()
+        total = sum(stats.values())
+
+        response = f"📊 Memory Palace Statistics\n\n"
+        response += f"Total lessons: {total}\n\n"
+        response += "By category:\n"
+
+        for cat_value, count in sorted(stats.items(), key=lambda x: -x[1]):
+            cat_display = CATEGORIES.get(cat_value, {}).get("display", cat_value)
+            pct = (count / total * 100) if total > 0 else 0
+            response += f"  {cat_display}: {count} ({pct:.1f}%)\n"
+
+        await update.message.reply_text(response)
+        return State.AWAITING_LESSON
+
+    async def _handle_help(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle help intent."""
+        await update.message.reply_text(
+            "🏛️ Memory Palace Help\n\n"
+            "I understand natural language! Try:\n\n"
+            "📥 To add a lesson:\n"
+            '   "I learned that X today"\n'
+            '   "Here\'s an insight: X"\n\n'
+            "🎲 To get a random lesson:\n"
+            '   "Tell me something I learned"\n'
+            '   "Give me a random lesson"\n\n'
+            "🔍 To search:\n"
+            '   "What do I know about X?"\n'
+            '   "Find lessons about Y"\n\n'
+            "📊 To see stats:\n"
+            '   "Show me my statistics"\n\n'
+            "Or use commands:\n"
+            "/add - Add a lesson\n"
+            "/random - Random lesson\n"
+            "/search <query> - Search\n"
+            "/stats - Statistics"
+        )
+        return State.AWAITING_LESSON
+
+    async def _handle_add_lesson(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+    ) -> int:
+        """Handle add_lesson intent - distill and save."""
         context.user_data["original_input"] = text
 
         await update.message.reply_text("Distilling your insight... ✨")
@@ -483,9 +706,36 @@ class MemoryPalaceBot:
         )
         return State.CONFIRMING_DISTILLED
 
+    async def _send_startup_message(self, application: Application) -> None:
+        """Send a welcome message to the authorized user on bot startup."""
+        user_id = config.memory_palace_telegram_user_id
+        if not user_id:
+            logger.info("No telegram_user_id configured, skipping startup message")
+            return
+
+        try:
+            stats = self.db.get_category_stats()
+            total = sum(stats.values())
+            await application.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"Memory Palace bot is now online!\n\n"
+                    f"You have {total} lessons stored.\n\n"
+                    f"Send /add to add a new lesson or just send me some text."
+                ),
+            )
+            logger.info(f"Sent startup message to user {user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to send startup message: {e}")
+
     def build_application(self) -> Application:
         """Build the Telegram application with handlers."""
-        application = Application.builder().token(self.token).build()
+        application = (
+            Application.builder()
+            .token(self.token)
+            .post_init(self._send_startup_message)
+            .build()
+        )
 
         # Conversation handler for lesson adding workflow
         conv_handler = ConversationHandler(
