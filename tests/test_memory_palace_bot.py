@@ -14,8 +14,10 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from helper_functions.memory_palace_bot import (
+    IntentResult,
     MemoryPalaceBot,
     State,
+    UserIntent,
     authorized_only,
 )
 from helper_functions.memory_palace_db import (
@@ -409,18 +411,34 @@ class TestDistillationFlow:
     """Tests for distillation conversation flow."""
 
     @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.detect_intent")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
     @patch("helper_functions.memory_palace_bot.config")
     @patch("helper_functions.memory_palace_bot.distill_lesson")
     @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
-    async def test_receive_lesson_distills(self, mock_db_class, mock_distill, mock_cfg):
+    async def test_receive_lesson_distills(
+        self, mock_db_class, mock_distill, mock_cfg, mock_web_kb, mock_answer_engine, mock_detect
+    ):
         """Test receiving lesson text triggers distillation."""
         mock_cfg.telegram_bot_token = "test-token"
         mock_cfg.memory_palace_telegram_user_id = 123456789
         mock_cfg.memory_palace_primary_model = "test-model"
+        mock_cfg.memory_palace_provider = "litellm"
+        mock_cfg.memory_palace_model_tier = "fast"
 
         mock_db_class.return_value = MagicMock()
         mock_db_class.return_value.check_duplicate.return_value = None
         mock_db_class.return_value.get_few_shot_examples.return_value = []
+
+        mock_web_kb.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+
+        # Mock intent detection to return ADD_LESSON
+        mock_detect.return_value = IntentResult(
+            intent=UserIntent.ADD_LESSON,
+            confidence=0.9
+        )
 
         mock_distill.return_value = LessonDistillationResult(
             distilled_text="Distilled insight",
@@ -444,20 +462,34 @@ class TestDistillationFlow:
         assert result == State.CONFIRMING_DISTILLED
 
     @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.detect_intent")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
     @patch("helper_functions.memory_palace_bot.config")
     @patch("helper_functions.memory_palace_bot.distill_lesson")
     @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
     async def test_duplicate_detection_triggers_warning(
-        self, mock_db_class, mock_distill, mock_cfg
+        self, mock_db_class, mock_distill, mock_cfg, mock_web_kb, mock_answer_engine, mock_detect
     ):
         """Test duplicate detection shows warning."""
         mock_cfg.telegram_bot_token = "test-token"
         mock_cfg.memory_palace_telegram_user_id = 123456789
         mock_cfg.memory_palace_primary_model = "test-model"
+        mock_cfg.memory_palace_provider = "litellm"
+        mock_cfg.memory_palace_model_tier = "fast"
 
         mock_db = MagicMock()
         mock_db_class.return_value = mock_db
         mock_db.get_few_shot_examples.return_value = []
+
+        mock_web_kb.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+
+        # Mock intent detection to return ADD_LESSON
+        mock_detect.return_value = IntentResult(
+            intent=UserIntent.ADD_LESSON,
+            confidence=0.9
+        )
 
         # Create existing lesson that will be flagged as duplicate
         existing_lesson = Lesson(

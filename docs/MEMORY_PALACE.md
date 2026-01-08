@@ -2,44 +2,69 @@
 
 ## Overview
 
-The Memory Palace is a curated knowledge management system that stores distilled insights from various learning sources (books, articles, podcasts, etc.) and integrates them into the daily newsletter workflow. It uses LlamaIndex VectorStoreIndex for semantic search and retrieval, with a Telegram bot interface for adding new lessons.
+The Memory Palace is a curated knowledge management system that stores distilled insights from various learning sources (books, articles, podcasts, etc.) and integrates them into the daily newsletter workflow. It uses LlamaIndex VectorStoreIndex for semantic search and retrieval, with a Telegram bot interface (EDITH) for adding lessons, answering questions, and autonomous web research.
 
 **Key Features:**
 - LlamaIndex-based vector database for semantic search
-- Telegram bot with conversational state machine for lesson ingestion
+- **EDITH Persona** - Telegram bot with autonomous learning capabilities
+- **Dual-Store Architecture** - User Wisdom (permanent) + Web Knowledge (7-day TTL)
+- **Question Answering** - Answer questions from stored knowledge with confidence tiers
+- **Autonomous Web Research** - Firecrawl integration for learning unknown topics
+- **Conflict Resolution** - Detect and resolve contradictions between stored wisdom and new research
 - LLM-powered distillation of verbose content into single-line insights
 - Recency tracking to prevent repeated lessons in newsletters
 - 10 consolidated categories with automatic LLM-suggested categorization
 - Duplicate detection with configurable similarity threshold
+- **Soft Delete** - Mark lessons as forgotten (recoverable)
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Memory Palace System                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐ │
-│  │ Telegram Bot │────▶│  MemoryPalaceDB  │────▶│  LlamaIndex │ │
-│  │ (Ingestion)  │     │  (Core Module)   │     │  VectorStore│ │
-│  └──────────────┘     └──────────────────┘     └─────────────┘ │
-│         │                     │                       │         │
-│         │                     │                       │         │
-│         ▼                     ▼                       ▼         │
-│  ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐ │
-│  │  LLM Client  │     │  shown_history   │     │   docstore  │ │
-│  │ (Distillation│     │     .json        │     │   .json     │ │
-│  └──────────────┘     └──────────────────┘     └─────────────┘ │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              Newsletter Integration                        │   │
-│  │  year_progress_and_news_reporter_litellm.py               │   │
-│  │  └─▶ get_memory_palace_lesson() ─▶ HTML rendering         │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Memory Palace System (EDITH)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                         DUAL-STORE ARCHITECTURE                         │ │
+│  ├──────────────────────────────┬─────────────────────────────────────────┤ │
+│  │      USER WISDOM (Primary)   │     WEB KNOWLEDGE (Secondary)           │ │
+│  │   ┌─────────────────────┐    │    ┌─────────────────────┐              │ │
+│  │   │   MemoryPalaceDB    │    │    │   WebKnowledgeDB    │              │ │
+│  │   │   - Permanent       │    │    │   - 7-day TTL       │              │ │
+│  │   │   - User-curated    │    │    │   - Auto-learned    │              │ │
+│  │   │   - Soft delete     │    │    │   - Auto-expires    │              │ │
+│  │   └─────────────────────┘    │    └─────────────────────┘              │ │
+│  └──────────────────────────────┴─────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                          ANSWER ENGINE                                   ││
+│  │  ┌─────────────┐  ┌─────────────────┐  ┌────────────────────────────┐  ││
+│  │  │  Retrieval  │──│ Confidence Calc │──│    Answer Synthesis        │  ││
+│  │  │ (wisdom     │  │ - Very confident│  │ - EDITH persona            │  ││
+│  │  │  first)     │  │ - Fairly sure   │  │ - Source attribution       │  ││
+│  │  │             │  │ - Uncertain     │  │ - Conflict detection       │  ││
+│  │  └─────────────┘  └─────────────────┘  └────────────────────────────┘  ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────────┐ │
+│  │   Telegram Bot   │    │   Firecrawl       │    │   Session Context    │ │
+│  │   (EDITH)        │◀───│   Researcher      │    │   (5-10 turns)       │ │
+│  │   - Q&A          │    │   - Web scraping  │    │   - In-memory        │ │
+│  │   - Lessons      │    │   - Progress CB   │    │   - Per-user         │ │
+│  │   - Forget       │    │   - 5-10 sources  │    │                      │ │
+│  └──────────────────┘    └───────────────────┘    └──────────────────────┘ │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                    Newsletter Integration                                ││
+│  │  year_progress_and_news_reporter_litellm.py                             ││
+│  │  └─▶ get_memory_palace_lesson() ─▶ HTML rendering                       ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -49,25 +74,32 @@ The Memory Palace is a curated knowledge management system that stores distilled
 ```
 LLM_QA_Bot/
 ├── helper_functions/
-│   ├── memory_palace_db.py      # Core database module
-│   ├── memory_palace_bot.py     # Telegram bot
+│   ├── memory_palace_db.py         # User wisdom database (permanent)
+│   ├── web_knowledge_db.py         # Web knowledge database (7-day TTL) [NEW]
+│   ├── memory_palace_answer.py     # Answer engine with confidence tiers [NEW]
+│   ├── memory_palace_bot.py        # Telegram bot (EDITH)
 │   ├── memory_palace_migration.py  # One-time migration script
-│   └── html_templates.py        # Newsletter HTML (includes MP section)
+│   ├── firecrawl_researcher.py     # Web research integration
+│   └── html_templates.py           # Newsletter HTML (includes MP section)
 ├── memory_palace/
-│   ├── lessons_index/           # LlamaIndex persistence folder
-│   │   ├── docstore.json        # Document storage
-│   │   ├── index_store.json     # Index metadata
+│   ├── lessons_index/              # User wisdom LlamaIndex folder
+│   │   ├── docstore.json           # Document storage
+│   │   ├── index_store.json        # Index metadata
 │   │   ├── default__vector_store.json  # Vector embeddings
-│   │   └── graph_store.json     # Graph relationships
-│   ├── shown_history.json       # Recency tracking
-│   └── *.json                   # Legacy lesson files (migrated)
+│   │   └── graph_store.json        # Graph relationships
+│   ├── web_knowledge_index/        # Web knowledge LlamaIndex folder [NEW]
+│   │   └── (same structure)
+│   ├── shown_history.json          # Recency tracking
+│   └── *.json                      # Legacy lesson files (migrated)
 ├── config/
-│   ├── config.yml               # Memory Palace configuration
-│   └── config.py                # Config accessors
+│   ├── config.yml                  # Memory Palace configuration
+│   └── config.py                   # Config accessors
 ├── tests/
-│   ├── test_memory_palace_db.py       # 39 tests
-│   ├── test_memory_palace_bot.py      # 23 tests
-│   └── test_memory_palace_migration.py # 26 tests
+│   ├── test_memory_palace_db.py        # 39 tests
+│   ├── test_memory_palace_bot.py       # 23 tests
+│   ├── test_memory_palace_migration.py # 26 tests
+│   ├── test_web_knowledge_db.py        # 17 tests [NEW]
+│   └── test_memory_palace_answer.py    # 14 tests [NEW]
 └── year_progress_and_news_reporter_litellm.py  # Newsletter script
 ```
 
@@ -120,9 +152,12 @@ class LessonMetadata(BaseModel):
     category: LessonCategory
     created_at: datetime
     source: str | None = None         # Book title, article URL, etc.
-    original_input: str | None = None # Raw user input before distillation
-    distilled_by_model: str | None = None  # Model used for distillation
+    original_input: str                # Raw user input before distillation
+    distilled_by_model: str            # Model used for distillation
     tags: list[str] = []
+    # Soft delete support [NEW]
+    is_forgotten: bool = False         # Mark lesson as forgotten (recoverable)
+    forgotten_at: datetime | None = None  # When it was forgotten
 ```
 
 ### MemoryPalaceDB Class
@@ -212,7 +247,131 @@ class LessonDistillationResult(BaseModel):
 
 ---
 
-## Telegram Bot: `memory_palace_bot.py`
+## Web Knowledge Module: `web_knowledge_db.py` [NEW]
+
+### Location
+`helper_functions/web_knowledge_db.py`
+
+### Purpose
+Stores auto-learned knowledge from web research with a 7-day TTL. Separate from user wisdom to maintain distinction between:
+- **User Wisdom** - Permanent, user-curated lessons
+- **Web Knowledge** - Ephemeral, auto-learned, expires after 7 days
+
+### Data Models
+
+#### ConfidenceTier (Enum)
+```python
+class ConfidenceTier(StrEnum):
+    VERY_CONFIDENT = "very_confident"  # 5+ agreeing sources
+    FAIRLY_SURE = "fairly_sure"        # 2-4 agreeing sources
+    UNCERTAIN = "uncertain"            # 1 source or sources disagree
+```
+
+#### WebKnowledgeMetadata (Pydantic Model)
+```python
+class WebKnowledgeMetadata(BaseModel):
+    source_urls: list[str] = []       # URLs where info came from
+    original_query: str               # Question that triggered research
+    created_at: datetime
+    expires_at: datetime              # created_at + 7 days
+    confidence_tier: ConfidenceTier = ConfidenceTier.FAIRLY_SURE
+    distilled_by_model: str = "unknown"
+    source_count: int = 0             # How many sources were used
+```
+
+#### WebKnowledge (Pydantic Model)
+```python
+class WebKnowledge(BaseModel):
+    id: str                           # UUID
+    distilled_text: str               # Same format as user lessons
+    metadata: WebKnowledgeMetadata
+```
+
+### WebKnowledgeDB Class
+
+#### Core Methods
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `add_knowledge(knowledge)` | Add web knowledge to index | `str` (ID) |
+| `find_similar(text, top_k, include_expired)` | Semantic search | `list[SimilarWebKnowledge]` |
+| `is_stale(knowledge_id)` | Check if expired | `bool` |
+| `get_expired()` | Get all expired entries | `list[WebKnowledge]` |
+| `delete_expired()` | Remove expired entries | `int` (count) |
+| `get_stats()` | Get statistics | `dict` |
+
+---
+
+## Answer Engine: `memory_palace_answer.py` [NEW]
+
+### Location
+`helper_functions/memory_palace_answer.py`
+
+### Purpose
+Synthesizes answers from stored knowledge with confidence tiers and source attribution. Searches user wisdom first (priority), then web knowledge.
+
+### Data Models
+
+#### SourceType (Enum)
+```python
+class SourceType(StrEnum):
+    USER_WISDOM = "user_wisdom"       # Answer from user's lessons
+    WEB_KNOWLEDGE = "web_knowledge"   # Answer from web research
+    BOTH = "both"                     # Combined sources
+    NONE = "none"                     # No matching knowledge
+```
+
+#### AnswerResult (Dataclass)
+```python
+@dataclass
+class AnswerResult:
+    answer_text: str                  # Synthesized answer
+    confidence_tier: ConfidenceTier   # Very confident / Fairly sure / Uncertain
+    source_type: SourceType           # Where the answer came from
+    related_topics: list[str] = []    # For empty results fallback
+    offer_to_research: bool = False   # Should we offer web research?
+    reasoning_prefix: str = ""        # E.g., "[From memory: 85% match]"
+    wisdom_matches: list[SimilarLesson] = []
+    knowledge_matches: list[SimilarWebKnowledge] = []
+```
+
+### AnswerEngine Class
+
+#### Confidence Thresholds
+```python
+HIGH_CONFIDENCE_THRESHOLD = 0.85   # Very confident
+MEDIUM_CONFIDENCE_THRESHOLD = 0.6  # Fairly sure
+PARTIAL_MATCH_THRESHOLD = 0.4      # Uncertain (offer research)
+```
+
+#### Core Methods
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `answer(question, session_context)` | Answer from stored knowledge | `AnswerResult` |
+| `check_for_conflict(wisdom, web_info)` | Detect contradictions | `bool` |
+
+#### Confidence Calculation Logic
+```
+1. Wisdom score >= 0.85 → VERY_CONFIDENT from USER_WISDOM
+2. Wisdom 0.6-0.85 + Knowledge 0.6+ → VERY_CONFIDENT from BOTH
+3. Wisdom 0.6-0.85 alone → FAIRLY_SURE from USER_WISDOM (offer research)
+4. Knowledge >= 0.85 → FAIRLY_SURE from WEB_KNOWLEDGE
+5. Knowledge 0.6-0.85 → FAIRLY_SURE from WEB_KNOWLEDGE (offer research)
+6. Either 0.4-0.6 → UNCERTAIN (offer research)
+7. Neither >= 0.4 → NONE (offer research)
+```
+
+### EDITH Persona
+```python
+EDITH_SYSTEM_PROMPT = """You are EDITH, a personal knowledge assistant for Dinesh.
+You help recall lessons from his Memory Palace and research new topics.
+Speak in first person ("I remember...", "I found that...").
+Be warm but concise. Focus on insights, not fluff.
+When synthesizing answers, prioritize Dinesh's personal lessons over generic web knowledge."""
+```
+
+---
+
+## Telegram Bot (EDITH): `memory_palace_bot.py`
 
 ### Location
 `helper_functions/memory_palace_bot.py`
@@ -224,63 +383,170 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, ContextTypes
 )
+from helper_functions.memory_palace_answer import AnswerEngine, AnswerResult
+from helper_functions.web_knowledge_db import WebKnowledgeDB
 ```
 
-### State Machine
+### Intent Detection [NEW]
+
+EDITH uses LLM-powered intent detection to route messages:
+
+```python
+class UserIntent(StrEnum):
+    ADD_LESSON = "add_lesson"         # "I learned that...", "Save this:"
+    ANSWER_QUESTION = "answer_question"  # "What is X?", "How does Y work?"
+    GET_RANDOM = "get_random"         # "Random", "Surprise me"
+    SEARCH = "search"                 # "Find lessons about X"
+    GET_STATS = "get_stats"           # "Stats", "How many lessons?"
+    HELP = "help"                     # "Help", "What can you do?"
+    FORGET = "forget"                 # "Forget about X", "Remove Y"
+```
+
+### State Machine (Updated)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Telegram Bot State Machine                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│    User sends /add or message                                    │
-│              │                                                   │
-│              ▼                                                   │
-│    ┌─────────────────┐                                          │
-│    │ AWAITING_LESSON │◀──────────────────────────────┐          │
-│    └────────┬────────┘                               │          │
-│             │ (receive text)                         │          │
-│             ▼                                        │          │
-│    ┌─────────────────┐                               │          │
-│    │  Distill with   │                               │          │
-│    │      LLM        │                               │          │
-│    └────────┬────────┘                               │          │
-│             │                                        │          │
-│             ▼                                        │          │
-│    ┌─────────────────┐      ┌────────────────┐      │          │
-│    │ Check Duplicate │─Yes─▶│  CONFIRMING_   │      │          │
-│    │ (sim > 0.75?)   │      │   DUPLICATE    │      │          │
-│    └────────┬────────┘      └───────┬────────┘      │          │
-│             │ No                    │               │          │
-│             ▼                       │ "Add Anyway"  │          │
-│    ┌─────────────────┐              │               │          │
-│    │   CONFIRMING_   │◀─────────────┘               │          │
-│    │   DISTILLED     │                              │          │
-│    └────────┬────────┘                              │          │
-│             │                                       │          │
-│     ┌───────┼───────┐                               │          │
-│     │       │       │                               │          │
-│  Approve  Edit   Reject ────────────────────────────┘          │
-│     │       │                                                   │
-│     │       ▼                                                   │
-│     │  ┌─────────────────┐                                      │
-│     │  │ EDITING_LESSON  │                                      │
-│     │  └────────┬────────┘                                      │
-│     │           │ (re-distill with feedback)                    │
-│     │           └────────────────────────────┐                  │
-│     ▼                                        │                  │
-│    ┌─────────────────┐                       │                  │
-│    │   CONFIRMING_   │◀──────────────────────┘                  │
-│    │    CATEGORY     │                                          │
-│    └────────┬────────┘                                          │
-│             │ (select from keyboard)                            │
-│             ▼                                                   │
-│    ┌─────────────────┐                                          │
-│    │  SAVE TO DB     │                                          │
-│    │  END CONVERSATION│                                          │
-│    └─────────────────┘                                          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    EDITH Telegram Bot State Machine                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│    User sends message                                                        │
+│              │                                                               │
+│              ▼                                                               │
+│    ┌─────────────────────────────────────────────────────────────┐          │
+│    │               INTENT DETECTION (LLM)                         │          │
+│    └──────┬────────┬────────┬────────┬────────┬────────┬────────┘          │
+│           │        │        │        │        │        │                    │
+│    ADD_LESSON  ANSWER_Q  SEARCH  RANDOM  STATS  FORGET                     │
+│           │        │        │        │        │        │                    │
+│           ▼        │        │        │        │        │                    │
+│    ┌──────────┐    │        │        │        │        │                    │
+│    │ Distill  │    │        │        │        │        │                    │
+│    │   LLM    │    │        │        │        │        │                    │
+│    └────┬─────┘    │        │        │        │        │                    │
+│         │          │        │        │        │        │                    │
+│         ▼          │        │        │        │        │                    │
+│    ┌──────────┐    │        │        │        │        │                    │
+│    │CONFIRMING│    │        │        │        │        │                    │
+│    │DISTILLED │    │        │        │        │        │                    │
+│    └────┬─────┘    │        │        │        │        │                    │
+│         │          │        │        │        │        │                    │
+│         ▼          ▼        │        │        │        ▼                    │
+│    ┌──────────┐ ┌────────┐  │        │        │  ┌──────────┐              │
+│    │CONFIRMING│ │ Answer │  │        │        │  │CONFIRMING│              │
+│    │ CATEGORY │ │ Engine │  │        │        │  │  FORGET  │              │
+│    └────┬─────┘ └────┬───┘  │        │        │  └────┬─────┘              │
+│         │            │      │        │        │       │                     │
+│         │            ▼      │        │        │       ▼                     │
+│         │     ┌───────────┐ │        │        │  ┌──────────┐              │
+│         │     │ Partial   │ │        │        │  │Soft Delete│              │
+│         │     │ Match?    │ │        │        │  └──────────┘              │
+│         │     └─────┬─────┘ │        │        │                             │
+│         │           │       │        │        │                             │
+│         │      [Research?]  │        │        │                             │
+│         │           │       │        │        │                             │
+│         │           ▼       │        │        │                             │
+│         │     ┌───────────┐ │        │        │                             │
+│         │     │RESEARCHING│ │        │        │                             │
+│         │     │(Firecrawl)│ │        │        │                             │
+│         │     └─────┬─────┘ │        │        │                             │
+│         │           │       │        │        │                             │
+│         │           ▼       │        │        │                             │
+│         │     ┌───────────┐ │        │        │                             │
+│         │     │ Conflict? │ │        │        │                             │
+│         │     └─────┬─────┘ │        │        │                             │
+│         │           │       │        │        │                             │
+│         │      [Keep/Update]│        │        │                             │
+│         │           │       │        │        │                             │
+│         │           ▼       │        │        │                             │
+│         │     ┌───────────┐ │        │        │                             │
+│         │     │ Socratic? │ │        │        │                             │
+│         │     │ (50%)     │ │        │        │                             │
+│         │     └───────────┘ │        │        │                             │
+│         │                   │        │        │                             │
+│         ▼                   ▼        ▼        ▼                             │
+│    ┌─────────────────────────────────────────────────────────────┐          │
+│    │                    AWAITING_LESSON                           │          │
+│    └─────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### User Flow Examples [NEW]
+
+#### Flow 1: Question with Good Memory Match
+```
+User: What is the Dunning-Kruger effect?
+EDITH: [From memory: Very confident] (87% match)
+
+The Dunning-Kruger Effect causes people with low ability to
+overestimate their competence.
+
+(From your Psychology lessons)
+```
+
+#### Flow 2: Question with Partial Match - Offer Research
+```
+User: How does quantum entanglement work?
+EDITH: [From memory: Uncertain] (42% match)
+
+I have some related knowledge about quantum physics, but nothing
+specific on entanglement.
+
+[Research more?] [Answer from what I know]
+```
+
+#### Flow 3: Research and Learn
+```
+User: [taps "Research more?"]
+EDITH: Researching: Searching for sources...
+EDITH: Researching: Scraping source 3/8...
+EDITH: Researching: Synthesizing answer...
+
+EDITH learned something new!
+
+[Researched: Fairly sure]
+
+**Key Insight:**
+Quantum entanglement links particles so measuring one instantly
+affects the other regardless of distance.
+
+**Summary:**
+Einstein called it "spooky action at a distance"...
+
+Does this align with what you expected?
+```
+
+#### Flow 4: Conflict Resolution
+```
+User: What's the best diet for longevity?
+
+EDITH: I found a potential conflict:
+
+**Your stored wisdom:**
+Intermittent fasting is the key to longevity.
+
+**New research:**
+Recent studies show caloric restriction matters more than timing,
+and Mediterranean diet shows strongest longevity benefits.
+
+Is your stored wisdom a personal preference (keep it) or an
+outdated fact (update it)?
+
+[Personal preference] [Outdated fact]
+```
+
+#### Flow 5: Forget a Lesson
+```
+User: Forget everything about my old productivity system
+EDITH: I found 3 lessons matching "productivity system":
+
+1. GTD contexts improve task switching efficiency
+2. Pomodoro technique works better for deep work
+3. Weekly reviews prevent task buildup
+
+Forget these 3 lessons? (They can be recovered if needed.)
+
+[Forget] [Cancel]
 ```
 
 ### Commands
@@ -529,21 +795,28 @@ memory_palace_index_folder = memory_palace_config.get("index_folder", "./memory_
 ### Test Files
 | File | Tests | Coverage |
 |------|-------|----------|
-| `tests/test_memory_palace_db.py` | 39 | Database CRUD, distillation, recency |
+| `tests/test_memory_palace_db.py` | 39 | Database CRUD, distillation, recency, soft delete |
 | `tests/test_memory_palace_bot.py` | 23 | Commands, state machine, callbacks |
 | `tests/test_memory_palace_migration.py` | 26 | Category mapping, file parsing, dedup |
+| `tests/test_web_knowledge_db.py` | 17 | Web knowledge CRUD, TTL, expiration [NEW] |
+| `tests/test_memory_palace_answer.py` | 14 | Answer engine, confidence, conflicts [NEW] |
+
+**Total: 119 tests** across 5 test files (70 core Memory Palace tests)
 
 ### Running Tests
 
 ```bash
-# All Memory Palace tests
-pytest tests/test_memory_palace_*.py -v
+# All Memory Palace tests (including new modules)
+pytest tests/test_memory_palace_*.py tests/test_web_knowledge_db.py -v
 
 # With coverage
-pytest tests/test_memory_palace_*.py --cov=helper_functions --cov-report=term-missing
+pytest tests/test_memory_palace_*.py tests/test_web_knowledge_db.py --cov=helper_functions --cov-report=term-missing
 
 # Single test file
 pytest tests/test_memory_palace_db.py -v
+
+# Run all new EDITH tests
+pytest tests/test_web_knowledge_db.py tests/test_memory_palace_answer.py -v
 ```
 
 ### Key Test Fixtures
@@ -683,6 +956,7 @@ print(f'Insight: {lesson[\"key_insight\"]}')
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-07 | 2.0.0 | EDITH Autonomous Learning - Dual-store architecture, question answering with confidence tiers, Firecrawl web research, conflict resolution, soft delete, session context, EDITH persona |
 | 2026-01-04 | 1.0.0 | Initial implementation with all 5 phases complete |
 
 ---
@@ -690,5 +964,5 @@ print(f'Insight: {lesson[\"key_insight\"]}')
 ## Contributors
 
 - Implementation: Claude Code (Opus 4.5)
-- Architecture Design: Collaborative (22-question interview)
-- Testing: 114 tests across 3 test files
+- Architecture Design: Collaborative (22-question interview for v1.0, 12-question interview for v2.0 EDITH features)
+- Testing: 119 tests across 5 test files
