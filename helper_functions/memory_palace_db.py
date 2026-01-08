@@ -94,6 +94,9 @@ class LessonMetadata(BaseModel):
     original_input: str  # User's raw input before distillation
     distilled_by_model: str  # Model used for distillation (e.g., "litellm:nemotron-3-nano-30b-a3b")
     tags: List[str] = Field(default_factory=list)
+    # Soft delete support
+    is_forgotten: bool = False
+    forgotten_at: Optional[datetime] = None
 
 
 class Lesson(BaseModel):
@@ -220,8 +223,10 @@ class MemoryPalaceDB:
                 "original_input": lesson.metadata.original_input,
                 "distilled_by_model": lesson.metadata.distilled_by_model,
                 "tags": ",".join(lesson.metadata.tags),
+                "is_forgotten": lesson.metadata.is_forgotten,
+                "forgotten_at": lesson.metadata.forgotten_at.isoformat() if lesson.metadata.forgotten_at else None,
             },
-            excluded_embed_metadata_keys=["original_input", "id", "distilled_by_model"],
+            excluded_embed_metadata_keys=["original_input", "id", "distilled_by_model", "is_forgotten", "forgotten_at"],
         )
 
         self._index.insert(doc)
@@ -229,13 +234,16 @@ class MemoryPalaceDB:
         logger.info(f"Added lesson {lesson.id[:8]}... to Memory Palace (category: {lesson.metadata.category})")
         return lesson.id
 
-    def find_similar(self, text: str, top_k: int = 5) -> List[SimilarLesson]:
+    def find_similar(
+        self, text: str, top_k: int = 5, include_forgotten: bool = False
+    ) -> List[SimilarLesson]:
         """
         Find lessons similar to the given text with similarity scores.
 
         Args:
             text: Text to search for
             top_k: Maximum number of results
+            include_forgotten: If True, include forgotten lessons in results
 
         Returns:
             List of SimilarLesson objects sorted by similarity
@@ -245,12 +253,23 @@ class MemoryPalaceDB:
         if self._index is None or self.get_lesson_count() == 0:
             return []
 
-        retriever = VectorIndexRetriever(index=self._index, similarity_top_k=top_k)
+        # Request more results if filtering forgotten, to ensure we get enough valid ones
+        request_k = top_k * 2 if not include_forgotten else top_k
+        retriever = VectorIndexRetriever(index=self._index, similarity_top_k=request_k)
         nodes = retriever.retrieve(text)
 
         results = []
         for node in nodes:
             try:
+                # Check forgotten status
+                is_forgotten = node.metadata.get("is_forgotten", False)
+                if isinstance(is_forgotten, str):
+                    is_forgotten = is_forgotten.lower() == "true"
+
+                # Skip forgotten unless explicitly requested
+                if is_forgotten and not include_forgotten:
+                    continue
+
                 category_str = node.metadata.get("category", "observations")
                 category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
 
@@ -263,6 +282,14 @@ class MemoryPalaceDB:
                 except ValueError:
                     created_at = datetime.now()
 
+                forgotten_at_str = node.metadata.get("forgotten_at")
+                forgotten_at = None
+                if forgotten_at_str:
+                    try:
+                        forgotten_at = datetime.fromisoformat(forgotten_at_str)
+                    except ValueError:
+                        pass
+
                 lesson = Lesson(
                     id=node.metadata.get("id", str(uuid.uuid4())),
                     distilled_text=node.get_content(),
@@ -273,9 +300,15 @@ class MemoryPalaceDB:
                         original_input=node.metadata.get("original_input", ""),
                         distilled_by_model=node.metadata.get("distilled_by_model", "unknown"),
                         tags=tags,
+                        is_forgotten=is_forgotten,
+                        forgotten_at=forgotten_at,
                     )
                 )
                 results.append(SimilarLesson(lesson=lesson, similarity_score=node.score or 0.0))
+
+                # Stop if we have enough results
+                if len(results) >= top_k:
+                    break
             except Exception as e:
                 logger.warning(f"Error parsing node: {e}")
                 continue
@@ -375,8 +408,16 @@ class MemoryPalaceDB:
             self.shown_history_file.unlink()
         logger.info("Reset Memory Palace shown history")
 
-    def get_all_lessons(self) -> List[Lesson]:
-        """Get all lessons from the index."""
+    def get_all_lessons(self, include_forgotten: bool = False) -> List[Lesson]:
+        """
+        Get all lessons from the index.
+
+        Args:
+            include_forgotten: If True, include forgotten lessons
+
+        Returns:
+            List of Lesson objects
+        """
         if self._index is None:
             return []
 
@@ -387,6 +428,15 @@ class MemoryPalaceDB:
                 doc = docstore.get_document(doc_id)
                 if doc:
                     try:
+                        # Check forgotten status
+                        is_forgotten = doc.metadata.get("is_forgotten", False)
+                        if isinstance(is_forgotten, str):
+                            is_forgotten = is_forgotten.lower() == "true"
+
+                        # Skip forgotten unless explicitly requested
+                        if is_forgotten and not include_forgotten:
+                            continue
+
                         category_str = doc.metadata.get("category", "observations")
                         category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
 
@@ -399,6 +449,14 @@ class MemoryPalaceDB:
                         except ValueError:
                             created_at = datetime.now()
 
+                        forgotten_at_str = doc.metadata.get("forgotten_at")
+                        forgotten_at = None
+                        if forgotten_at_str:
+                            try:
+                                forgotten_at = datetime.fromisoformat(forgotten_at_str)
+                            except ValueError:
+                                pass
+
                         lesson = Lesson(
                             id=doc.metadata.get("id", doc_id),
                             distilled_text=doc.get_content(),
@@ -409,6 +467,8 @@ class MemoryPalaceDB:
                                 original_input=doc.metadata.get("original_input", ""),
                                 distilled_by_model=doc.metadata.get("distilled_by_model", "unknown"),
                                 tags=tags,
+                                is_forgotten=is_forgotten,
+                                forgotten_at=forgotten_at,
                             )
                         )
                         lessons.append(lesson)
@@ -444,6 +504,88 @@ class MemoryPalaceDB:
             cat = lesson.metadata.category if isinstance(lesson.metadata.category, str) else lesson.metadata.category.value
             stats[cat] = stats.get(cat, 0) + 1
         return stats
+
+    def forget_by_query(self, query: str, threshold: float = 0.7) -> int:
+        """
+        Soft delete lessons matching the query.
+
+        Args:
+            query: Text to match against lessons
+            threshold: Similarity threshold for matching (default 0.7)
+
+        Returns:
+            Number of lessons marked as forgotten
+        """
+        similar = self.find_similar(query, top_k=10, include_forgotten=True)
+        count = 0
+        for s in similar:
+            if s.similarity_score >= threshold and not s.lesson.metadata.is_forgotten:
+                self._mark_forgotten(s.lesson.id)
+                count += 1
+        return count
+
+    def _mark_forgotten(self, lesson_id: str) -> bool:
+        """
+        Mark a lesson as forgotten (soft delete).
+
+        Args:
+            lesson_id: ID of the lesson to forget
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self._index is None:
+            return False
+
+        try:
+            docstore = self._index.docstore
+            for doc_id in docstore.docs:
+                doc = docstore.get_document(doc_id)
+                if doc and doc.metadata.get("id") == lesson_id:
+                    # Update metadata
+                    doc.metadata["is_forgotten"] = True
+                    doc.metadata["forgotten_at"] = datetime.now().isoformat()
+                    # Persist changes
+                    self._index.storage_context.persist(persist_dir=str(self.index_path))
+                    logger.info(f"Marked lesson {lesson_id[:8]}... as forgotten")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error marking lesson as forgotten: {e}")
+            return False
+
+    def restore_forgotten(self, lesson_id: str) -> bool:
+        """
+        Restore a forgotten lesson.
+
+        Args:
+            lesson_id: ID of the lesson to restore
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self._index is None:
+            return False
+
+        try:
+            docstore = self._index.docstore
+            for doc_id in docstore.docs:
+                doc = docstore.get_document(doc_id)
+                if doc and doc.metadata.get("id") == lesson_id:
+                    doc.metadata["is_forgotten"] = False
+                    doc.metadata["forgotten_at"] = None
+                    self._index.storage_context.persist(persist_dir=str(self.index_path))
+                    logger.info(f"Restored forgotten lesson {lesson_id[:8]}...")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error restoring forgotten lesson: {e}")
+            return False
+
+    def get_forgotten_lessons(self) -> List[Lesson]:
+        """Get all forgotten lessons (for potential recovery)."""
+        all_lessons = self.get_all_lessons(include_forgotten=True)
+        return [l for l in all_lessons if l.metadata.is_forgotten]
 
     def get_few_shot_examples(self, count: int = 3) -> List[str]:
         """

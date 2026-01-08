@@ -27,10 +27,12 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import IntEnum, StrEnum, auto
 from functools import wraps
-from typing import Callable, Optional, TypeVar, ParamSpec
+from typing import Callable, Dict, List, Optional, TypeVar, ParamSpec
 
 from telegram import (
     InlineKeyboardButton,
@@ -57,6 +59,19 @@ from helper_functions.memory_palace_db import (
     MemoryPalaceDB,
     distill_lesson,
 )
+from helper_functions.web_knowledge_db import (
+    ConfidenceTier,
+    WebKnowledge,
+    WebKnowledgeDB,
+    WebKnowledgeMetadata,
+    calculate_confidence_tier,
+)
+from helper_functions.memory_palace_answer import (
+    AnswerEngine,
+    AnswerResult,
+    SourceType,
+    format_answer_for_telegram,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +80,12 @@ class UserIntent(StrEnum):
     """Possible user intents detected from natural language."""
 
     ADD_LESSON = "add_lesson"
+    ANSWER_QUESTION = "answer_question"  # NEW: Ask EDITH a question
     GET_RANDOM = "get_random"
-    SEARCH = "search"
+    SEARCH = "search"  # Explicit search request
     GET_STATS = "get_stats"
     HELP = "help"
+    FORGET = "forget"  # NEW: Forget specific knowledge
 
 
 @dataclass
@@ -85,10 +102,12 @@ def detect_intent(user_message: str) -> IntentResult:
     Use LLM to detect user intent from natural language message.
 
     This enables the bot to understand requests like:
+    - "What is game theory?" -> ANSWER_QUESTION
     - "Tell me a random lesson" -> GET_RANDOM
-    - "What do I know about game theory?" -> SEARCH
+    - "Find lessons about X" -> SEARCH
     - "Show me my stats" -> GET_STATS
     - "I learned that X today" -> ADD_LESSON
+    - "Forget everything about X" -> FORGET
 
     Args:
         user_message: The user's raw message text
@@ -101,22 +120,27 @@ def detect_intent(user_message: str) -> IntentResult:
 
     client = get_client(provider=provider, model_name=model_name)
 
-    prompt = f"""You are an intent classifier for a "Memory Palace" bot that stores personal lessons and insights.
+    prompt = f"""You are an intent classifier for "EDITH", a personal knowledge assistant.
 
 Classify the user's message into ONE of these intents:
-- add_lesson: User wants to SAVE a new insight, lesson, quote, or piece of wisdom they learned
+- answer_question: User is ASKING A QUESTION to get an answer (What is X? How does Y work? Explain Z)
+- add_lesson: User wants to SAVE a new insight, lesson, or wisdom they learned
 - get_random: User wants to RETRIEVE a random lesson from their collection
-- search: User wants to SEARCH/FIND specific lessons (extract the search query)
+- search: User wants to explicitly SEARCH/LIST lessons (Find lessons about X, Show me what I know about Y)
 - get_stats: User wants to see STATISTICS about their lessons
 - help: User is asking for HELP or how to use the bot
+- forget: User wants to DELETE/FORGET specific knowledge (Forget about X, Delete X)
 
-IMPORTANT DISTINCTIONS:
-- "Tell me a lesson" / "Give me something I learned" / "What's a random lesson?" = get_random (RETRIEVAL)
-- "I learned that X" / "Here's an insight: X" / "Save this: X" = add_lesson (SAVING new content)
-- "What do I know about X?" / "Find lessons about X" = search (SEARCHING)
+KEY DISTINCTIONS:
+- Questions ending in "?" that ask for information = answer_question
+- "What is X?" / "How does Y work?" / "Explain Z" = answer_question (ASKING)
+- "Find lessons about X" / "Show me what I know about Y" = search (LISTING)
+- "Tell me a lesson" / "Give me something I learned" = get_random (RANDOM RETRIEVAL)
+- "I learned that X" / "Here's an insight: X" / "Save this: X" = add_lesson (SAVING)
+- "Forget about X" / "Delete lessons about Y" = forget (DELETING)
 
 Respond with JSON only:
-{{"intent": "<intent>", "search_query": "<query if search, else null>"}}
+{{"intent": "<intent>", "search_query": "<query if search/answer_question/forget, else null>"}}
 
 User message: {user_message}"""
 
@@ -142,18 +166,20 @@ User message: {user_message}"""
         # Map to enum
         intent_map = {
             "add_lesson": UserIntent.ADD_LESSON,
+            "answer_question": UserIntent.ANSWER_QUESTION,
             "get_random": UserIntent.GET_RANDOM,
             "search": UserIntent.SEARCH,
             "get_stats": UserIntent.GET_STATS,
             "help": UserIntent.HELP,
+            "forget": UserIntent.FORGET,
         }
 
         intent = intent_map.get(intent_str, UserIntent.ADD_LESSON)
         return IntentResult(intent=intent, search_query=search_query)
 
     except Exception as e:
-        logger.warning(f"Intent detection failed: {e}, defaulting to ADD_LESSON")
-        return IntentResult(intent=UserIntent.ADD_LESSON)
+        logger.warning(f"Intent detection failed: {e}, defaulting to ANSWER_QUESTION")
+        return IntentResult(intent=UserIntent.ANSWER_QUESTION)
 
 # Type hints for decorator
 P = ParamSpec("P")
@@ -168,6 +194,12 @@ class State(IntEnum):
     CONFIRMING_CATEGORY = auto()
     EDITING_LESSON = auto()
     CONFIRMING_DUPLICATE = auto()
+    # New states for EDITH
+    AWAITING_RESEARCH_CONFIRM = auto()  # User decides whether to research
+    RESEARCHING = auto()                 # Progress updates during research
+    RESOLVING_CONFLICT = auto()          # Memory vs web conflict
+    AWAITING_SOCRATIC = auto()           # After Socratic question
+    CONFIRMING_FORGET = auto()           # Confirm before forgetting
 
 
 def authorized_only(func: Callable[P, R]) -> Callable[P, R]:
@@ -213,15 +245,55 @@ def authorized_only(func: Callable[P, R]) -> Callable[P, R]:
 
 
 class MemoryPalaceBot:
-    """Telegram bot for Memory Palace interactions."""
+    """Telegram bot for Memory Palace interactions - powered by EDITH."""
+
+    MAX_CONTEXT_TURNS = 10  # Session context window
 
     def __init__(self):
-        """Initialize the bot."""
-        self.db = MemoryPalaceDB()
+        """Initialize the bot with dual knowledge stores and answer engine."""
+        # Core databases
+        self.db = MemoryPalaceDB()  # User wisdom
+        self.web_knowledge_db = WebKnowledgeDB()  # Web-learned knowledge
+
+        # Answer engine for question handling
+        self.answer_engine = AnswerEngine(
+            wisdom_db=self.db,
+            knowledge_db=self.web_knowledge_db,
+        )
+
+        # Session context tracking (in-memory, lost on restart)
+        self.session_contexts: Dict[int, List[dict]] = {}
+
+        # Telegram token
         self.token = config.telegram_bot_token
 
         if not self.token:
             raise ValueError("telegram_bot_token not set in config.yml")
+
+    def _add_to_context(self, user_id: int, role: str, content: str):
+        """Add a message to the session context."""
+        if user_id not in self.session_contexts:
+            self.session_contexts[user_id] = []
+
+        self.session_contexts[user_id].append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+        # Keep only last N turns (N*2 messages for user+assistant)
+        max_messages = self.MAX_CONTEXT_TURNS * 2
+        if len(self.session_contexts[user_id]) > max_messages:
+            self.session_contexts[user_id] = self.session_contexts[user_id][-max_messages:]
+
+    def _get_context(self, user_id: int) -> List[dict]:
+        """Get the session context for a user."""
+        return self.session_contexts.get(user_id, [])
+
+    def _clear_context(self, user_id: int):
+        """Clear session context for a user."""
+        if user_id in self.session_contexts:
+            del self.session_contexts[user_id]
 
     def _get_confirmation_keyboard(self) -> InlineKeyboardMarkup:
         """Get keyboard for distillation confirmation."""
@@ -261,6 +333,36 @@ class MemoryPalaceBot:
             [
                 InlineKeyboardButton("✅ Add Anyway", callback_data="add_anyway"),
                 InlineKeyboardButton("❌ Cancel", callback_data="cancel_dup"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def _get_research_keyboard(self) -> InlineKeyboardMarkup:
+        """Get keyboard for research confirmation."""
+        keyboard = [
+            [
+                InlineKeyboardButton("🔍 Research more", callback_data="research_yes"),
+                InlineKeyboardButton("📚 Answer from memory", callback_data="research_no"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def _get_conflict_keyboard(self) -> InlineKeyboardMarkup:
+        """Get keyboard for conflict resolution."""
+        keyboard = [
+            [
+                InlineKeyboardButton("Personal preference", callback_data="conflict_keep"),
+                InlineKeyboardButton("Outdated fact", callback_data="conflict_update"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def _get_forget_keyboard(self) -> InlineKeyboardMarkup:
+        """Get keyboard for forget confirmation."""
+        keyboard = [
+            [
+                InlineKeyboardButton("Yes, forget", callback_data="forget_yes"),
+                InlineKeyboardButton("No, keep", callback_data="forget_no"),
             ],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -390,13 +492,19 @@ class MemoryPalaceBot:
         """Handle incoming text with intent detection.
 
         Routes to appropriate handler based on detected intent:
+        - ANSWER_QUESTION: Ask EDITH a question
         - ADD_LESSON: Distill and save a new lesson
         - GET_RANDOM: Return a random lesson
         - SEARCH: Search lessons by query
         - GET_STATS: Show statistics
         - HELP: Show help message
+        - FORGET: Forget specific knowledge
         """
         text = update.message.text
+        user_id = update.effective_user.id
+
+        # Add user message to session context
+        self._add_to_context(user_id, "user", text)
 
         # Detect user intent
         logger.info(f"Detecting intent for: {text[:50]}...")
@@ -404,7 +512,11 @@ class MemoryPalaceBot:
         logger.info(f"Detected intent: {intent_result.intent}")
 
         # Route based on intent
-        if intent_result.intent == UserIntent.GET_RANDOM:
+        if intent_result.intent == UserIntent.ANSWER_QUESTION:
+            query = intent_result.search_query or text
+            return await self._handle_answer_question(update, context, query)
+
+        elif intent_result.intent == UserIntent.GET_RANDOM:
             return await self._handle_get_random(update, context)
 
         elif intent_result.intent == UserIntent.SEARCH:
@@ -416,6 +528,10 @@ class MemoryPalaceBot:
 
         elif intent_result.intent == UserIntent.HELP:
             return await self._handle_help(update, context)
+
+        elif intent_result.intent == UserIntent.FORGET:
+            query = intent_result.search_query or text
+            return await self._handle_forget(update, context, query)
 
         # Default: ADD_LESSON - distill and save
         return await self._handle_add_lesson(update, context, text)
@@ -490,25 +606,340 @@ class MemoryPalaceBot:
     ) -> int:
         """Handle help intent."""
         await update.message.reply_text(
-            "🏛️ Memory Palace Help\n\n"
+            "🏛️ EDITH - Your Knowledge Assistant\n\n"
             "I understand natural language! Try:\n\n"
+            "❓ To ask a question:\n"
+            '   "What is game theory?"\n'
+            '   "How does compound interest work?"\n\n'
             "📥 To add a lesson:\n"
             '   "I learned that X today"\n'
             '   "Here\'s an insight: X"\n\n'
             "🎲 To get a random lesson:\n"
-            '   "Tell me something I learned"\n'
-            '   "Give me a random lesson"\n\n'
+            '   "Tell me something I learned"\n\n'
             "🔍 To search:\n"
-            '   "What do I know about X?"\n'
             '   "Find lessons about Y"\n\n'
-            "📊 To see stats:\n"
-            '   "Show me my statistics"\n\n'
+            "🗑️ To forget:\n"
+            '   "Forget everything about X"\n\n'
             "Or use commands:\n"
             "/add - Add a lesson\n"
             "/random - Random lesson\n"
             "/search <query> - Search\n"
             "/stats - Statistics"
         )
+        return State.AWAITING_LESSON
+
+    async def _handle_answer_question(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, question: str
+    ) -> int:
+        """Handle ANSWER_QUESTION intent - ask EDITH a question."""
+        user_id = update.effective_user.id
+        session_context = self._get_context(user_id)
+
+        # Get answer from the engine
+        result = self.answer_engine.answer(
+            question=question,
+            session_context=session_context,
+        )
+
+        # Store result for potential research follow-up
+        context.user_data["last_question"] = question
+        context.user_data["last_answer_result"] = result
+
+        # Format and send response
+        if result.source_type == SourceType.NONE:
+            # No knowledge found - offer to research
+            msg = (
+                f"{result.reasoning_prefix}\n\n"
+                "I don't have any knowledge about this topic."
+            )
+            if result.related_topics:
+                msg += "\n\nRelated topics I know about:\n"
+                for topic in result.related_topics:
+                    msg += f"  - {topic}\n"
+            msg += "\n\nWould you like me to research this?"
+
+            await update.message.reply_text(
+                msg,
+                reply_markup=self._get_research_keyboard()
+            )
+            return State.AWAITING_RESEARCH_CONFIRM
+
+        # We have an answer
+        response = format_answer_for_telegram(result)
+
+        # Add EDITH response to context
+        self._add_to_context(user_id, "assistant", result.answer_text)
+
+        # Check if we should offer to research more (partial match)
+        if result.offer_to_research:
+            response += "\n\nWould you like me to research this further?"
+            await update.message.reply_text(
+                response,
+                reply_markup=self._get_research_keyboard()
+            )
+            return State.AWAITING_RESEARCH_CONFIRM
+
+        # 50% chance of Socratic follow-up for good matches
+        if result.confidence_tier == ConfidenceTier.VERY_CONFIDENT and random.random() < 0.5:
+            response += "\n\nDoes this align with what you expected?"
+            context.user_data["awaiting_socratic"] = True
+
+        await update.message.reply_text(response)
+        return State.AWAITING_LESSON
+
+    async def _handle_forget(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+    ) -> int:
+        """Handle FORGET intent - soft delete knowledge."""
+        # Find matching lessons
+        similar = self.db.find_similar(query, top_k=5, include_forgotten=False)
+
+        if not similar:
+            await update.message.reply_text(
+                "I couldn't find any lessons matching that topic."
+            )
+            return State.AWAITING_LESSON
+
+        # Show what will be forgotten
+        context.user_data["forget_query"] = query
+        context.user_data["forget_matches"] = [s.lesson.id for s in similar if s.similarity_score >= 0.7]
+
+        matching = [s for s in similar if s.similarity_score >= 0.7]
+        if not matching:
+            await update.message.reply_text(
+                f"I found some related lessons, but none are close enough matches:\n\n"
+                + "\n".join([f"  - {s.lesson.distilled_text[:60]}..." for s in similar[:3]])
+                + "\n\nBe more specific about what to forget."
+            )
+            return State.AWAITING_LESSON
+
+        msg = f"I found {len(matching)} lessons to forget:\n\n"
+        for s in matching[:5]:
+            msg += f"  - {s.lesson.distilled_text[:80]}...\n"
+        msg += "\nAre you sure you want to forget these?"
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=self._get_forget_keyboard()
+        )
+        return State.CONFIRMING_FORGET
+
+    async def handle_research_confirmation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle research confirmation response."""
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "research_no":
+            # User doesn't want research - just acknowledge
+            last_result = context.user_data.get("last_answer_result")
+            if last_result and last_result.answer_text:
+                await query.edit_message_text(
+                    format_answer_for_telegram(last_result)
+                )
+            else:
+                await query.edit_message_text("Understood. Let me know if you have other questions!")
+            return State.AWAITING_LESSON
+
+        # User wants research
+        question = context.user_data.get("last_question", "")
+        if not question:
+            await query.edit_message_text("I've lost track of the question. Please ask again.")
+            return State.AWAITING_LESSON
+
+        await query.edit_message_text("🔍 Researching: Searching for sources...")
+
+        # Do the research (this will be async in Phase 4)
+        try:
+            from helper_functions.firecrawl_researcher import conduct_research_firecrawl
+
+            # Update progress
+            await query.edit_message_text("🔍 Researching: Scraping sources...")
+
+            report = conduct_research_firecrawl(
+                query=question,
+                provider=config.memory_palace_provider,
+                max_sources=8,
+            )
+
+            await query.edit_message_text("🔍 Researching: Synthesizing answer...")
+
+            # Distill the research into a single-line insight
+            distilled = distill_lesson(report)
+
+            # Calculate confidence based on report quality
+            source_count = report.count("Source") if report else 0
+            confidence = calculate_confidence_tier(source_count, sources_agree=True)
+
+            # Save to web knowledge store
+            knowledge = WebKnowledge(
+                distilled_text=distilled.distilled_text,
+                metadata=WebKnowledgeMetadata(
+                    source_urls=[],  # Would be extracted from report
+                    original_query=question,
+                    created_at=datetime.now(),
+                    expires_at=datetime.now() + timedelta(days=7),
+                    confidence_tier=confidence,
+                    distilled_by_model=config.memory_palace_primary_model or "unknown",
+                    source_count=source_count,
+                )
+            )
+            self.web_knowledge_db.add_knowledge(knowledge)
+
+            # Check for conflict with stored user wisdom
+            wisdom_matches = self.db.find_similar(question, top_k=1)
+
+            if wisdom_matches and wisdom_matches[0].similarity_score >= 0.6:
+                # Check if the research conflicts with stored wisdom
+                best_wisdom = wisdom_matches[0]
+                has_conflict = self.answer_engine.check_for_conflict(
+                    best_wisdom, distilled.distilled_text
+                )
+
+                if has_conflict:
+                    # Store conflict context for resolution
+                    context.user_data["conflict_wisdom"] = best_wisdom
+                    context.user_data["conflict_new_info"] = distilled.distilled_text
+                    context.user_data["conflict_knowledge_id"] = knowledge.id
+
+                    conflict_msg = (
+                        "I found a potential conflict:\n\n"
+                        f"**Your stored wisdom:**\n{best_wisdom.lesson.distilled_text}\n\n"
+                        f"**New research:**\n{distilled.distilled_text}\n\n"
+                        "Is your stored wisdom a personal preference (keep it) "
+                        "or an outdated fact (update it)?"
+                    )
+                    await query.edit_message_text(
+                        conflict_msg,
+                        reply_markup=self._get_conflict_keyboard()
+                    )
+                    return State.RESOLVING_CONFLICT
+
+            # Format the teaching response
+            confidence_display = {
+                ConfidenceTier.VERY_CONFIDENT: "Very confident",
+                ConfidenceTier.FAIRLY_SURE: "Fairly sure",
+                ConfidenceTier.UNCERTAIN: "Uncertain",
+            }
+
+            response = (
+                f"EDITH learned something new!\n\n"
+                f"[Researched: {confidence_display[confidence]}]\n\n"
+                f"**Key Insight:**\n{distilled.distilled_text}\n\n"
+            )
+
+            # Add supporting context from the report (truncated)
+            if len(report) > 500:
+                response += f"**Summary:**\n{report[:400]}...\n\n"
+
+            # 50% chance of Socratic follow-up
+            if random.random() < 0.5:
+                response += "Does this align with what you expected?"
+                context.user_data["awaiting_socratic"] = True
+
+            await query.edit_message_text(response)
+
+        except Exception as e:
+            logger.error(f"Research failed: {e}")
+            await query.edit_message_text(
+                f"Research failed: {e}\n\n"
+                "I'll answer from what I know instead."
+            )
+            # Fallback to memory-only answer
+            last_result = context.user_data.get("last_answer_result")
+            if last_result and last_result.answer_text:
+                await update.effective_message.reply_text(
+                    format_answer_for_telegram(last_result)
+                )
+
+        return State.AWAITING_LESSON
+
+    async def handle_forget_confirmation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle forget confirmation response."""
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "forget_no":
+            context.user_data.pop("forget_query", None)
+            context.user_data.pop("forget_matches", None)
+            await query.edit_message_text("Cancelled. Your lessons are safe.")
+            return State.AWAITING_LESSON
+
+        # User confirmed forget
+        forget_query = context.user_data.get("forget_query", "")
+        count = self.db.forget_by_query(forget_query)
+
+        context.user_data.pop("forget_query", None)
+        context.user_data.pop("forget_matches", None)
+
+        await query.edit_message_text(
+            f"Done. Marked {count} lessons as forgotten.\n\n"
+            "(They can be recovered if needed.)"
+        )
+        return State.AWAITING_LESSON
+
+    async def handle_socratic_response(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle Socratic follow-up response (just acknowledge, don't store)."""
+        _ = update.message.text  # Acknowledge but don't store
+        context.user_data["awaiting_socratic"] = False
+
+        # Thoughtful acknowledgment
+        await update.message.reply_text(
+            "That's a great reflection. These connections help solidify understanding."
+        )
+        return State.AWAITING_LESSON
+
+    async def handle_conflict_resolution(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle conflict resolution response."""
+        query = update.callback_query
+        await query.answer()
+
+        conflict_wisdom = context.user_data.get("conflict_wisdom")
+        new_info = context.user_data.get("conflict_new_info")
+
+        if not conflict_wisdom or not new_info:
+            await query.edit_message_text(
+                "I've lost track of the conflict context. Please continue."
+            )
+            return State.AWAITING_LESSON
+
+        if query.data == "conflict_keep":
+            # User says it's a personal preference - keep existing wisdom
+            await query.edit_message_text(
+                "Understood! I'll keep your stored wisdom as a personal preference.\n\n"
+                f"**Your wisdom:** {conflict_wisdom.lesson.distilled_text}\n\n"
+                "The new research has still been saved to my web knowledge store "
+                "for reference, but your personal wisdom takes priority."
+            )
+
+        elif query.data == "conflict_update":
+            # User says it's outdated - soft delete the old wisdom
+            if conflict_wisdom.lesson.id:
+                self.db._mark_forgotten(conflict_wisdom.lesson.id)
+                await query.edit_message_text(
+                    "Got it! I've marked your previous wisdom as outdated.\n\n"
+                    f"**Old (forgotten):** {conflict_wisdom.lesson.distilled_text}\n\n"
+                    f"**Updated:** {new_info}\n\n"
+                    "The new research is now your primary reference for this topic."
+                )
+            else:
+                await query.edit_message_text(
+                    "I couldn't update the old wisdom, but the new research "
+                    f"has been saved:\n\n{new_info}"
+                )
+
+        # Clean up conflict context
+        context.user_data.pop("conflict_wisdom", None)
+        context.user_data.pop("conflict_new_info", None)
+        context.user_data.pop("conflict_knowledge_id", None)
+
         return State.AWAITING_LESSON
 
     async def _handle_add_lesson(
@@ -716,12 +1147,16 @@ class MemoryPalaceBot:
         try:
             stats = self.db.get_category_stats()
             total = sum(stats.values())
+            web_stats = self.web_knowledge_db.get_stats()
+            web_total = web_stats.get("valid", 0)
+
             await application.bot.send_message(
                 chat_id=user_id,
                 text=(
-                    f"Memory Palace bot is now online!\n\n"
-                    f"You have {total} lessons stored.\n\n"
-                    f"Send /add to add a new lesson or just send me some text."
+                    f"EDITH is online!\n\n"
+                    f"Your Memory Palace: {total} lessons\n"
+                    f"Web Knowledge: {web_total} facts\n\n"
+                    f"Ask me anything or send a lesson to save."
                 ),
             )
             logger.info(f"Sent startup message to user {user_id}")
@@ -737,7 +1172,7 @@ class MemoryPalaceBot:
             .build()
         )
 
-        # Conversation handler for lesson adding workflow
+        # Conversation handler for EDITH interactions
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler("start", self.start_command),
@@ -776,6 +1211,31 @@ class MemoryPalaceBot:
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
                         self.handle_edit_feedback
+                    ),
+                ],
+                # New states for EDITH
+                State.AWAITING_RESEARCH_CONFIRM: [
+                    CallbackQueryHandler(
+                        self.handle_research_confirmation,
+                        pattern="^(research_yes|research_no)$"
+                    ),
+                ],
+                State.CONFIRMING_FORGET: [
+                    CallbackQueryHandler(
+                        self.handle_forget_confirmation,
+                        pattern="^(forget_yes|forget_no)$"
+                    ),
+                ],
+                State.AWAITING_SOCRATIC: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.handle_socratic_response
+                    ),
+                ],
+                State.RESOLVING_CONFLICT: [
+                    CallbackQueryHandler(
+                        self.handle_conflict_resolution,
+                        pattern="^(conflict_keep|conflict_update)$"
                     ),
                 ],
             },
