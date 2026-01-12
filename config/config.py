@@ -184,6 +184,15 @@ memory_palace_recency_window_days = memory_palace_config.get("recency_window_day
 memory_palace_blend_with_generated = memory_palace_config.get("blend_with_generated", True)
 memory_palace_index_folder = memory_palace_config.get("index_folder", "./memory_palace/lessons_index")
 
+# Knowledge Archive Configuration (indexed articles - part of Memory Palace superset)
+knowledge_archive_config = config_yaml.get("knowledge_archive", {})
+knowledge_archive_index_folder = knowledge_archive_config.get("index_folder", "./memory_palace/archive_index")
+knowledge_archive_default_tier = knowledge_archive_config.get("default_model_tier", "smart")
+knowledge_archive_firecrawl_timeout = knowledge_archive_config.get("firecrawl_timeout", 30)
+knowledge_archive_archive_org_timeout = knowledge_archive_config.get("archive_org_timeout", 15)
+knowledge_archive_min_word_count = knowledge_archive_config.get("min_word_count", 75)
+knowledge_archive_batch_delay = knowledge_archive_config.get("batch_delay_seconds", 1.0)
+
 # Default model selectors for API endpoints
 # These are loaded from the 'defaults' section in config.yml
 defaults_config = config_yaml.get("defaults", {})

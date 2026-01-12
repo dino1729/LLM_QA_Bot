@@ -72,6 +72,7 @@ from helper_functions.memory_palace_answer import (
     SourceType,
     format_answer_for_telegram,
 )
+from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ class UserIntent(StrEnum):
     GET_STATS = "get_stats"
     HELP = "help"
     FORGET = "forget"  # NEW: Forget specific knowledge
+    ARCHIVE_ARTICLE = "archive_article"  # Archive a URL to Knowledge Archive
 
 
 @dataclass
@@ -250,15 +252,17 @@ class MemoryPalaceBot:
     MAX_CONTEXT_TURNS = 10  # Session context window
 
     def __init__(self):
-        """Initialize the bot with dual knowledge stores and answer engine."""
-        # Core databases
-        self.db = MemoryPalaceDB()  # User wisdom
-        self.web_knowledge_db = WebKnowledgeDB()  # Web-learned knowledge
+        """Initialize the bot with triple knowledge stores and answer engine."""
+        # Core databases (three rooms of the Memory Palace)
+        self.db = MemoryPalaceDB()  # Lessons room - user wisdom
+        self.web_knowledge_db = WebKnowledgeDB()  # Research room - web-learned knowledge
+        self.archive_db = KnowledgeArchiveDB()  # Archive room - indexed articles
 
         # Answer engine for question handling
         self.answer_engine = AnswerEngine(
             wisdom_db=self.db,
             knowledge_db=self.web_knowledge_db,
+            archive_db=self.archive_db,
         )
 
         # Session context tracking (in-memory, lost on restart)
@@ -434,6 +438,78 @@ class MemoryPalaceBot:
         return State.AWAITING_LESSON
 
     @authorized_only
+    async def archive_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handle /archive command - index article URL to Knowledge Archive."""
+        url = " ".join(context.args) if context.args else ""
+
+        if not url or not url.startswith("http"):
+            await update.message.reply_text(
+                "Usage: /archive <url>\n\n"
+                "Example: /archive https://paulgraham.com/ds.html\n\n"
+                "This will scrape, summarize, and index the article to your Knowledge Archive."
+            )
+            return State.AWAITING_LESSON
+
+        # Import here to avoid circular imports
+        from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+        from helper_functions.knowledge_archive_scraper import scrape_article
+        from helper_functions.knowledge_archive_processor import process_article
+
+        db = KnowledgeArchiveDB()
+
+        # Check for duplicate
+        if db.url_exists(url):
+            await update.message.reply_text(
+                "This article is already in your Knowledge Archive."
+            )
+            return State.AWAITING_LESSON
+
+        await update.message.reply_text(
+            "Archiving article... This may take a moment."
+        )
+
+        # Scrape
+        scraped = scrape_article(url)
+        if scraped is None:
+            await update.message.reply_text(
+                "Failed to archive: Could not scrape content from URL."
+            )
+            return State.AWAITING_LESSON
+
+        min_word_count = getattr(config, "knowledge_archive_min_word_count", 75)
+        if scraped.word_count < min_word_count:
+            await update.message.reply_text(
+                f"Failed to archive: Content too short ({scraped.word_count} words < {min_word_count})."
+            )
+            return State.AWAITING_LESSON
+
+        # Process with LLM
+        try:
+            entry = process_article(scraped, url)
+            db.add_entry(entry)
+
+            # Format response
+            tags_str = ", ".join(entry.metadata.tags) if entry.metadata.tags else "none"
+            takeaway_preview = entry.takeaways[:500] + "..." if len(entry.takeaways) > 500 else entry.takeaways
+
+            msg = (
+                f"Archived to Knowledge Archive!\n\n"
+                f"**{entry.metadata.title}**\n\n"
+                f"**Summary:**\n{entry.summary}\n\n"
+                f"**Key Takeaways:**\n{takeaway_preview}\n\n"
+                f"Tags: {tags_str}"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Archive processing failed: {e}")
+            await update.message.reply_text(f"Archive failed: {e}")
+
+        return State.AWAITING_LESSON
+
+    @authorized_only
     async def random_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -560,24 +636,99 @@ class MemoryPalaceBot:
     async def _handle_search(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
     ) -> int:
-        """Handle search intent."""
-        results = self.db.find_similar(query, top_k=5)
+        """Handle search intent - iterative search across all three rooms."""
+        # Iterative thresholds: try high first, then progressively lower
+        THRESHOLDS = [0.5, 0.4, 0.3]
 
-        if not results:
-            await update.message.reply_text(
-                f"No lessons found matching: {query}"
-            )
+        # Get all results first (we'll filter by threshold)
+        all_lesson_results = self.db.find_similar(query, top_k=5)
+        all_archive_results = self.archive_db.find_similar(query, top_k=3)
+        all_web_results = self.web_knowledge_db.find_similar(query, top_k=3)
+
+        # Try each threshold until we find results
+        used_threshold = None
+        lesson_results = []
+        archive_results = []
+        web_results = []
+
+        for threshold in THRESHOLDS:
+            lesson_results = [r for r in all_lesson_results if r.similarity_score >= threshold]
+            archive_results = [r for r in all_archive_results if r.similarity_score >= threshold]
+            web_results = [r for r in all_web_results if r.similarity_score >= threshold]
+
+            total_found = len(lesson_results) + len(archive_results) + len(web_results)
+            if total_found > 0:
+                used_threshold = threshold
+                break
+
+        if used_threshold is None:
+            # No results even at lowest threshold - show best available anyway
+            best_results = []
+            if all_lesson_results:
+                best_results.append(("lesson", all_lesson_results[0]))
+            if all_archive_results:
+                best_results.append(("archive", all_archive_results[0]))
+            if all_web_results:
+                best_results.append(("web", all_web_results[0]))
+
+            if best_results:
+                # Sort by score and show the best one
+                best_results.sort(key=lambda x: x[1].similarity_score, reverse=True)
+                best_type, best = best_results[0]
+                response = f"🔍 No strong matches for: {query}\n\n"
+                response += f"Best available ({best.similarity_score:.0%} relevance):\n\n"
+
+                if best_type == "archive":
+                    entry = best.entry
+                    response += f"📰 {entry.metadata.title} ({entry.metadata.source_domain})\n\n"
+                    response += f"Summary: {entry.summary}\n\n"
+                    response += f"Key Takeaways:\n{entry.takeaways}"
+                elif best_type == "lesson":
+                    response += f"📚 {best.lesson.distilled_text}"
+                else:
+                    response += f"🌐 {best.knowledge.distilled_text}"
+
+                await update.message.reply_text(response)
+            else:
+                await update.message.reply_text(f"No knowledge found for: {query}")
             return State.AWAITING_LESSON
 
-        response = f"🔍 Found {len(results)} lessons:\n\n"
-        for i, result in enumerate(results, 1):
-            cat_display = CATEGORIES.get(
-                result.lesson.metadata.category.value, {}
-            ).get("display", result.lesson.metadata.category.value)
-            response += (
-                f"{i}. [{cat_display}]\n"
-                f"   {result.lesson.distilled_text}\n\n"
-            )
+        # Build response with found results
+        total_found = len(lesson_results) + len(archive_results) + len(web_results)
+        confidence_label = "high" if used_threshold >= 0.5 else "moderate" if used_threshold >= 0.4 else "partial"
+        response = f"🔍 Found {total_found} results ({confidence_label} relevance):\n\n"
+
+        # Lessons room
+        if lesson_results:
+            response += f"📚 Lessons ({len(lesson_results)}):\n"
+            for i, result in enumerate(lesson_results, 1):
+                cat_display = CATEGORIES.get(
+                    result.lesson.metadata.category.value, {}
+                ).get("display", result.lesson.metadata.category.value)
+                response += (
+                    f"{i}. [{cat_display}] ({result.similarity_score:.0%})\n"
+                    f"   {result.lesson.distilled_text}\n\n"
+                )
+
+        # Archive room - show full summary and takeaways
+        if archive_results:
+            response += f"📰 Archive ({len(archive_results)}):\n"
+            for i, result in enumerate(archive_results, 1):
+                entry = result.entry
+                response += (
+                    f"{i}. [{entry.metadata.source_domain}] ({result.similarity_score:.0%})\n"
+                    f"   📄 {entry.metadata.title}\n\n"
+                    f"   Summary:\n"
+                    f"   {entry.summary}\n\n"
+                    f"   Key Takeaways:\n"
+                    f"   {entry.takeaways}\n\n"
+                )
+
+        # Research room
+        if web_results:
+            response += f"🌐 Research ({len(web_results)}):\n"
+            for i, result in enumerate(web_results, 1):
+                response += f"{i}. ({result.similarity_score:.0%}) {result.knowledge.distilled_text[:150]}...\n\n"
 
         await update.message.reply_text(response)
         return State.AWAITING_LESSON
@@ -1146,16 +1297,19 @@ class MemoryPalaceBot:
 
         try:
             stats = self.db.get_category_stats()
-            total = sum(stats.values())
+            lessons_total = sum(stats.values())
             web_stats = self.web_knowledge_db.get_stats()
             web_total = web_stats.get("valid", 0)
+            archive_total = self.archive_db.get_entry_count()
 
             await application.bot.send_message(
                 chat_id=user_id,
                 text=(
                     f"EDITH is online!\n\n"
-                    f"Your Memory Palace: {total} lessons\n"
-                    f"Web Knowledge: {web_total} facts\n\n"
+                    f"Your Memory Palace:\n"
+                    f"  - Lessons room: {lessons_total} insights\n"
+                    f"  - Archive room: {archive_total} articles\n"
+                    f"  - Research room: {web_total} facts\n\n"
                     f"Ask me anything or send a lesson to save."
                 ),
             )
@@ -1251,6 +1405,7 @@ class MemoryPalaceBot:
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("random", self.random_command))
         application.add_handler(CommandHandler("stats", self.stats_command))
+        application.add_handler(CommandHandler("archive", self.archive_command))
 
         return application
 

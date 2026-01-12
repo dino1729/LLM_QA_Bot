@@ -25,6 +25,10 @@ from helper_functions.web_knowledge_db import (
     SimilarWebKnowledge,
     WebKnowledgeDB,
 )
+from helper_functions.knowledge_archive_db import (
+    KnowledgeArchiveDB,
+    SimilarArchiveEntry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +37,9 @@ class SourceType(StrEnum):
     """Source of the answer."""
     USER_WISDOM = "user_wisdom"
     WEB_KNOWLEDGE = "web_knowledge"
-    BOTH = "both"
+    KNOWLEDGE_ARCHIVE = "knowledge_archive"  # Indexed articles
+    BOTH = "both"  # User wisdom + web knowledge
+    ALL_SOURCES = "all_sources"  # User wisdom + archive (+ web knowledge)
     NONE = "none"
 
 
@@ -49,6 +55,7 @@ class AnswerResult:
     # Source details for attribution
     wisdom_matches: List[SimilarLesson] = field(default_factory=list)
     knowledge_matches: List[SimilarWebKnowledge] = field(default_factory=list)
+    archive_matches: List[SimilarArchiveEntry] = field(default_factory=list)
 
 
 # EDITH persona system prompt
@@ -76,6 +83,7 @@ class AnswerEngine:
         self,
         wisdom_db: MemoryPalaceDB = None,
         knowledge_db: WebKnowledgeDB = None,
+        archive_db: KnowledgeArchiveDB = None,
         provider: str = None,
         model_tier: str = None,
     ):
@@ -83,13 +91,15 @@ class AnswerEngine:
         Initialize the answer engine.
 
         Args:
-            wisdom_db: User wisdom database (Memory Palace)
-            knowledge_db: Web knowledge database
+            wisdom_db: User wisdom database (Memory Palace lessons)
+            knowledge_db: Web knowledge database (ephemeral web research)
+            archive_db: Knowledge Archive database (indexed articles)
             provider: LLM provider for synthesis
             model_tier: Model tier for synthesis
         """
         self.wisdom_db = wisdom_db or MemoryPalaceDB()
         self.knowledge_db = knowledge_db or WebKnowledgeDB()
+        self.archive_db = archive_db or KnowledgeArchiveDB()
         self.provider = provider or config.memory_palace_provider
         self.model_tier = model_tier or "smart"  # Use smart model for synthesis
 
@@ -98,6 +108,7 @@ class AnswerEngine:
         question: str,
         session_context: List[dict] = None,
         search_web_knowledge: bool = True,
+        search_archive: bool = True,
     ) -> AnswerResult:
         """
         Answer a question from stored knowledge.
@@ -106,6 +117,7 @@ class AnswerEngine:
             question: The user's question
             session_context: Previous conversation turns for context
             search_web_knowledge: Whether to also search web knowledge store
+            search_archive: Whether to also search Knowledge Archive
 
         Returns:
             AnswerResult with answer, confidence, and source info
@@ -120,16 +132,22 @@ class AnswerEngine:
         if search_web_knowledge:
             knowledge_results = self.knowledge_db.find_similar(question, top_k=3)
 
-        # Step 3: Determine best match and confidence
+        # Step 3: Search Knowledge Archive (indexed articles)
+        archive_results = []
+        if search_archive:
+            archive_results = self.archive_db.find_similar(question, top_k=3)
+
+        # Step 4: Determine best match and confidence
         best_wisdom = wisdom_results[0] if wisdom_results else None
         best_knowledge = knowledge_results[0] if knowledge_results else None
+        best_archive = archive_results[0] if archive_results else None
 
         # Calculate confidence based on match quality
         confidence, source_type, offer_research = self._calculate_confidence(
-            best_wisdom, best_knowledge
+            best_wisdom, best_knowledge, best_archive
         )
 
-        # Step 4: Generate answer based on what we found
+        # Step 5: Generate answer based on what we found
         if source_type == SourceType.NONE:
             # No relevant knowledge found
             related = self._find_related_topics(question)
@@ -142,13 +160,15 @@ class AnswerEngine:
                 reasoning_prefix="[No matching knowledge]",
                 wisdom_matches=[],
                 knowledge_matches=[],
+                archive_matches=[],
             )
 
-        # Step 5: Synthesize answer
+        # Step 6: Synthesize answer
         answer_text, reasoning_prefix = self._synthesize_answer(
             question,
             wisdom_results[:3] if wisdom_results else [],
             knowledge_results[:2] if knowledge_results else [],
+            archive_results[:2] if archive_results else [],
             session_context,
             source_type,
             confidence,
@@ -163,12 +183,14 @@ class AnswerEngine:
             reasoning_prefix=reasoning_prefix,
             wisdom_matches=wisdom_results[:3],
             knowledge_matches=knowledge_results[:2],
+            archive_matches=archive_results[:2],
         )
 
     def _calculate_confidence(
         self,
         best_wisdom: Optional[SimilarLesson],
         best_knowledge: Optional[SimilarWebKnowledge],
+        best_archive: Optional[SimilarArchiveEntry] = None,
     ) -> Tuple[ConfidenceTier, SourceType, bool]:
         """
         Calculate confidence tier based on match quality.
@@ -178,15 +200,25 @@ class AnswerEngine:
         """
         wisdom_score = best_wisdom.similarity_score if best_wisdom else 0
         knowledge_score = best_knowledge.similarity_score if best_knowledge else 0
+        archive_score = best_archive.similarity_score if best_archive else 0
 
-        # Determine primary source
+        # Determine primary source - prioritize wisdom, then archive, then web knowledge
         if wisdom_score >= self.HIGH_CONFIDENCE_THRESHOLD:
+            if archive_score >= self.MEDIUM_CONFIDENCE_THRESHOLD:
+                return ConfidenceTier.VERY_CONFIDENT, SourceType.ALL_SOURCES, False
             return ConfidenceTier.VERY_CONFIDENT, SourceType.USER_WISDOM, False
 
         if wisdom_score >= self.MEDIUM_CONFIDENCE_THRESHOLD:
-            if knowledge_score >= self.MEDIUM_CONFIDENCE_THRESHOLD:
-                return ConfidenceTier.VERY_CONFIDENT, SourceType.BOTH, False
+            if archive_score >= self.MEDIUM_CONFIDENCE_THRESHOLD or knowledge_score >= self.MEDIUM_CONFIDENCE_THRESHOLD:
+                return ConfidenceTier.VERY_CONFIDENT, SourceType.ALL_SOURCES if archive_score >= self.MEDIUM_CONFIDENCE_THRESHOLD else SourceType.BOTH, False
             return ConfidenceTier.FAIRLY_SURE, SourceType.USER_WISDOM, True
+
+        # Archive takes precedence over ephemeral web knowledge
+        if archive_score >= self.HIGH_CONFIDENCE_THRESHOLD:
+            return ConfidenceTier.VERY_CONFIDENT, SourceType.KNOWLEDGE_ARCHIVE, False
+
+        if archive_score >= self.MEDIUM_CONFIDENCE_THRESHOLD:
+            return ConfidenceTier.FAIRLY_SURE, SourceType.KNOWLEDGE_ARCHIVE, False
 
         if knowledge_score >= self.HIGH_CONFIDENCE_THRESHOLD:
             return ConfidenceTier.FAIRLY_SURE, SourceType.WEB_KNOWLEDGE, False
@@ -196,6 +228,9 @@ class AnswerEngine:
 
         if wisdom_score >= self.PARTIAL_MATCH_THRESHOLD:
             return ConfidenceTier.UNCERTAIN, SourceType.USER_WISDOM, True
+
+        if archive_score >= self.PARTIAL_MATCH_THRESHOLD:
+            return ConfidenceTier.UNCERTAIN, SourceType.KNOWLEDGE_ARCHIVE, True
 
         if knowledge_score >= self.PARTIAL_MATCH_THRESHOLD:
             return ConfidenceTier.UNCERTAIN, SourceType.WEB_KNOWLEDGE, True
@@ -207,6 +242,7 @@ class AnswerEngine:
         question: str,
         wisdom_matches: List[SimilarLesson],
         knowledge_matches: List[SimilarWebKnowledge],
+        archive_matches: List[SimilarArchiveEntry],
         session_context: List[dict],
         source_type: SourceType,
         confidence: ConfidenceTier,
@@ -230,6 +266,19 @@ class AnswerEngine:
                 wisdom_context += (
                     f"{i}. [{cat_display}] {match.lesson.distilled_text} "
                     f"(match: {match.similarity_score:.0%})\n"
+                )
+
+        archive_context = ""
+        if archive_matches:
+            archive_context = "\nINDEXED ARTICLES (curated knowledge):\n"
+            for i, match in enumerate(archive_matches, 1):
+                entry = match.entry
+                tags_str = ", ".join(entry.metadata.tags[:3]) if entry.metadata.tags else ""
+                archive_context += (
+                    f"{i}. [{entry.metadata.source_domain}] {entry.metadata.title}\n"
+                    f"   Summary: {entry.summary[:200]}...\n"
+                    f"   Key takeaways: {entry.takeaways[:200]}...\n"
+                    f"   (match: {match.similarity_score:.0%}, tags: {tags_str})\n"
                 )
 
         knowledge_context = ""
@@ -260,7 +309,7 @@ class AnswerEngine:
 
         prompt = f"""{EDITH_SYSTEM_PROMPT}
 
-{context_str}{wisdom_context}{knowledge_context}
+{context_str}{wisdom_context}{archive_context}{knowledge_context}
 
 QUESTION: {question}
 
@@ -293,7 +342,7 @@ ANSWER:"""
 
         # Generate reasoning prefix
         reasoning_prefix = self._generate_reasoning_prefix(
-            source_type, confidence, wisdom_matches, knowledge_matches
+            source_type, confidence, wisdom_matches, knowledge_matches, archive_matches
         )
 
         return answer_text, reasoning_prefix
@@ -304,26 +353,12 @@ ANSWER:"""
         confidence: ConfidenceTier,
         wisdom_matches: List[SimilarLesson],
         knowledge_matches: List[SimilarWebKnowledge],
+        archive_matches: List[SimilarArchiveEntry] = None,
     ) -> str:
-        """Generate the reasoning prefix shown before answers."""
-        confidence_display = {
-            ConfidenceTier.VERY_CONFIDENT: "Very confident",
-            ConfidenceTier.FAIRLY_SURE: "Fairly sure",
-            ConfidenceTier.UNCERTAIN: "Uncertain",
-        }
-
-        if source_type == SourceType.USER_WISDOM:
-            score = wisdom_matches[0].similarity_score if wisdom_matches else 0
-            return f"[From memory: {confidence_display[confidence]}] ({score:.0%} match)"
-
-        if source_type == SourceType.WEB_KNOWLEDGE:
-            count = len(knowledge_matches)
-            return f"[From research: {confidence_display[confidence]}] ({count} sources)"
-
-        if source_type == SourceType.BOTH:
-            return f"[From memory + research: {confidence_display[confidence]}]"
-
-        return "[No matching knowledge]"
+        """Generate a minimal, natural source hint (not a technical prefix)."""
+        # Return empty - let the LLM answer speak naturally
+        # Source attribution is handled in format_answer_for_telegram
+        return ""
 
     def _find_related_topics(self, question: str, limit: int = 3) -> List[str]:
         """Find related topics when no direct match is found."""
@@ -400,13 +435,27 @@ def format_answer_for_telegram(result: AnswerResult) -> str:
                 msg += f"  - {topic}\n"
         return msg
 
-    # Build formatted response
-    lines = [result.reasoning_prefix, "", result.answer_text]
+    # Build natural response - answer first, subtle attribution at end
+    lines = [result.answer_text]
 
-    # Add source attribution if from user wisdom
+    # Add subtle source attribution
     if result.source_type == SourceType.USER_WISDOM and result.wisdom_matches:
         cat = result.wisdom_matches[0].lesson.metadata.category
         cat_display = CATEGORIES.get(cat, {}).get("display", cat)
-        lines.append(f"\n(From your {cat_display} lessons)")
+        lines.append(f"\n📚 From your {cat_display} lessons")
+
+    elif result.source_type == SourceType.KNOWLEDGE_ARCHIVE and result.archive_matches:
+        source = result.archive_matches[0].entry.metadata.source_domain
+        title = result.archive_matches[0].entry.metadata.title
+        lines.append(f"\n📰 From archived article: {title} ({source})")
+
+    elif result.source_type == SourceType.WEB_KNOWLEDGE and result.knowledge_matches:
+        lines.append(f"\n🌐 From web research")
+
+    elif result.source_type == SourceType.BOTH:
+        lines.append(f"\n📚🌐 From your lessons and web research")
+
+    elif result.source_type == SourceType.ALL_SOURCES:
+        lines.append(f"\n📚📰 From your lessons and archived articles")
 
     return "\n".join(lines)

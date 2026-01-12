@@ -555,6 +555,120 @@ async def endpoint_memory_reset(req: MemoryResetRequest):
         logger.error(f"Error resetting memory palace: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Knowledge Archive Endpoints (indexed articles - part of Memory Palace superset)
+
+class ArchiveIndexRequest(BaseModel):
+    url: str
+    model_tier: str = "smart"
+
+
+class ArchiveSearchRequest(BaseModel):
+    query: str
+    top_k: int = 10
+
+
+@app.post("/api/knowledge_archive/index")
+async def endpoint_archive_index(req: ArchiveIndexRequest):
+    """Index a single article URL to Knowledge Archive."""
+    from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+    from helper_functions.knowledge_archive_scraper import scrape_article
+    from helper_functions.knowledge_archive_processor import process_article
+
+    db = KnowledgeArchiveDB()
+
+    # Check duplicate
+    if db.url_exists(req.url):
+        return {"status": "skipped", "reason": "URL already exists"}
+
+    # Scrape and process
+    scraped = scrape_article(req.url)
+    if scraped is None:
+        raise HTTPException(status_code=400, detail="Failed to scrape URL")
+
+    min_word_count = getattr(config, "knowledge_archive_min_word_count", 75)
+    if scraped.word_count < min_word_count:
+        raise HTTPException(status_code=400, detail=f"Content too short ({scraped.word_count} words < {min_word_count})")
+
+    async with api_lock:
+        entry = process_article(scraped, req.url, model_tier=req.model_tier)
+        db.add_entry(entry)
+
+    return {
+        "status": "success",
+        "entry_id": entry.id,
+        "title": entry.metadata.title,
+        "takeaway_count": entry.metadata.takeaway_count,
+        "tags": entry.metadata.tags,
+    }
+
+
+@app.post("/api/knowledge_archive/search")
+async def endpoint_archive_search(req: ArchiveSearchRequest):
+    """Search Knowledge Archive by semantic similarity."""
+    from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+
+    async with api_lock:
+        await set_model_context(config.default_memory_model_name)
+        db = KnowledgeArchiveDB()
+        results = db.find_similar(req.query, top_k=req.top_k)
+
+    return {
+        "results": [
+            {
+                "id": r.entry.id,
+                "title": r.entry.metadata.title,
+                "summary": r.entry.summary,
+                "takeaways": r.entry.takeaways,
+                "tags": r.entry.metadata.tags,
+                "url": r.entry.metadata.url,
+                "source_domain": r.entry.metadata.source_domain,
+                "similarity_score": r.similarity_score,
+            }
+            for r in results
+        ]
+    }
+
+
+@app.get("/api/knowledge_archive/recent/{n}")
+async def endpoint_archive_list_recent(n: int = 10):
+    """List most recently indexed articles."""
+    from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+
+    db = KnowledgeArchiveDB()
+    entries = db.get_recent(n)
+
+    return {
+        "entries": [
+            {
+                "id": e.id,
+                "title": e.metadata.title,
+                "url": e.metadata.url,
+                "indexed_at": e.metadata.indexed_at.isoformat(),
+                "takeaways": e.takeaways,
+                "tags": e.metadata.tags,
+                "source_domain": e.metadata.source_domain,
+                "word_count": e.metadata.word_count,
+            }
+            for e in entries
+        ]
+    }
+
+
+@app.get("/api/knowledge_archive/stats")
+async def endpoint_archive_stats():
+    """Get Knowledge Archive statistics."""
+    from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+
+    db = KnowledgeArchiveDB()
+
+    return {
+        "total_entries": db.get_entry_count(),
+        "by_domain": db.get_domain_stats(),
+        "by_tag": db.get_tag_stats(),
+    }
+
+
 # Fun Tools
 @app.post("/api/fun/trip")
 async def endpoint_trip(req: TripRequest):
