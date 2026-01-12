@@ -398,7 +398,10 @@ def process_article(url, memorize):
 
 def analyze_article(url, memorize, model_name="LITELLM"):
     """
-    Analyze article from URL
+    Analyze article from URL.
+
+    When memorize=True, routes to Knowledge Archive (indexed articles)
+    instead of Memory Palace (user lessons).
     """
     clearallfiles()
     if not url:
@@ -410,20 +413,39 @@ def analyze_article(url, memorize, model_name="LITELLM"):
             "article_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, article_title = process_article(url, memorize)
-    
+
     memory_status = "Memory upload skipped"
     if memorize and summary:
         try:
-            memory_status = save_memory(
-                title=article_title,
-                content=summary,
-                source_type="article",
-                source_ref=url,
-                model_name=model_name
-            )
+            # Route articles to Knowledge Archive (indexed articles)
+            from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+            from helper_functions.knowledge_archive_scraper import scrape_article
+            from helper_functions.knowledge_archive_processor import process_article as process_archive
+
+            db = KnowledgeArchiveDB()
+
+            if db.url_exists(url):
+                memory_status = "Already in Knowledge Archive (skipped)"
+            else:
+                scraped = scrape_article(url)
+                min_word_count = 75
+                if scraped and scraped.word_count >= min_word_count:
+                    entry = process_archive(scraped, url)
+                    db.add_entry(entry)
+                    tags_str = ", ".join(entry.metadata.tags) if entry.metadata.tags else "none"
+                    memory_status = f"Saved to Knowledge Archive (tags: {tags_str})"
+                else:
+                    # Fallback to original Memory Palace for short content
+                    memory_status = save_memory(
+                        title=article_title,
+                        content=summary,
+                        source_type="article",
+                        source_ref=url,
+                        model_name=model_name
+                    )
         except Exception as e:
-            print(f"Memory Palace save failed: {e}")
-            memory_status = f"Memory upload failed: {e}"
+            print(f"Knowledge Archive save failed: {e}")
+            memory_status = f"Knowledge Archive failed: {e}"
 
     results = {
         "message": message,
