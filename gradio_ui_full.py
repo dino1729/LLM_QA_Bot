@@ -28,17 +28,13 @@ from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze
 from helper_functions.chat_generation import generate_chat
 from helper_functions import gptimage_tool as tool
 from helper_functions.llm_client import get_client, list_available_models
+from helper_functions.vector_store import SimpleVectorStore
 from helper_functions.memory_palace_local import (
     save_memory,
     search_memories,
     prepare_memory_stream,
     reset_memory_palace
 )
-from llama_index.core import Settings as LlamaSettings
-from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core import PromptTemplate
 from config import config
 
 # Load env vars
@@ -51,9 +47,9 @@ logger = logging.getLogger(__name__)
 # Constants
 VECTOR_FOLDER = config.VECTOR_FOLDER
 SUMMARY_FOLDER = config.SUMMARY_FOLDER
-qa_template = PromptTemplate(config.ques_template)
+qa_template = config.ques_template  # Plain string template with {context_str} and {query_str}
 
-# Global Lock for LlamaIndex Settings
+# Lock for serializing concurrent API requests
 api_lock = asyncio.Lock()
 
 app = FastAPI(title="LLM QA Bot API")
@@ -230,56 +226,38 @@ def parse_model_name(model_name):
         return config.default_parse_fallback_provider, config.default_parse_fallback_tier, None
 
 async def set_model_context(model_name: str):
-    """Set the LLM model for the current session (Thread/Async safe wrapper)"""
+    """Set the LLM model for the current session (Thread/Async safe wrapper).
+    No-op after LlamaIndex removal - model context is now per-request."""
     provider, tier, actual_model = parse_model_name(model_name)
-    if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
-        LlamaSettings.llm = client.get_llamaindex_llm()
-        LlamaSettings.embed_model = client.get_llamaindex_embedding()
-        logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
+    logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
 
 def ask_query(question, model_name=None):
-    """Query the vector index using the specified model"""
-    # Use config default if no model specified
+    """Query the vector index using the specified model via direct RAG"""
     if model_name is None:
         model_name = config.default_chat_model_name
-    # Note: This function runs synchronously as per original logic.
-    # In FastAPI we wrap it or just run it. LlamaIndex is mostly sync.
-    provider, tier, actual_model = parse_model_name(model_name)
 
-    if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
-        original_llm = LlamaSettings.llm
-        original_embed = LlamaSettings.embed_model
-        LlamaSettings.llm = client.get_llamaindex_llm()
-        LlamaSettings.embed_model = client.get_llamaindex_embedding()
+    provider, tier, actual_model = parse_model_name(model_name)
+    client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
 
     try:
         if not os.path.exists(VECTOR_FOLDER) or not os.listdir(VECTOR_FOLDER):
-             return "Index not found. Please upload documents first."
+            return "Index not found. Please upload documents first."
 
-        storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
-        vector_index = load_index_from_storage(storage_context, index_id="vector_index")
-        retriever = VectorIndexRetriever(
-            index=vector_index,
-            similarity_top_k=10,
+        # Load vector store and search for relevant chunks
+        store = SimpleVectorStore(persist_dir=VECTOR_FOLDER, embed_fn=client.get_embedding)
+        results = store.search(question, top_k=10)
+        context = "\n\n".join([r.text for r in results])
+
+        # Format prompt and call LLM directly
+        prompt = qa_template.format(context_str=context, query_str=question)
+        answer = client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=config.temperature,
+            max_tokens=config.max_tokens
         )
-        response_synthesizer = get_response_synthesizer(
-            text_qa_template=qa_template,
-        )
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever,
-            response_synthesizer=response_synthesizer,
-        )
-        response = query_engine.query(question)
-        answer = str(response) # response.response
     except Exception as e:
         logger.error(f"Error querying index: {e}")
         return f"Error: {str(e)}"
-    finally:
-        if provider in ["litellm", "ollama"]:
-            LlamaSettings.llm = original_llm
-            LlamaSettings.embed_model = original_embed
 
     return answer
 
@@ -473,14 +451,7 @@ async def endpoint_ask_stream(req: ChatRequest):
 @app.post("/api/chat/internet")
 async def endpoint_chat_internet(req: InternetChatRequest):
     # Internet connected chatbot handles its own context/history
-    # But it might use global LlamaIndex settings?
-    # helper_functions/chat_generation_with_internet.py uses get_client and Settings.
-    # It seems to set Settings.llm inside the module globally on import, 
-    # but the function `internet_connected_chatbot` doesn't explicitly set them?
-    # Wait, internet_connected_chatbot calls `generate_chat` or `get_web_results`.
-    # `get_web_results` calls `firecrawl_researcher` which calls `conduct_research_firecrawl`.
-    # Let's assume it's safe or we need the lock if it modifies global Settings.
-    # Given the complexity, locking is safer.
+    # Lock for serialization of concurrent requests
     async with api_lock:
         response = internet_connected_chatbot(
             query=req.message,

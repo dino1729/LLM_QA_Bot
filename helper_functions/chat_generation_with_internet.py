@@ -9,18 +9,8 @@ from datetime import datetime
 from config import config
 from helper_functions.chat_generation import generate_chat
 from helper_functions.llm_client import get_client
-# from llama_index.agent.openai import OpenAIAgent  # Temporarily disabled - incompatible with llama-index-core 0.14.8
-# from llama_index.tools.weather import OpenWeatherMapToolSpec  # Temporarily disabled
-# from llama_index.tools.bing_search import BingSearchToolSpec  # Temporarily disabled
 from newspaper import Article
 from bs4 import BeautifulSoup
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core import PromptTemplate
-from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, get_response_synthesizer
-from llama_index.core.indices import SummaryIndex
-from llama_index.core import Settings
 from helper_functions.firecrawl_researcher import conduct_research_firecrawl
 from helper_functions.debug_logger import log_debug_data
 
@@ -29,30 +19,10 @@ openweather_api_key = config.openweather_api_key
 firecrawl_server_url = config.firecrawl_server_url
 retriever = config.retriever
 
-sum_template = config.sum_template
-ques_template = config.ques_template
-summary_template = PromptTemplate(sum_template)
-qa_template = PromptTemplate(ques_template)
-
 temperature = config.temperature
 max_tokens = config.max_tokens
 model_name = config.model_name
-num_output = config.num_output
-max_chunk_overlap_ratio = config.max_chunk_overlap_ratio
-max_input_size = config.max_input_size
-context_window = config.context_window
 keywords = config.keywords
-
-# Initialize default LLM client (will be overridden in functions based on user selection)
-# Uses configured default_internet_chat_provider and default_internet_chat_tier from config.yml
-default_client = get_client(provider=config.default_internet_chat_provider, model_tier=config.default_internet_chat_tier)
-
-# Configure LlamaIndex Settings with default client
-Settings.llm = default_client.get_llamaindex_llm()
-Settings.embed_model = default_client.get_llamaindex_embedding()
-text_splitter = SentenceSplitter()
-Settings.text_splitter = text_splitter
-Settings.prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
 
 WEB_SEARCH_FOLDER = config.WEB_SEARCH_FOLDER
 if not os.path.exists(WEB_SEARCH_FOLDER):

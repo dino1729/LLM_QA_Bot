@@ -215,14 +215,7 @@ def temp_db_dir():
 
 
 @pytest.fixture
-def mock_embed_model():
-    """Create a mock embedding model for LlamaIndex."""
-    from llama_index.core.embeddings.mock_embed_model import MockEmbedding
-    return MockEmbedding(embed_dim=1536)
-
-
-@pytest.fixture
-def mock_config(temp_db_dir, mock_embed_model):
+def mock_config(temp_db_dir):
     """Mock config module with test paths and LLM client."""
     with patch("helper_functions.knowledge_archive_db.config") as mock_cfg:
         mock_cfg.memory_palace_provider = "litellm"
@@ -232,7 +225,7 @@ def mock_config(temp_db_dir, mock_embed_model):
 
         with patch("helper_functions.knowledge_archive_db.get_client") as mock_get_client:
             mock_client = Mock()
-            mock_client.get_llamaindex_embedding.return_value = mock_embed_model
+            mock_client.get_embedding.return_value = [0.1] * 1536
             mock_get_client.return_value = mock_client
             yield mock_cfg
 

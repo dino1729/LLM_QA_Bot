@@ -1,9 +1,9 @@
 """
-Knowledge Archive Database - LlamaIndex VectorStoreIndex wrapper for storing indexed articles.
+Knowledge Archive Database - SimpleVectorStore wrapper for storing indexed articles.
 
 This module provides:
 - Pydantic models for article entries with rich metadata
-- LlamaIndex-based storage with semantic search
+- SimpleVectorStore-based storage with semantic search
 - URL-based deduplication
 - Recent entries listing for API browsing
 - Domain and tag statistics
@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.vector_store import SimpleVectorStore, Document
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def extract_domain(url: str) -> str:
 
 class KnowledgeArchiveDB:
     """
-    Database wrapper for Knowledge Archive using LlamaIndex VectorStoreIndex.
+    Database wrapper for Knowledge Archive using SimpleVectorStore.
 
     Stores indexed articles permanently with rich metadata.
     Separate from MemoryPalaceDB (user wisdom) and WebKnowledgeDB (ephemeral).
@@ -97,7 +98,7 @@ class KnowledgeArchiveDB:
         Args:
             provider: LLM provider for embeddings (default from config)
             model_tier: Model tier for embeddings (default from config)
-            index_folder: Path to LlamaIndex index (default: ./memory_palace/archive_index)
+            index_folder: Path to vector store (default: ./memory_palace/archive_index)
         """
         self.provider = provider or getattr(config, "memory_palace_provider", "litellm")
         self.model_tier = model_tier or getattr(config, "memory_palace_model_tier", "fast")
@@ -107,56 +108,27 @@ class KnowledgeArchiveDB:
         self.index_folder = index_folder or default_index
 
         self.index_path = Path(self.index_folder)
-        self._index = None
+        self._store = None
         self._ensure_index()
 
-    def _get_embed_model(self):
-        """Get the LlamaIndex-compatible embedding model from llm_client."""
+    def _get_embed_fn(self):
+        """Get an embedding function from llm_client."""
         client = get_client(provider=self.provider, model_tier=self.model_tier)
-        return client.get_llamaindex_embedding()
+        return client.get_embedding
 
     def _ensure_index(self):
-        """Load or create the vector index."""
-        from llama_index.core import (
-            StorageContext,
-            load_index_from_storage,
-        )
-        from llama_index.core import Settings
-
-        # Set the embedding model for LlamaIndex operations
-        self._embed_model = self._get_embed_model()
-        Settings.embed_model = self._embed_model
-
+        """Load or create the vector store."""
+        embed_fn = self._get_embed_fn()
         self.index_path.mkdir(parents=True, exist_ok=True)
-
-        if self.index_path.exists() and any(self.index_path.iterdir()):
-            try:
-                storage_context = StorageContext.from_defaults(persist_dir=str(self.index_path))
-                self._index = load_index_from_storage(
-                    storage_context,
-                    embed_model=self._embed_model
-                )
-                logger.info(f"Loaded existing Knowledge Archive index from {self.index_path}")
-            except Exception as e:
-                logger.warning(f"Failed to load index: {e}. Creating new empty index.")
-                self._create_empty_index()
-        else:
-            self._create_empty_index()
-
-    def _create_empty_index(self):
-        """Create a new empty vector index."""
-        from llama_index.core import VectorStoreIndex
-
-        self._index = VectorStoreIndex.from_documents(
-            [],
-            embed_model=self._embed_model
+        self._store = SimpleVectorStore(
+            persist_dir=str(self.index_path),
+            embed_fn=embed_fn,
         )
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
-        logger.info(f"Created new Knowledge Archive index at {self.index_path}")
+        logger.info(f"Initialized Knowledge Archive store at {self.index_path}")
 
     def add_entry(self, entry: KnowledgeArchiveEntry) -> str:
         """
-        Add an entry to the index.
+        Add an entry to the store.
 
         Args:
             entry: KnowledgeArchiveEntry object to store
@@ -164,12 +136,9 @@ class KnowledgeArchiveDB:
         Returns:
             Entry ID
         """
-        from llama_index.core import Document
-
         # Create searchable text combining summary and takeaways
         searchable_text = f"{entry.metadata.title}\n\n{entry.summary}\n\n{entry.takeaways}"
 
-        # Create LlamaIndex Document with metadata
         doc = Document(
             text=searchable_text,
             metadata={
@@ -192,14 +161,10 @@ class KnowledgeArchiveDB:
                 "takeaways": entry.takeaways,
                 "content_preview": entry.content_preview,
             },
-            excluded_embed_metadata_keys=[
-                "id", "indexed_at", "distilled_by_model", "archive_org_fallback",
-                "original_url_failed", "summary", "takeaways", "content_preview"
-            ],
+            doc_id=entry.id,
         )
 
-        self._index.insert(doc)
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
+        self._store.insert(doc)
         logger.info(f"Added entry {entry.id[:8]}... to Knowledge Archive: {entry.metadata.title}")
         return entry.id
 
@@ -225,15 +190,13 @@ class KnowledgeArchiveDB:
         Returns:
             KnowledgeArchiveEntry if found, None otherwise
         """
-        if self._index is None:
+        if self._store is None:
             return None
 
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("url") == url:
-                    return self._doc_to_entry(doc)
+            for doc_id, data in self._store.docs.items():
+                if data["metadata"].get("url") == url:
+                    return self._data_to_entry(doc_id, data)
         except Exception as e:
             logger.error(f"Error looking up URL: {e}")
 
@@ -249,23 +212,21 @@ class KnowledgeArchiveDB:
         Returns:
             KnowledgeArchiveEntry if found, None otherwise
         """
-        if self._index is None:
+        if self._store is None:
             return None
 
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("id") == entry_id:
-                    return self._doc_to_entry(doc)
+            for doc_id, data in self._store.docs.items():
+                if data["metadata"].get("id") == entry_id:
+                    return self._data_to_entry(doc_id, data)
         except Exception as e:
             logger.error(f"Error looking up entry: {e}")
 
         return None
 
-    def _doc_to_entry(self, doc) -> KnowledgeArchiveEntry:
-        """Convert a LlamaIndex Document to KnowledgeArchiveEntry."""
-        meta = doc.metadata
+    def _data_to_entry(self, doc_id: str, data: Dict[str, Any]) -> KnowledgeArchiveEntry:
+        """Convert store data dict to KnowledgeArchiveEntry."""
+        meta = data["metadata"]
 
         # Parse tags
         tags_str = meta.get("tags", "")
@@ -297,7 +258,7 @@ class KnowledgeArchiveDB:
             original_url_failed = original_url_failed.lower() == "true"
 
         return KnowledgeArchiveEntry(
-            id=meta.get("id", str(uuid.uuid4())),
+            id=meta.get("id", doc_id),
             summary=meta.get("summary", ""),
             takeaways=meta.get("takeaways", ""),
             content_preview=meta.get("content_preview", ""),
@@ -318,6 +279,13 @@ class KnowledgeArchiveDB:
             )
         )
 
+    def _node_to_entry(self, node) -> KnowledgeArchiveEntry:
+        """Convert a RetrievalResult to KnowledgeArchiveEntry."""
+        return self._data_to_entry(
+            node.doc_id,
+            {"metadata": node.metadata, "text": node.text}
+        )
+
     def find_similar(self, text: str, top_k: int = 5) -> List[SimilarArchiveEntry]:
         """
         Find entries similar to the given text with similarity scores.
@@ -329,18 +297,15 @@ class KnowledgeArchiveDB:
         Returns:
             List of SimilarArchiveEntry objects sorted by similarity
         """
-        from llama_index.core.retrievers import VectorIndexRetriever
-
-        if self._index is None or self.get_entry_count() == 0:
+        if self._store is None or self.get_entry_count() == 0:
             return []
 
-        retriever = VectorIndexRetriever(index=self._index, similarity_top_k=top_k)
-        nodes = retriever.retrieve(text)
+        nodes = self._store.search(text, top_k=top_k)
 
         results = []
         for node in nodes:
             try:
-                entry = self._doc_to_entry(node)
+                entry = self._node_to_entry(node)
                 results.append(SimilarArchiveEntry(entry=entry, similarity_score=node.score or 0.0))
             except Exception as e:
                 logger.warning(f"Error parsing node: {e}")
@@ -350,28 +315,25 @@ class KnowledgeArchiveDB:
 
     def get_all_entries(self) -> List[KnowledgeArchiveEntry]:
         """
-        Get all entries from the index.
+        Get all entries from the store.
 
         Returns:
             List of KnowledgeArchiveEntry objects
         """
-        if self._index is None:
+        if self._store is None:
             return []
 
         entries = []
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc:
-                    try:
-                        entry = self._doc_to_entry(doc)
-                        entries.append(entry)
-                    except Exception as e:
-                        logger.warning(f"Error parsing document {doc_id}: {e}")
-                        continue
+            for doc_id, data in self._store.docs.items():
+                try:
+                    entry = self._data_to_entry(doc_id, data)
+                    entries.append(entry)
+                except Exception as e:
+                    logger.warning(f"Error parsing document {doc_id}: {e}")
+                    continue
         except Exception as e:
-            logger.error(f"Error enumerating docstore: {e}")
+            logger.error(f"Error enumerating store: {e}")
 
         return entries
 
@@ -395,12 +357,9 @@ class KnowledgeArchiveDB:
 
     def get_entry_count(self) -> int:
         """Get the total number of entries in the database."""
-        if self._index is None:
+        if self._store is None:
             return 0
-        try:
-            return len(self._index.docstore.docs)
-        except Exception:
-            return 0
+        return len(self._store)
 
     def get_domain_stats(self) -> Dict[str, int]:
         """Get entry count per source domain."""
@@ -463,36 +422,21 @@ class KnowledgeArchiveDB:
         Returns:
             True if deleted, False if not found
         """
-        if self._index is None:
+        if self._store is None:
             return False
 
         try:
-            docstore = self._index.docstore
-            doc_id_to_delete = None
-
             # Find the document with matching entry ID
-            for doc_id in list(docstore.docs.keys()):
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("id") == entry_id:
+            doc_id_to_delete = None
+            for doc_id, data in self._store.docs.items():
+                if data["metadata"].get("id") == entry_id:
                     doc_id_to_delete = doc_id
                     break
 
             if doc_id_to_delete is None:
                 return False
 
-            # Delete from docstore
-            docstore.delete_document(doc_id_to_delete)
-
-            # Delete from vector store (if present)
-            try:
-                vector_store = self._index._vector_store
-                if hasattr(vector_store, 'delete'):
-                    vector_store.delete(doc_id_to_delete)
-            except Exception:
-                pass  # Vector store deletion is best-effort
-
-            # Persist changes
-            self._index.storage_context.persist(persist_dir=str(self.index_path))
+            self._store.delete_document(doc_id_to_delete)
             logger.info(f"Deleted entry {entry_id[:8]}... from Knowledge Archive")
             return True
 

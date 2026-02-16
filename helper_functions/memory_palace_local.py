@@ -1,25 +1,17 @@
+"""
+Memory Palace Local - SimpleVectorStore-based persistent memory storage.
+No LlamaIndex dependency.
+"""
 import os
 import shutil
 import re
 import logging
-import asyncio
-from typing import List, Optional, Dict, AsyncIterator
+from typing import List, Dict
 from datetime import datetime
 
-from llama_index.core import (
-    VectorStoreIndex,
-    StorageContext,
-    load_index_from_storage,
-    Document,
-    Settings
-)
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core import get_response_synthesizer
-from llama_index.core.prompts import PromptTemplate
-
+from helper_functions.vector_store import SimpleVectorStore, Document
 from config import config
-from helper_functions.llm_client import get_client, UnifiedLLMClient
+from helper_functions.llm_client import get_client
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +23,11 @@ MEMORY_PALACE_ROOT = config.MEMORY_PALACE_FOLDER
 if not os.path.exists(MEMORY_PALACE_ROOT):
     os.makedirs(MEMORY_PALACE_ROOT)
 
+
 def _sanitize_filename(name: str) -> str:
     """Sanitize string for use in directory names"""
     return re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+
 
 def get_memory_palace_index_dir(provider: str, embedding_model: str) -> str:
     """
@@ -41,35 +35,26 @@ def get_memory_palace_index_dir(provider: str, embedding_model: str) -> str:
     This ensures we don't mix embeddings from different models.
     """
     sanitized_provider = _sanitize_filename(provider)
-    # Embedding model name might contain slashes or colons, sanitize it
     sanitized_model = _sanitize_filename(embedding_model)
-    
     dir_name = f"{sanitized_provider}__{sanitized_model}"
     return os.path.join(MEMORY_PALACE_ROOT, dir_name)
 
-def load_or_create_index(persist_dir: str) -> VectorStoreIndex:
-    """
-    Load existing index from storage or create a new empty one if it doesn't exist.
-    """
-    if os.path.exists(persist_dir) and os.listdir(persist_dir):
-        try:
-            storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
-            index = load_index_from_storage(storage_context)
-            logger.info(f"Loaded existing index from {persist_dir}")
-            return index
-        except Exception as e:
-            logger.error(f"Failed to load index from {persist_dir}: {e}. Creating new one.")
-            # If load fails, fall back to creating new
-            pass
-    
-    if not os.path.exists(persist_dir):
-        os.makedirs(persist_dir)
-        
-    # Create empty index
-    index = VectorStoreIndex.from_documents([])
-    index.storage_context.persist(persist_dir=persist_dir)
-    logger.info(f"Created new index at {persist_dir}")
-    return index
+
+def _get_client_for_model(model_name: str):
+    """Get a UnifiedLLMClient based on model_name string."""
+    provider = "litellm"
+    if model_name.lower().startswith("ollama"):
+        provider = "ollama"
+    return get_client(provider=provider, model_tier="smart")
+
+
+def _get_embedding_model(provider: str) -> str:
+    """Get the embedding model name for a provider."""
+    if provider == "litellm":
+        return config.litellm_embedding
+    else:
+        return config.ollama_embedding
+
 
 def save_memory(
     title: str,
@@ -80,39 +65,24 @@ def save_memory(
 ) -> str:
     """
     Save a new memory to the persistent store.
-    
+
     Args:
         title: Title of the memory
         content: The main content (summary, takeaways, etc.)
         source_type: Type of source (video, article, etc.)
         source_ref: URL or filename
-        model_name: The model name string (e.g. "LITELLM:model-name" or "OLLAMA:model-name") to derive embedding config
+        model_name: The model name string to derive embedding config
     """
-    # 1. Parse model to determine embedding configuration
-    # We rely on helper_functions.llm_client.get_client to configure Settings.embed_model
-    # But here we just need to know WHICH dir to use.
-    # We'll instantiate a client briefly to get the embedding model name accurately.
-    
-    # Simple parsing to avoid circular deps if possible, or use the one from gradio_ui_full which parses strings.
-    # Let's assume we can parse it similarly to how the app does it.
     provider = "litellm"
     if model_name.lower().startswith("ollama"):
         provider = "ollama"
-    # For others like "GEMINI", "GROQ", we often fall back to LiteLLM for embeddings in this app structure,
-    # unless specific embedding models are configured. 
-    # Let's check config.
-    
-    if provider == "litellm":
-        embedding_model = config.litellm_embedding
-    else:
-        embedding_model = config.ollama_embedding
-        
-    # 2. Get persistence directory
+
+    embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
-    
-    # 3. Create Document
+
+    # Create Document
     full_text = f"Title: {title}\n\nKey Takeaways:\n{content}\n\nSource: {source_ref}"
-    
+
     doc = Document(
         text=full_text,
         metadata={
@@ -123,60 +93,51 @@ def save_memory(
             "type": "memory"
         }
     )
-    
-    # 4. Load/Create Index and Insert
-    # Note: We assume Settings.embed_model is already set correctly by the caller (via api_lock + set_model_context)
-    # However, to be safe, we should probably ensure the index uses the correct embed model.
-    # LlamaIndex uses the global Settings.embed_model when inserting.
-    
-    index = load_or_create_index(persist_dir)
-    index.insert(doc)
-    index.storage_context.persist(persist_dir=persist_dir)
-    
+
+    # Get embedding function
+    client = _get_client_for_model(model_name)
+    store = SimpleVectorStore(persist_dir=persist_dir, embed_fn=client.get_embedding)
+    store.insert(doc)
+
     return "Saved to Memory Palace"
+
 
 def search_memories(
     query: str,
     model_name: str,
     top_k: int = 5
 ) -> List[Dict]:
-    """
-    Search for memories similar to the query.
-    """
-    # Determine provider/embedding model
+    """Search for memories similar to the query."""
     provider = "litellm"
     if model_name.lower().startswith("ollama"):
         provider = "ollama"
-    
-    if provider == "litellm":
-        embedding_model = config.litellm_embedding
-    else:
-        embedding_model = config.ollama_embedding
-        
+
+    embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
-    
+
     if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
         return []
-        
-    storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
-    index = load_index_from_storage(storage_context)
-    
-    retriever = VectorIndexRetriever(
-        index=index,
-        similarity_top_k=top_k
-    )
-    
-    nodes = retriever.retrieve(query)
-    
-    results = []
-    for node in nodes:
-        results.append({
-            "content": node.get_content(),
-            "score": node.score,
-            "metadata": node.metadata
-        })
-        
-    return results
+
+    client = _get_client_for_model(model_name)
+    store = SimpleVectorStore(persist_dir=persist_dir, embed_fn=client.get_embedding)
+    results = store.search(query, top_k=top_k)
+
+    return [
+        {
+            "content": r.text,
+            "score": r.score,
+            "metadata": r.metadata
+        }
+        for r in results
+    ]
+
+
+class StreamingResult:
+    """Wrapper to provide .response_gen for backwards compatibility."""
+
+    def __init__(self, generator):
+        self.response_gen = generator
+
 
 def prepare_memory_stream(
     message: str,
@@ -186,86 +147,54 @@ def prepare_memory_stream(
 ):
     """
     Prepare a streaming response using retrieved memories.
-    Returns a response object (StreamingResponse) from LlamaIndex query engine.
+    Returns a StreamingResult with .response_gen generator.
     """
-    # Determine provider/embedding model
     provider = "litellm"
     if model_name.lower().startswith("ollama"):
         provider = "ollama"
-    
-    if provider == "litellm":
-        embedding_model = config.litellm_embedding
-    else:
-        embedding_model = config.ollama_embedding
-        
+
+    embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
-    
+
     if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
         raise ValueError("Memory Palace is empty. Please save some memories first.")
-        
-    storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
-    index = load_index_from_storage(storage_context)
-    
-    retriever = VectorIndexRetriever(
-        index=index,
-        similarity_top_k=top_k
-    )
-    
-    # Custom prompt to include chat history context if needed, 
-    # though LlamaIndex ChatEngine is usually better for history.
-    # But for now we stick to RetrieverQueryEngine as per plan and existing docqa patterns.
-    # We can format history into the query or prompt.
-    
-    # Let's use a custom QA template that emphasizes using the memory
-    mp_qa_template_str = (
+
+    client = _get_client_for_model(model_name)
+    store = SimpleVectorStore(persist_dir=persist_dir, embed_fn=client.get_embedding)
+    results = store.search(message, top_k=top_k)
+    context = "\n\n".join([r.text for r in results])
+
+    mp_qa_prompt = (
         "You are a helpful AI assistant with access to a Memory Palace.\n"
         "Use the following retrieved memories to answer the user's question.\n"
         "If the answer is not in the memories, you can say so or use your general knowledge but mention it's not from memory.\n"
         "---------------------\n"
-        "{context_str}\n"
+        f"{context}\n"
         "---------------------\n"
-        "User Question: {query_str}\n"
+        f"User Question: {message}\n"
         "Answer: "
     )
-    mp_qa_template = PromptTemplate(mp_qa_template_str)
-    
-    response_synthesizer = get_response_synthesizer(
-        text_qa_template=mp_qa_template,
-        streaming=True,
-        llm=Settings.llm 
+
+    gen = client.stream_chat_completion(
+        messages=[{"role": "user", "content": mp_qa_prompt}],
+        temperature=config.temperature,
+        max_tokens=config.max_tokens
     )
-    
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer
-    )
-    
-    # We could prepend history to the message, or rely on the fact that 
-    # the user question usually contains the intent.
-    # For simplicity and matching current docqa, we just query with the message.
-    
-    response = query_engine.query(message)
-    return response
+
+    return StreamingResult(gen)
+
 
 def reset_memory_palace(model_name: str) -> str:
-    """
-    Reset (delete) the memory palace index for the specific embedding model.
-    """
-    # Determine provider/embedding model
+    """Reset (delete) the memory palace index for the specific embedding model."""
     provider = "litellm"
     if model_name.lower().startswith("ollama"):
         provider = "ollama"
-    
-    if provider == "litellm":
-        embedding_model = config.litellm_embedding
-    else:
-        embedding_model = config.ollama_embedding
-        
+
+    embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
-    
+
     if os.path.exists(persist_dir):
         shutil.rmtree(persist_dir)
         return f"Memory Palace reset for {provider} (embeddings: {embedding_model})"
     else:
         return "Memory Palace was already empty."
-
