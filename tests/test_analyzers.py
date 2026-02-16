@@ -5,7 +5,11 @@ Tests for content analysis functions for files, videos, articles, and media
 import os
 import pytest
 from unittest.mock import Mock, MagicMock, patch, mock_open
-from helper_functions import analyzers
+
+# Mock get_client before importing analyzers to prevent module-level
+# initialization from failing when config has empty provider values
+with patch('helper_functions.llm_client.get_client', return_value=Mock()):
+    from helper_functions import analyzers
 
 
 class TestClearAllFiles:
