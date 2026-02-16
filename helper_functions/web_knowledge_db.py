@@ -1,5 +1,5 @@
 """
-Web Knowledge Database - LlamaIndex VectorStoreIndex for auto-learned web content.
+Web Knowledge Database - SimpleVectorStore for auto-learned web content.
 
 This module provides:
 - Pydantic models for web knowledge with TTL (time-to-live)
@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.vector_store import SimpleVectorStore, Document
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class SimilarWebKnowledge(BaseModel):
 
 class WebKnowledgeDB:
     """
-    Database wrapper for web-learned knowledge using LlamaIndex VectorStoreIndex.
+    Database wrapper for web-learned knowledge using SimpleVectorStore.
 
     Separate from MemoryPalaceDB to maintain distinction between:
     - User wisdom (permanent, user-curated)
@@ -81,7 +82,7 @@ class WebKnowledgeDB:
         Args:
             provider: LLM provider for embeddings (default from config)
             model_tier: Model tier for embeddings (default from config)
-            index_folder: Path to LlamaIndex index (default: ./memory_palace/web_knowledge_index)
+            index_folder: Path to vector store (default: ./memory_palace/web_knowledge_index)
             ttl_days: Days before knowledge expires (default: 7)
         """
         self.provider = provider or config.memory_palace_provider
@@ -93,58 +94,27 @@ class WebKnowledgeDB:
         self.index_folder = index_folder or f"{base_folder}/web_knowledge_index"
 
         self.index_path = Path(self.index_folder)
-        self._index = None
+        self._store = None
         self._ensure_index()
 
-    def _get_embed_model(self):
-        """Get the LlamaIndex-compatible embedding model from llm_client."""
+    def _get_embed_fn(self):
+        """Get an embedding function from llm_client."""
         client = get_client(provider=self.provider, model_tier=self.model_tier)
-        return client.get_llamaindex_embedding()
+        return client.get_embedding
 
     def _ensure_index(self):
-        """Load or create the vector index."""
-        from llama_index.core import (
-            VectorStoreIndex,
-            StorageContext,
-            load_index_from_storage,
-        )
-        from llama_index.core import Settings
-
-        self._embed_model = self._get_embed_model()
-        Settings.embed_model = self._embed_model
-
+        """Load or create the vector store."""
+        embed_fn = self._get_embed_fn()
         self.index_path.mkdir(parents=True, exist_ok=True)
-
-        if self.index_path.exists() and any(self.index_path.iterdir()):
-            try:
-                storage_context = StorageContext.from_defaults(
-                    persist_dir=str(self.index_path)
-                )
-                self._index = load_index_from_storage(
-                    storage_context,
-                    embed_model=self._embed_model
-                )
-                logger.info(f"Loaded Web Knowledge index from {self.index_path}")
-            except Exception as e:
-                logger.warning(f"Failed to load index: {e}. Creating new empty index.")
-                self._create_empty_index()
-        else:
-            self._create_empty_index()
-
-    def _create_empty_index(self):
-        """Create a new empty vector index."""
-        from llama_index.core import VectorStoreIndex
-
-        self._index = VectorStoreIndex.from_documents(
-            [],
-            embed_model=self._embed_model
+        self._store = SimpleVectorStore(
+            persist_dir=str(self.index_path),
+            embed_fn=embed_fn,
         )
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
-        logger.info(f"Created new Web Knowledge index at {self.index_path}")
+        logger.info(f"Initialized Web Knowledge store at {self.index_path}")
 
     def add_knowledge(self, knowledge: WebKnowledge) -> str:
         """
-        Add web knowledge to the index.
+        Add web knowledge to the store.
 
         Args:
             knowledge: WebKnowledge object to store
@@ -152,8 +122,6 @@ class WebKnowledgeDB:
         Returns:
             Knowledge ID
         """
-        from llama_index.core import Document
-
         doc = Document(
             text=knowledge.distilled_text,
             metadata={
@@ -166,13 +134,10 @@ class WebKnowledgeDB:
                 "distilled_by_model": knowledge.metadata.distilled_by_model,
                 "source_count": knowledge.metadata.source_count,
             },
-            excluded_embed_metadata_keys=[
-                "id", "source_urls", "distilled_by_model", "source_count"
-            ],
+            doc_id=knowledge.id,
         )
 
-        self._index.insert(doc)
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
+        self._store.insert(doc)
         logger.info(
             f"Added web knowledge {knowledge.id[:8]}... "
             f"(confidence: {knowledge.metadata.confidence_tier}, "
@@ -197,13 +162,10 @@ class WebKnowledgeDB:
         Returns:
             List of SimilarWebKnowledge objects sorted by similarity
         """
-        from llama_index.core.retrievers import VectorIndexRetriever
-
-        if self._index is None or self.get_knowledge_count() == 0:
+        if self._store is None or self.get_knowledge_count() == 0:
             return []
 
-        retriever = VectorIndexRetriever(index=self._index, similarity_top_k=top_k)
-        nodes = retriever.retrieve(text)
+        nodes = self._store.search(text, top_k=top_k)
 
         results = []
         now = datetime.now()
@@ -276,16 +238,13 @@ class WebKnowledgeDB:
         Returns:
             True if expired, False if still valid
         """
-        # Get the document from docstore
-        if self._index is None:
+        if self._store is None:
             return True
 
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("id") == knowledge_id:
-                    expires_at_str = doc.metadata.get("expires_at")
+            for doc_id, data in self._store.docs.items():
+                if data["metadata"].get("id") == knowledge_id:
+                    expires_at_str = data["metadata"].get("expires_at")
                     if expires_at_str:
                         expires_at = datetime.fromisoformat(expires_at_str)
                         return expires_at < datetime.now()
@@ -312,127 +271,123 @@ class WebKnowledgeDB:
         Returns:
             Number of entries deleted
         """
-        # Note: LlamaIndex doesn't have a clean delete API, so we rebuild the index
-        # without expired entries. This is a workaround.
-        expired = self.get_expired()
-        if not expired:
+        if self._store is None:
             return 0
 
-        expired_ids = {k.id for k in expired}
-        valid_knowledge = [
-            k for k in self.get_all_knowledge()
-            if k.id not in expired_ids
-        ]
+        now = datetime.now()
+        to_delete = []
 
-        # Rebuild index with valid entries only
-        self._rebuild_index(valid_knowledge)
-        logger.info(f"Deleted {len(expired)} expired web knowledge entries")
-        return len(expired)
+        for doc_id, data in self._store.docs.items():
+            expires_at_str = data["metadata"].get("expires_at")
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    if expires_at < now:
+                        to_delete.append(doc_id)
+                except ValueError:
+                    continue
 
-    def _rebuild_index(self, knowledge_list: List[WebKnowledge]):
-        """Rebuild the index with the given knowledge list."""
-        from llama_index.core import VectorStoreIndex, Document
+        for doc_id in to_delete:
+            self._store.delete_document(doc_id)
 
-        documents = []
-        for k in knowledge_list:
-            doc = Document(
-                text=k.distilled_text,
-                metadata={
-                    "id": k.id,
-                    "source_urls": json.dumps(k.metadata.source_urls),
-                    "original_query": k.metadata.original_query,
-                    "created_at": k.metadata.created_at.isoformat(),
-                    "expires_at": k.metadata.expires_at.isoformat(),
-                    "confidence_tier": k.metadata.confidence_tier,
-                    "distilled_by_model": k.metadata.distilled_by_model,
-                    "source_count": k.metadata.source_count,
-                },
-                excluded_embed_metadata_keys=[
-                    "id", "source_urls", "distilled_by_model", "source_count"
-                ],
-            )
-            documents.append(doc)
+        if to_delete:
+            logger.info(f"Deleted {len(to_delete)} expired web knowledge entries")
 
-        self._index = VectorStoreIndex.from_documents(
-            documents,
-            embed_model=self._embed_model
-        )
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
+        return len(to_delete)
+
+    def url_exists(self, url: str) -> bool:
+        """
+        Check if knowledge from a specific URL exists.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL exists in any entry's source_urls
+        """
+        if self._store is None:
+            return False
+
+        for doc_id, data in self._store.docs.items():
+            source_urls_str = data["metadata"].get("source_urls", "[]")
+            try:
+                source_urls = json.loads(source_urls_str)
+                if url in source_urls:
+                    return True
+            except json.JSONDecodeError:
+                continue
+
+        return False
 
     def get_all_knowledge(self) -> List[WebKnowledge]:
-        """Get all knowledge entries from the index."""
-        if self._index is None:
+        """Get all knowledge entries from the store."""
+        if self._store is None:
             return []
 
         knowledge_list = []
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc:
+            for doc_id, data in self._store.docs.items():
+                try:
+                    meta = data["metadata"]
+                    created_at_str = meta.get(
+                        "created_at", datetime.now().isoformat()
+                    )
+                    expires_at_str = meta.get(
+                        "expires_at",
+                        (datetime.now() + timedelta(days=self.ttl_days)).isoformat()
+                    )
+                    source_urls_str = meta.get("source_urls", "[]")
+
                     try:
-                        created_at_str = doc.metadata.get(
-                            "created_at", datetime.now().isoformat()
+                        created_at = datetime.fromisoformat(created_at_str)
+                    except ValueError:
+                        created_at = datetime.now()
+
+                    try:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+                    except ValueError:
+                        expires_at = datetime.now() + timedelta(days=self.ttl_days)
+
+                    try:
+                        source_urls = json.loads(source_urls_str)
+                    except json.JSONDecodeError:
+                        source_urls = []
+
+                    confidence_str = meta.get("confidence_tier", "fairly_sure")
+                    try:
+                        confidence_tier = ConfidenceTier(confidence_str)
+                    except ValueError:
+                        confidence_tier = ConfidenceTier.FAIRLY_SURE
+
+                    knowledge = WebKnowledge(
+                        id=meta.get("id", doc_id),
+                        distilled_text=data["text"],
+                        metadata=WebKnowledgeMetadata(
+                            source_urls=source_urls,
+                            original_query=meta.get("original_query", ""),
+                            created_at=created_at,
+                            expires_at=expires_at,
+                            confidence_tier=confidence_tier,
+                            distilled_by_model=meta.get(
+                                "distilled_by_model", "unknown"
+                            ),
+                            source_count=meta.get("source_count", 0),
                         )
-                        expires_at_str = doc.metadata.get(
-                            "expires_at",
-                            (datetime.now() + timedelta(days=self.ttl_days)).isoformat()
-                        )
-                        source_urls_str = doc.metadata.get("source_urls", "[]")
-
-                        try:
-                            created_at = datetime.fromisoformat(created_at_str)
-                        except ValueError:
-                            created_at = datetime.now()
-
-                        try:
-                            expires_at = datetime.fromisoformat(expires_at_str)
-                        except ValueError:
-                            expires_at = datetime.now() + timedelta(days=self.ttl_days)
-
-                        try:
-                            source_urls = json.loads(source_urls_str)
-                        except json.JSONDecodeError:
-                            source_urls = []
-
-                        confidence_str = doc.metadata.get("confidence_tier", "fairly_sure")
-                        try:
-                            confidence_tier = ConfidenceTier(confidence_str)
-                        except ValueError:
-                            confidence_tier = ConfidenceTier.FAIRLY_SURE
-
-                        knowledge = WebKnowledge(
-                            id=doc.metadata.get("id", doc_id),
-                            distilled_text=doc.get_content(),
-                            metadata=WebKnowledgeMetadata(
-                                source_urls=source_urls,
-                                original_query=doc.metadata.get("original_query", ""),
-                                created_at=created_at,
-                                expires_at=expires_at,
-                                confidence_tier=confidence_tier,
-                                distilled_by_model=doc.metadata.get(
-                                    "distilled_by_model", "unknown"
-                                ),
-                                source_count=doc.metadata.get("source_count", 0),
-                            )
-                        )
-                        knowledge_list.append(knowledge)
-                    except Exception as e:
-                        logger.warning(f"Error parsing document {doc_id}: {e}")
-                        continue
+                    )
+                    knowledge_list.append(knowledge)
+                except Exception as e:
+                    logger.warning(f"Error parsing document {doc_id}: {e}")
+                    continue
         except Exception as e:
-            logger.error(f"Error enumerating docstore: {e}")
+            logger.error(f"Error enumerating store: {e}")
 
         return knowledge_list
 
     def get_knowledge_count(self) -> int:
         """Get the total number of knowledge entries."""
-        if self._index is None:
+        if self._store is None:
             return 0
-        try:
-            return len(self._index.docstore.docs)
-        except Exception:
-            return 0
+        return len(self._store)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get statistics about web knowledge."""

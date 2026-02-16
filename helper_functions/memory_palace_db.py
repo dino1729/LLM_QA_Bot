@@ -1,9 +1,9 @@
 """
-Memory Palace Database - LlamaIndex VectorStoreIndex wrapper for storing lessons.
+Memory Palace Database - SimpleVectorStore wrapper for storing lessons.
 
 This module provides:
 - Pydantic models for strict lesson validation
-- LlamaIndex-based storage with semantic search
+- Vector-based storage with semantic search
 - Duplicate detection via similarity threshold
 - Recency tracking for daily newsletter integration
 - LLM-powered lesson distillation
@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.vector_store import SimpleVectorStore, Document
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +88,12 @@ CATEGORIES: Dict[str, Dict[str, Any]] = {
 
 
 class LessonMetadata(BaseModel):
-    """Metadata stored with each lesson in LlamaIndex."""
+    """Metadata stored with each lesson."""
     category: LessonCategory
     created_at: datetime = Field(default_factory=datetime.now)
     source: str = "telegram"  # telegram, migration, manual
     original_input: str  # User's raw input before distillation
-    distilled_by_model: str  # Model used for distillation (e.g., "litellm:nemotron-3-nano-30b-a3b")
+    distilled_by_model: str  # Model used for distillation
     tags: List[str] = Field(default_factory=list)
     # Soft delete support
     is_forgotten: bool = False
@@ -123,9 +124,7 @@ class LessonDistillationResult(BaseModel):
 
 class MemoryPalaceDB:
     """
-    Database wrapper for Memory Palace lessons using LlamaIndex VectorStoreIndex.
-
-    Handles storage, retrieval, duplicate detection, and daily selection with recency tracking.
+    Database wrapper for Memory Palace lessons using SimpleVectorStore.
     """
 
     def __init__(
@@ -134,85 +133,32 @@ class MemoryPalaceDB:
         model_tier: str = None,
         index_folder: str = None,
     ):
-        """
-        Initialize the Memory Palace database.
-
-        Args:
-            provider: LLM provider for distillation (default from config)
-            model_tier: Model tier for distillation (default from config)
-            index_folder: Path to LlamaIndex index (default from config)
-        """
         self.provider = provider or config.memory_palace_provider
         self.model_tier = model_tier or config.memory_palace_model_tier
         self.index_folder = index_folder or config.memory_palace_index_folder
         self.similarity_threshold = config.memory_palace_similarity_threshold
         self.recency_window_days = config.memory_palace_recency_window_days
 
-        # Paths
         self.index_path = Path(self.index_folder)
         self.shown_history_file = Path(config.MEMORY_PALACE_FOLDER or "./memory_palace") / "shown_history.json"
 
-        self._index = None
-        self._ensure_index()
+        self._store = None
+        self._ensure_store()
 
-    def _get_embed_model(self):
-        """Get the LlamaIndex-compatible embedding model from llm_client."""
+    def _get_embed_fn(self):
+        """Get the embedding function from the LLM client."""
         client = get_client(provider=self.provider, model_tier=self.model_tier)
-        return client.get_llamaindex_embedding()
+        return client.get_embedding
 
-    def _ensure_index(self):
-        """Load or create the vector index."""
-        from llama_index.core import (
-            VectorStoreIndex,
-            StorageContext,
-            load_index_from_storage,
-        )
-        from llama_index.core import Settings
-
-        # Set the embedding model for LlamaIndex operations
-        self._embed_model = self._get_embed_model()
-        Settings.embed_model = self._embed_model
-
+    def _ensure_store(self):
+        """Load or create the vector store."""
+        embed_fn = self._get_embed_fn()
         self.index_path.mkdir(parents=True, exist_ok=True)
-
-        if self.index_path.exists() and any(self.index_path.iterdir()):
-            try:
-                storage_context = StorageContext.from_defaults(persist_dir=str(self.index_path))
-                self._index = load_index_from_storage(
-                    storage_context,
-                    embed_model=self._embed_model
-                )
-                logger.info(f"Loaded existing Memory Palace index from {self.index_path}")
-            except Exception as e:
-                logger.warning(f"Failed to load index: {e}. Creating new empty index.")
-                self._create_empty_index()
-        else:
-            self._create_empty_index()
-
-    def _create_empty_index(self):
-        """Create a new empty vector index."""
-        from llama_index.core import VectorStoreIndex
-
-        self._index = VectorStoreIndex.from_documents(
-            [],
-            embed_model=self._embed_model
-        )
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
-        logger.info(f"Created new Memory Palace index at {self.index_path}")
+        self._store = SimpleVectorStore(persist_dir=str(self.index_path), embed_fn=embed_fn)
+        logger.info(f"Loaded Memory Palace store from {self.index_path} ({len(self._store)} docs)")
 
     def add_lesson(self, lesson: Lesson) -> str:
-        """
-        Add a lesson to the index.
-
-        Args:
-            lesson: Lesson object to store
-
-        Returns:
-            Lesson ID
-        """
-        from llama_index.core import Document
-
-        # Create LlamaIndex Document with metadata
+        """Add a lesson to the store."""
         doc = Document(
             text=lesson.distilled_text,
             metadata={
@@ -226,47 +172,30 @@ class MemoryPalaceDB:
                 "is_forgotten": lesson.metadata.is_forgotten,
                 "forgotten_at": lesson.metadata.forgotten_at.isoformat() if lesson.metadata.forgotten_at else None,
             },
-            excluded_embed_metadata_keys=["original_input", "id", "distilled_by_model", "is_forgotten", "forgotten_at"],
+            doc_id=lesson.id,
         )
 
-        self._index.insert(doc)
-        self._index.storage_context.persist(persist_dir=str(self.index_path))
+        self._store.insert(doc)
         logger.info(f"Added lesson {lesson.id[:8]}... to Memory Palace (category: {lesson.metadata.category})")
         return lesson.id
 
     def find_similar(
         self, text: str, top_k: int = 5, include_forgotten: bool = False
     ) -> List[SimilarLesson]:
-        """
-        Find lessons similar to the given text with similarity scores.
-
-        Args:
-            text: Text to search for
-            top_k: Maximum number of results
-            include_forgotten: If True, include forgotten lessons in results
-
-        Returns:
-            List of SimilarLesson objects sorted by similarity
-        """
-        from llama_index.core.retrievers import VectorIndexRetriever
-
-        if self._index is None or self.get_lesson_count() == 0:
+        """Find lessons similar to the given text with similarity scores."""
+        if self._store is None or len(self._store) == 0:
             return []
 
-        # Request more results if filtering forgotten, to ensure we get enough valid ones
         request_k = top_k * 2 if not include_forgotten else top_k
-        retriever = VectorIndexRetriever(index=self._index, similarity_top_k=request_k)
-        nodes = retriever.retrieve(text)
+        nodes = self._store.search(text, top_k=request_k)
 
         results = []
         for node in nodes:
             try:
-                # Check forgotten status
                 is_forgotten = node.metadata.get("is_forgotten", False)
                 if isinstance(is_forgotten, str):
                     is_forgotten = is_forgotten.lower() == "true"
 
-                # Skip forgotten unless explicitly requested
                 if is_forgotten and not include_forgotten:
                     continue
 
@@ -306,7 +235,6 @@ class MemoryPalaceDB:
                 )
                 results.append(SimilarLesson(lesson=lesson, similarity_score=node.score or 0.0))
 
-                # Stop if we have enough results
                 if len(results) >= top_k:
                     break
             except Exception as e:
@@ -316,30 +244,14 @@ class MemoryPalaceDB:
         return results
 
     def check_duplicate(self, text: str) -> Optional[SimilarLesson]:
-        """
-        Check if text is semantically similar to an existing lesson.
-
-        Args:
-            text: Text to check for duplicates
-
-        Returns:
-            Most similar lesson if above threshold, None otherwise
-        """
+        """Check if text is semantically similar to an existing lesson."""
         similar = self.find_similar(text, top_k=1)
         if similar and similar[0].similarity_score >= self.similarity_threshold:
             return similar[0]
         return None
 
     def get_random_lesson(self, exclude_recent: bool = True) -> Optional[Lesson]:
-        """
-        Get a random lesson, optionally excluding recently shown ones.
-
-        Args:
-            exclude_recent: If True, exclude lessons shown in the recency window
-
-        Returns:
-            Random Lesson or None if database is empty
-        """
+        """Get a random lesson, optionally excluding recently shown ones."""
         all_lessons = self.get_all_lessons()
         if not all_lessons:
             return None
@@ -348,7 +260,6 @@ class MemoryPalaceDB:
             recent_ids = self._get_recent_shown_ids()
             eligible = [l for l in all_lessons if l.id not in recent_ids]
             if not eligible:
-                # All lessons have been shown, reset history
                 self._reset_shown_history()
                 eligible = all_lessons
         else:
@@ -357,12 +268,7 @@ class MemoryPalaceDB:
         return random.choice(eligible) if eligible else None
 
     def mark_as_shown(self, lesson_id: str):
-        """
-        Mark a lesson as shown for recency tracking.
-
-        Args:
-            lesson_id: ID of the lesson that was shown
-        """
+        """Mark a lesson as shown for recency tracking."""
         history = self._load_shown_history()
         history.append({
             "id": lesson_id,
@@ -373,13 +279,10 @@ class MemoryPalaceDB:
         with open(self.shown_history_file, "w") as f:
             json.dump(history, f, indent=2)
 
-        logger.debug(f"Marked lesson {lesson_id[:8]}... as shown")
-
     def _load_shown_history(self) -> List[Dict]:
         """Load the shown history from file."""
         if not self.shown_history_file.exists():
             return []
-
         try:
             with open(self.shown_history_file, "r") as f:
                 return json.load(f)
@@ -409,74 +312,63 @@ class MemoryPalaceDB:
         logger.info("Reset Memory Palace shown history")
 
     def get_all_lessons(self, include_forgotten: bool = False) -> List[Lesson]:
-        """
-        Get all lessons from the index.
-
-        Args:
-            include_forgotten: If True, include forgotten lessons
-
-        Returns:
-            List of Lesson objects
-        """
-        if self._index is None:
+        """Get all lessons from the store."""
+        if self._store is None:
             return []
 
         lessons = []
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc:
-                    try:
-                        # Check forgotten status
-                        is_forgotten = doc.metadata.get("is_forgotten", False)
-                        if isinstance(is_forgotten, str):
-                            is_forgotten = is_forgotten.lower() == "true"
+            for doc_id, data in self._store.docs.items():
+                try:
+                    meta = data.get("metadata", {})
 
-                        # Skip forgotten unless explicitly requested
-                        if is_forgotten and not include_forgotten:
-                            continue
+                    is_forgotten = meta.get("is_forgotten", False)
+                    if isinstance(is_forgotten, str):
+                        is_forgotten = is_forgotten.lower() == "true"
 
-                        category_str = doc.metadata.get("category", "observations")
-                        category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
-
-                        tags_str = doc.metadata.get("tags", "")
-                        tags = tags_str.split(",") if tags_str else []
-
-                        created_at_str = doc.metadata.get("created_at", datetime.now().isoformat())
-                        try:
-                            created_at = datetime.fromisoformat(created_at_str)
-                        except ValueError:
-                            created_at = datetime.now()
-
-                        forgotten_at_str = doc.metadata.get("forgotten_at")
-                        forgotten_at = None
-                        if forgotten_at_str:
-                            try:
-                                forgotten_at = datetime.fromisoformat(forgotten_at_str)
-                            except ValueError:
-                                pass
-
-                        lesson = Lesson(
-                            id=doc.metadata.get("id", doc_id),
-                            distilled_text=doc.get_content(),
-                            metadata=LessonMetadata(
-                                category=category,
-                                created_at=created_at,
-                                source=doc.metadata.get("source", "unknown"),
-                                original_input=doc.metadata.get("original_input", ""),
-                                distilled_by_model=doc.metadata.get("distilled_by_model", "unknown"),
-                                tags=tags,
-                                is_forgotten=is_forgotten,
-                                forgotten_at=forgotten_at,
-                            )
-                        )
-                        lessons.append(lesson)
-                    except Exception as e:
-                        logger.warning(f"Error parsing document {doc_id}: {e}")
+                    if is_forgotten and not include_forgotten:
                         continue
+
+                    category_str = meta.get("category", "observations")
+                    category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
+
+                    tags_str = meta.get("tags", "")
+                    tags = tags_str.split(",") if tags_str else []
+
+                    created_at_str = meta.get("created_at", datetime.now().isoformat())
+                    try:
+                        created_at = datetime.fromisoformat(created_at_str)
+                    except ValueError:
+                        created_at = datetime.now()
+
+                    forgotten_at_str = meta.get("forgotten_at")
+                    forgotten_at = None
+                    if forgotten_at_str:
+                        try:
+                            forgotten_at = datetime.fromisoformat(forgotten_at_str)
+                        except ValueError:
+                            pass
+
+                    lesson = Lesson(
+                        id=meta.get("id", doc_id),
+                        distilled_text=data.get("text", ""),
+                        metadata=LessonMetadata(
+                            category=category,
+                            created_at=created_at,
+                            source=meta.get("source", "unknown"),
+                            original_input=meta.get("original_input", ""),
+                            distilled_by_model=meta.get("distilled_by_model", "unknown"),
+                            tags=tags,
+                            is_forgotten=is_forgotten,
+                            forgotten_at=forgotten_at,
+                        )
+                    )
+                    lessons.append(lesson)
+                except Exception as e:
+                    logger.warning(f"Error parsing document {doc_id}: {e}")
+                    continue
         except Exception as e:
-            logger.error(f"Error enumerating docstore: {e}")
+            logger.error(f"Error enumerating store: {e}")
 
         return lessons
 
@@ -489,12 +381,9 @@ class MemoryPalaceDB:
 
     def get_lesson_count(self) -> int:
         """Get the total number of lessons in the database."""
-        if self._index is None:
+        if self._store is None:
             return 0
-        try:
-            return len(self._index.docstore.docs)
-        except Exception:
-            return 0
+        return len(self._store)
 
     def get_category_stats(self) -> Dict[str, int]:
         """Get lesson count per category."""
@@ -506,16 +395,7 @@ class MemoryPalaceDB:
         return stats
 
     def forget_by_query(self, query: str, threshold: float = 0.7) -> int:
-        """
-        Soft delete lessons matching the query.
-
-        Args:
-            query: Text to match against lessons
-            threshold: Similarity threshold for matching (default 0.7)
-
-        Returns:
-            Number of lessons marked as forgotten
-        """
+        """Soft delete lessons matching the query."""
         similar = self.find_similar(query, top_k=10, include_forgotten=True)
         count = 0
         for s in similar:
@@ -525,28 +405,17 @@ class MemoryPalaceDB:
         return count
 
     def _mark_forgotten(self, lesson_id: str) -> bool:
-        """
-        Mark a lesson as forgotten (soft delete).
-
-        Args:
-            lesson_id: ID of the lesson to forget
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if self._index is None:
+        """Mark a lesson as forgotten (soft delete)."""
+        if self._store is None:
             return False
 
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("id") == lesson_id:
-                    # Update metadata
-                    doc.metadata["is_forgotten"] = True
-                    doc.metadata["forgotten_at"] = datetime.now().isoformat()
-                    # Persist changes
-                    self._index.storage_context.persist(persist_dir=str(self.index_path))
+            for doc_id, data in self._store.docs.items():
+                meta = data.get("metadata", {})
+                if meta.get("id") == lesson_id:
+                    meta["is_forgotten"] = True
+                    meta["forgotten_at"] = datetime.now().isoformat()
+                    self._store.persist()
                     logger.info(f"Marked lesson {lesson_id[:8]}... as forgotten")
                     return True
             return False
@@ -555,26 +424,17 @@ class MemoryPalaceDB:
             return False
 
     def restore_forgotten(self, lesson_id: str) -> bool:
-        """
-        Restore a forgotten lesson.
-
-        Args:
-            lesson_id: ID of the lesson to restore
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if self._index is None:
+        """Restore a forgotten lesson."""
+        if self._store is None:
             return False
 
         try:
-            docstore = self._index.docstore
-            for doc_id in docstore.docs:
-                doc = docstore.get_document(doc_id)
-                if doc and doc.metadata.get("id") == lesson_id:
-                    doc.metadata["is_forgotten"] = False
-                    doc.metadata["forgotten_at"] = None
-                    self._index.storage_context.persist(persist_dir=str(self.index_path))
+            for doc_id, data in self._store.docs.items():
+                meta = data.get("metadata", {})
+                if meta.get("id") == lesson_id:
+                    meta["is_forgotten"] = False
+                    meta["forgotten_at"] = None
+                    self._store.persist()
                     logger.info(f"Restored forgotten lesson {lesson_id[:8]}...")
                     return True
             return False
@@ -588,18 +448,9 @@ class MemoryPalaceDB:
         return [l for l in all_lessons if l.metadata.is_forgotten]
 
     def get_few_shot_examples(self, count: int = 3) -> List[str]:
-        """
-        Get random lessons as few-shot examples for style consistency.
-
-        Args:
-            count: Number of examples to return
-
-        Returns:
-            List of distilled lesson texts
-        """
+        """Get random lessons as few-shot examples for style consistency."""
         all_lessons = self.get_all_lessons()
         if not all_lessons:
-            # Return default examples if database is empty
             return [
                 "The 'Tit-for-Tat' strategy succeeds because it balances cooperation, immediate retaliation, and forgiveness.",
                 "The Dunning-Kruger Effect causes people with low ability to overestimate their competence.",
@@ -617,26 +468,13 @@ def distill_lesson(
     model_name: str = None,
     few_shot_examples: List[str] = None,
 ) -> LessonDistillationResult:
-    """
-    Use LLM to distill user input into a single-line insight.
-
-    Args:
-        raw_input: User's raw lesson text
-        provider: LLM provider (default from config)
-        model_tier: Model tier (default from config)
-        model_name: Explicit model name (overrides tier)
-        few_shot_examples: Optional examples for style consistency
-
-    Returns:
-        LessonDistillationResult with distilled text, category, and tags
-    """
+    """Use LLM to distill user input into a single-line insight."""
     provider = provider or config.memory_palace_provider
     model_tier = model_tier or config.memory_palace_model_tier
     model_name = model_name or config.memory_palace_primary_model
 
     client = get_client(provider=provider, model_tier=model_tier, model_name=model_name)
 
-    # Build examples section
     if few_shot_examples:
         examples_text = "\n".join([f'- "{ex}"' for ex in few_shot_examples])
     else:
@@ -647,7 +485,6 @@ def distill_lesson(
 - "The Pareto Principle suggests 80% of consequences come from 20% of causes."
 """
 
-    # Build category options
     category_options = ", ".join([c.value for c in LessonCategory])
 
     prompt = f"""You are a wisdom curator. Distill the following input into a single, memorable insight.
@@ -677,17 +514,13 @@ JSON RESPONSE:"""
             max_tokens=500
         )
 
-        # Parse JSON response
-        # Handle potential markdown code blocks
         response_text = response.strip()
         if response_text.startswith("```"):
-            # Remove markdown code fence
             lines = response_text.split("\n")
             response_text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
 
         result = json.loads(response_text)
 
-        # Validate category
         suggested_category = result.get("suggested_category", "observations")
         if suggested_category not in [c.value for c in LessonCategory]:
             suggested_category = "observations"
@@ -711,15 +544,7 @@ JSON RESPONSE:"""
 
 
 def suggest_category(text: str) -> str:
-    """
-    Suggest a category based on keyword matching (fast, no LLM).
-
-    Args:
-        text: Text to categorize
-
-    Returns:
-        Category name string
-    """
+    """Suggest a category based on keyword matching (fast, no LLM)."""
     text_lower = text.lower()
 
     scores = {}

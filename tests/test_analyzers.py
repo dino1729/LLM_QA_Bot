@@ -86,42 +86,64 @@ class TestFileFormatValidityCheck:
 
 class TestBuildIndex:
     """Tests for build_index() function"""
-    
-    @patch('helper_functions.analyzers.SimpleDirectoryReader')
-    @patch('helper_functions.analyzers.VectorStoreIndex')
-    @patch('helper_functions.analyzers.SummaryIndex')
-    def test_build_index_with_documents(self, mock_summary_index, mock_vector_index, 
-                                       mock_reader, temp_upload_folder, 
+
+    @patch('helper_functions.analyzers.SimpleVectorStore')
+    @patch('helper_functions.analyzers.chunk_text')
+    @patch('helper_functions.analyzers.read_documents_from_directory')
+    def test_build_index_with_documents(self, mock_read_docs, mock_chunk_text,
+                                       mock_vector_store, temp_upload_folder,
                                        temp_vector_folder, temp_summary_folder, monkeypatch):
         """Test building index with documents"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
         monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
         monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
-        
-        # Mock document loading
-        mock_docs = [Mock(), Mock()]
-        mock_reader.return_value.load_data.return_value = mock_docs
-        
-        # Mock index creation
-        mock_q_index = Mock()
-        mock_s_index = Mock()
-        mock_vector_index.from_documents.return_value = mock_q_index
-        mock_summary_index.from_documents.return_value = mock_s_index
-        
+
+        # Mock document loading - return Document-like objects with text and metadata
+        mock_doc1 = Mock()
+        mock_doc1.text = "Document one content"
+        mock_doc1.metadata = {"source": "file1.txt"}
+        mock_doc2 = Mock()
+        mock_doc2.text = "Document two content"
+        mock_doc2.metadata = {"source": "file2.txt"}
+        mock_read_docs.return_value = [mock_doc1, mock_doc2]
+
+        # Mock chunk_text to return simple chunks
+        mock_chunk_text.return_value = ["chunk1", "chunk2"]
+
+        # Mock vector store creation
+        mock_store = Mock()
+        mock_vector_store.from_documents.return_value = mock_store
+
         analyzers.build_index()
-        
-        # Verify indexes were created and persisted
-        mock_vector_index.from_documents.assert_called_once_with(mock_docs)
-        mock_summary_index.from_documents.assert_called_once_with(mock_docs)
-        mock_q_index.storage_context.persist.assert_called_once()
-        mock_s_index.storage_context.persist.assert_called_once()
-    
-    @patch('helper_functions.analyzers.SimpleDirectoryReader')
-    def test_build_index_with_empty_folder(self, mock_reader, temp_upload_folder, monkeypatch):
+
+        # Verify read_documents_from_directory was called with UPLOAD_FOLDER
+        mock_read_docs.assert_called_once_with(temp_upload_folder)
+
+        # Verify chunk_text was called for each document
+        assert mock_chunk_text.call_count == 2
+
+        # Verify SimpleVectorStore.from_documents was called
+        mock_vector_store.from_documents.assert_called_once()
+
+        # Verify full_text.txt was written to SUMMARY_FOLDER
+        full_text_path = os.path.join(temp_summary_folder, "full_text.txt")
+        assert os.path.exists(full_text_path)
+        with open(full_text_path, "r") as f:
+            content = f.read()
+        assert "Document one content" in content
+        assert "Document two content" in content
+
+    @patch('helper_functions.analyzers.SimpleVectorStore')
+    @patch('helper_functions.analyzers.read_documents_from_directory')
+    def test_build_index_with_empty_folder(self, mock_read_docs, mock_vector_store,
+                                           temp_upload_folder, temp_summary_folder, monkeypatch):
         """Test building index with empty folder"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
-        mock_reader.return_value.load_data.return_value = []
-        
+        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_upload_folder)
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
+        mock_read_docs.return_value = []
+        mock_vector_store.from_documents.return_value = Mock()
+
         # Should not raise exception
         try:
             analyzers.build_index()
@@ -187,35 +209,60 @@ class TestExampleGenerator:
 
 class TestAskFromFullContext:
     """Tests for ask_fromfullcontext() function"""
-    
-    @patch('helper_functions.analyzers.load_index_from_storage')
-    @patch('helper_functions.analyzers.StorageContext')
-    def test_ask_fromfullcontext_valid_question(self, mock_storage_context, 
-                                                mock_load_index, temp_summary_folder, monkeypatch):
+
+    def test_ask_fromfullcontext_valid_question(self, temp_summary_folder, monkeypatch):
         """Test asking a valid question"""
         monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
-        
-        # Mock index and query engine
-        mock_index = Mock()
-        mock_query_engine = Mock()
-        mock_response = Mock()
-        mock_response.response = "This is the answer"
-        
-        mock_load_index.return_value = mock_index
-        mock_index.as_retriever.return_value = Mock()
-        mock_index.as_query_engine.return_value = mock_query_engine
-        
-        # Important: ask_fromfullcontext creates RetrieverQueryEngine manually
-        # So we need to mock the constructor or its behavior
-        # It calls: query_engine.query(question)
-        
-        # We need to patch RetrieverQueryEngine to return our mock_query_engine
-        with patch('helper_functions.analyzers.RetrieverQueryEngine') as mock_rqe_class:
-            mock_rqe_class.return_value = mock_query_engine
-            mock_query_engine.query.return_value = mock_response
-            
-            result = analyzers.ask_fromfullcontext("Test question", Mock())
-            assert result == "This is the answer"
+
+        # Create full_text.txt in the summary folder
+        full_text_path = os.path.join(temp_summary_folder, "full_text.txt")
+        with open(full_text_path, "w") as f:
+            f.write("This is the document context for testing.")
+
+        # Mock the default_client.chat_completion method
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = "This is the answer"
+        monkeypatch.setattr(analyzers, 'default_client', mock_client)
+
+        # Use a template string with {context_str} and {query_str} placeholders
+        template = "Context: {context_str}\nQuestion: {query_str}"
+
+        result = analyzers.ask_fromfullcontext("Test question", template)
+        assert result == "This is the answer"
+
+        # Verify chat_completion was called with the formatted prompt
+        mock_client.chat_completion.assert_called_once()
+        call_args = mock_client.chat_completion.call_args
+        messages = call_args[1].get('messages') or call_args[0][0] if call_args[0] else call_args[1]['messages']
+        prompt_content = messages[0]['content']
+        assert "This is the document context for testing." in prompt_content
+        assert "Test question" in prompt_content
+
+    def test_ask_fromfullcontext_no_index(self, temp_summary_folder, monkeypatch):
+        """Test asking when no documents have been indexed (no full_text.txt)"""
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
+
+        # Don't create full_text.txt - simulate no indexed documents
+        result = analyzers.ask_fromfullcontext("Test question", "Template {context_str} {query_str}")
+        assert result == "No documents indexed yet."
+
+    def test_ask_fromfullcontext_empty_response(self, temp_summary_folder, monkeypatch):
+        """Test when LLM returns empty response"""
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
+
+        # Create full_text.txt
+        full_text_path = os.path.join(temp_summary_folder, "full_text.txt")
+        with open(full_text_path, "w") as f:
+            f.write("Some document text.")
+
+        # Mock the default_client to return empty string
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = ""
+        monkeypatch.setattr(analyzers, 'default_client', mock_client)
+
+        template = "Context: {context_str}\nQuestion: {query_str}"
+        result = analyzers.ask_fromfullcontext("Test question", template)
+        assert result == ""
 
 
 class TestExtractVideoId:
