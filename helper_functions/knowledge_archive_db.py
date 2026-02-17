@@ -153,9 +153,9 @@ class KnowledgeArchiveDB:
                 "source_domain": entry.metadata.source_domain,
                 "estimated_read_time": entry.metadata.estimated_read_time,
                 "distilled_by_model": entry.metadata.distilled_by_model,
-                "tags": ",".join(entry.metadata.tags),
-                "archive_org_fallback": str(entry.metadata.archive_org_fallback),
-                "original_url_failed": str(entry.metadata.original_url_failed),
+                "tags": entry.metadata.tags,
+                "archive_org_fallback": entry.metadata.archive_org_fallback,
+                "original_url_failed": entry.metadata.original_url_failed,
                 # Store full summary and takeaways for retrieval
                 "summary": entry.summary,
                 "takeaways": entry.takeaways,
@@ -216,9 +216,9 @@ class KnowledgeArchiveDB:
             return None
 
         try:
-            for doc_id, data in self._store.docs.items():
-                if data["metadata"].get("id") == entry_id:
-                    return self._data_to_entry(doc_id, data)
+            if entry_id in self._store.docs:
+                data = self._store.docs[entry_id]
+                return self._data_to_entry(entry_id, data)
         except Exception as e:
             logger.error(f"Error looking up entry: {e}")
 
@@ -228,9 +228,12 @@ class KnowledgeArchiveDB:
         """Convert store data dict to KnowledgeArchiveEntry."""
         meta = data["metadata"]
 
-        # Parse tags
-        tags_str = meta.get("tags", "")
-        tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+        # Parse tags (native list or legacy comma-separated string)
+        tags_raw = meta.get("tags", [])
+        if isinstance(tags_raw, list):
+            tags = tags_raw
+        else:
+            tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
         # Parse publish_date
         publish_date = None
@@ -248,12 +251,12 @@ class KnowledgeArchiveDB:
         except ValueError:
             indexed_at = datetime.now()
 
-        # Parse boolean fields
-        archive_org_fallback = meta.get("archive_org_fallback", "False")
+        # Parse boolean fields (native bool or legacy string)
+        archive_org_fallback = meta.get("archive_org_fallback", False)
         if isinstance(archive_org_fallback, str):
             archive_org_fallback = archive_org_fallback.lower() == "true"
 
-        original_url_failed = meta.get("original_url_failed", "False")
+        original_url_failed = meta.get("original_url_failed", False)
         if isinstance(original_url_failed, str):
             original_url_failed = original_url_failed.lower() == "true"
 
@@ -426,17 +429,10 @@ class KnowledgeArchiveDB:
             return False
 
         try:
-            # Find the document with matching entry ID
-            doc_id_to_delete = None
-            for doc_id, data in self._store.docs.items():
-                if data["metadata"].get("id") == entry_id:
-                    doc_id_to_delete = doc_id
-                    break
-
-            if doc_id_to_delete is None:
+            if entry_id not in self._store.docs:
                 return False
 
-            self._store.delete_document(doc_id_to_delete)
+            self._store.delete_document(entry_id)
             logger.info(f"Deleted entry {entry_id[:8]}... from Knowledge Archive")
             return True
 

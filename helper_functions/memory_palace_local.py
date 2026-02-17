@@ -9,7 +9,7 @@ import logging
 from typing import List, Dict
 from datetime import datetime
 
-from helper_functions.vector_store import SimpleVectorStore, Document
+from helper_functions.vector_store import SimpleVectorStore, Document, StreamingResult
 from config import config
 from helper_functions.llm_client import get_client
 
@@ -40,11 +40,14 @@ def get_memory_palace_index_dir(provider: str, embedding_model: str) -> str:
     return os.path.join(MEMORY_PALACE_ROOT, dir_name)
 
 
+def _resolve_provider(model_name: str) -> str:
+    """Resolve LLM provider from model name string."""
+    return "ollama" if model_name.lower().startswith("ollama") else "litellm"
+
+
 def _get_client_for_model(model_name: str):
     """Get a UnifiedLLMClient based on model_name string."""
-    provider = "litellm"
-    if model_name.lower().startswith("ollama"):
-        provider = "ollama"
+    provider = _resolve_provider(model_name)
     return get_client(provider=provider, model_tier="smart")
 
 
@@ -73,9 +76,7 @@ def save_memory(
         source_ref: URL or filename
         model_name: The model name string to derive embedding config
     """
-    provider = "litellm"
-    if model_name.lower().startswith("ollama"):
-        provider = "ollama"
+    provider = _resolve_provider(model_name)
 
     embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
@@ -108,9 +109,7 @@ def search_memories(
     top_k: int = 5
 ) -> List[Dict]:
     """Search for memories similar to the query."""
-    provider = "litellm"
-    if model_name.lower().startswith("ollama"):
-        provider = "ollama"
+    provider = _resolve_provider(model_name)
 
     embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
@@ -132,13 +131,6 @@ def search_memories(
     ]
 
 
-class StreamingResult:
-    """Wrapper to provide .response_gen for backwards compatibility."""
-
-    def __init__(self, generator):
-        self.response_gen = generator
-
-
 def prepare_memory_stream(
     message: str,
     history: List[List[str]],
@@ -149,9 +141,7 @@ def prepare_memory_stream(
     Prepare a streaming response using retrieved memories.
     Returns a StreamingResult with .response_gen generator.
     """
-    provider = "litellm"
-    if model_name.lower().startswith("ollama"):
-        provider = "ollama"
+    provider = _resolve_provider(model_name)
 
     embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)
@@ -186,9 +176,7 @@ def prepare_memory_stream(
 
 def reset_memory_palace(model_name: str) -> str:
     """Reset (delete) the memory palace index for the specific embedding model."""
-    provider = "litellm"
-    if model_name.lower().startswith("ollama"):
-        provider = "ollama"
+    provider = _resolve_provider(model_name)
 
     embedding_model = _get_embedding_model(provider)
     persist_dir = get_memory_palace_index_dir(provider, embedding_model)

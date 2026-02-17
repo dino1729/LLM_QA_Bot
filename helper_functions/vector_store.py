@@ -4,7 +4,9 @@ Replaces LlamaIndex VectorStoreIndex for lightweight RAG operations.
 """
 import json
 import logging
+import os
 import re
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -82,7 +84,7 @@ def chunk_text(text: str, chunk_size: int = 1024, overlap: int = 200) -> List[st
             current_size = len(overlap_text)
 
         current_chunk.append(sentence)
-        current_size += sentence_len
+        current_size += sentence_len + (1 if len(current_chunk) > 1 else 0)
 
     if current_chunk:
         chunks.append(' '.join(current_chunk))
@@ -142,7 +144,8 @@ def read_documents_from_directory(directory: str) -> List[Document]:
             # Try reading as text for unknown extensions
             try:
                 text = file_path.read_text(errors='ignore')
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to read {file_path} with unknown extension '{ext}': {e}")
                 continue
 
         if text and text.strip():
@@ -187,12 +190,26 @@ class SimpleVectorStore:
                 self._documents = {}
 
     def persist(self):
-        """Save to disk."""
-        with open(self._store_file(), "w") as f:
-            json.dump(self._documents, f)
+        """Save to disk atomically via temp file + os.replace()."""
+        store_file = self._store_file()
+        fd, tmp_path = tempfile.mkstemp(dir=str(self.persist_dir), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self._documents, f)
+            os.replace(tmp_path, str(store_file))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def insert(self, doc: Document):
-        """Insert a single document with its embedding."""
+        """Insert a single document with its embedding.
+
+        Note: This method persists to disk on every call. For batch
+        operations, use ``insert_many()`` to avoid repeated writes.
+        """
         embedding = None
         if self.embed_fn:
             embedding = self.embed_fn(doc.text, input_type="passage")
@@ -273,3 +290,10 @@ class SimpleVectorStore:
         if documents:
             store.insert_many(documents)
         return store
+
+
+class StreamingResult:
+    """Wrapper to provide .response_gen for backwards compatibility with FastAPI endpoints."""
+
+    def __init__(self, generator):
+        self.response_gen = generator

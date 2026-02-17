@@ -112,6 +112,69 @@ class WebKnowledgeDB:
         )
         logger.info(f"Initialized Web Knowledge store at {self.index_path}")
 
+    def _parse_knowledge_from_data(
+        self, doc_id: str, metadata: dict, text: str
+    ) -> Optional[WebKnowledge]:
+        """
+        Parse a WebKnowledge object from raw store data.
+
+        Args:
+            doc_id: Document/knowledge ID
+            metadata: Metadata dict from the store
+            text: The distilled text content
+
+        Returns:
+            WebKnowledge object, or None if parsing fails
+        """
+        try:
+            # Parse expires_at
+            expires_at_str = metadata.get(
+                "expires_at",
+                (datetime.now() + timedelta(days=self.ttl_days)).isoformat()
+            )
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+            except ValueError:
+                expires_at = datetime.now() + timedelta(days=self.ttl_days)
+
+            # Parse created_at
+            created_at_str = metadata.get("created_at", datetime.now().isoformat())
+            try:
+                created_at = datetime.fromisoformat(created_at_str)
+            except ValueError:
+                created_at = datetime.now()
+
+            # Parse source_urls from JSON string
+            source_urls_str = metadata.get("source_urls", "[]")
+            try:
+                source_urls = json.loads(source_urls_str)
+            except json.JSONDecodeError:
+                source_urls = []
+
+            # Parse confidence_tier
+            confidence_str = metadata.get("confidence_tier", "fairly_sure")
+            try:
+                confidence_tier = ConfidenceTier(confidence_str)
+            except ValueError:
+                confidence_tier = ConfidenceTier.FAIRLY_SURE
+
+            return WebKnowledge(
+                id=metadata.get("id", doc_id),
+                distilled_text=text,
+                metadata=WebKnowledgeMetadata(
+                    source_urls=source_urls,
+                    original_query=metadata.get("original_query", ""),
+                    created_at=created_at,
+                    expires_at=expires_at,
+                    confidence_tier=confidence_tier,
+                    distilled_by_model=metadata.get("distilled_by_model", "unknown"),
+                    source_count=metadata.get("source_count", 0),
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Error parsing knowledge from data (doc_id={doc_id}): {e}")
+            return None
+
     def add_knowledge(self, knowledge: WebKnowledge) -> str:
         """
         Add web knowledge to the store.
@@ -172,52 +235,16 @@ class WebKnowledgeDB:
 
         for node in nodes:
             try:
-                # Parse expiration
-                expires_at_str = node.metadata.get(
-                    "expires_at",
-                    (datetime.now() + timedelta(days=self.ttl_days)).isoformat()
+                knowledge = self._parse_knowledge_from_data(
+                    node.doc_id, node.metadata, node.get_content()
                 )
-                try:
-                    expires_at = datetime.fromisoformat(expires_at_str)
-                except ValueError:
-                    expires_at = datetime.now() + timedelta(days=self.ttl_days)
-
-                # Skip expired unless explicitly requested
-                if not include_expired and expires_at < now:
+                if knowledge is None:
                     continue
 
-                # Parse other metadata
-                created_at_str = node.metadata.get("created_at", datetime.now().isoformat())
-                try:
-                    created_at = datetime.fromisoformat(created_at_str)
-                except ValueError:
-                    created_at = datetime.now()
+                # Skip expired unless explicitly requested
+                if not include_expired and knowledge.metadata.expires_at < now:
+                    continue
 
-                source_urls_str = node.metadata.get("source_urls", "[]")
-                try:
-                    source_urls = json.loads(source_urls_str)
-                except json.JSONDecodeError:
-                    source_urls = []
-
-                confidence_str = node.metadata.get("confidence_tier", "fairly_sure")
-                try:
-                    confidence_tier = ConfidenceTier(confidence_str)
-                except ValueError:
-                    confidence_tier = ConfidenceTier.FAIRLY_SURE
-
-                knowledge = WebKnowledge(
-                    id=node.metadata.get("id", str(uuid.uuid4())),
-                    distilled_text=node.get_content(),
-                    metadata=WebKnowledgeMetadata(
-                        source_urls=source_urls,
-                        original_query=node.metadata.get("original_query", ""),
-                        created_at=created_at,
-                        expires_at=expires_at,
-                        confidence_tier=confidence_tier,
-                        distilled_by_model=node.metadata.get("distilled_by_model", "unknown"),
-                        source_count=node.metadata.get("source_count", 0),
-                    )
-                )
                 results.append(SimilarWebKnowledge(
                     knowledge=knowledge,
                     similarity_score=node.score or 0.0
@@ -328,53 +355,11 @@ class WebKnowledgeDB:
         try:
             for doc_id, data in self._store.docs.items():
                 try:
-                    meta = data["metadata"]
-                    created_at_str = meta.get(
-                        "created_at", datetime.now().isoformat()
+                    knowledge = self._parse_knowledge_from_data(
+                        doc_id, data["metadata"], data["text"]
                     )
-                    expires_at_str = meta.get(
-                        "expires_at",
-                        (datetime.now() + timedelta(days=self.ttl_days)).isoformat()
-                    )
-                    source_urls_str = meta.get("source_urls", "[]")
-
-                    try:
-                        created_at = datetime.fromisoformat(created_at_str)
-                    except ValueError:
-                        created_at = datetime.now()
-
-                    try:
-                        expires_at = datetime.fromisoformat(expires_at_str)
-                    except ValueError:
-                        expires_at = datetime.now() + timedelta(days=self.ttl_days)
-
-                    try:
-                        source_urls = json.loads(source_urls_str)
-                    except json.JSONDecodeError:
-                        source_urls = []
-
-                    confidence_str = meta.get("confidence_tier", "fairly_sure")
-                    try:
-                        confidence_tier = ConfidenceTier(confidence_str)
-                    except ValueError:
-                        confidence_tier = ConfidenceTier.FAIRLY_SURE
-
-                    knowledge = WebKnowledge(
-                        id=meta.get("id", doc_id),
-                        distilled_text=data["text"],
-                        metadata=WebKnowledgeMetadata(
-                            source_urls=source_urls,
-                            original_query=meta.get("original_query", ""),
-                            created_at=created_at,
-                            expires_at=expires_at,
-                            confidence_tier=confidence_tier,
-                            distilled_by_model=meta.get(
-                                "distilled_by_model", "unknown"
-                            ),
-                            source_count=meta.get("source_count", 0),
-                        )
-                    )
-                    knowledge_list.append(knowledge)
+                    if knowledge is not None:
+                        knowledge_list.append(knowledge)
                 except Exception as e:
                     logger.warning(f"Error parsing document {doc_id}: {e}")
                     continue

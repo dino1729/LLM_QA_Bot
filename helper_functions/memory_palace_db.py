@@ -157,6 +157,60 @@ class MemoryPalaceDB:
         self._store = SimpleVectorStore(persist_dir=str(self.index_path), embed_fn=embed_fn)
         logger.info(f"Loaded Memory Palace store from {self.index_path} ({len(self._store)} docs)")
 
+    def _parse_lesson_from_doc(self, doc_id: str, meta: dict, text: str) -> Optional[Lesson]:
+        """Parse a Lesson from raw metadata dict and text.
+
+        Args:
+            doc_id: Document ID (used as fallback if metadata lacks "id").
+            meta: Metadata dictionary (e.g. from node.metadata or data["metadata"]).
+            text: The distilled lesson text.
+
+        Returns:
+            A Lesson object, or None if parsing fails.
+        """
+        try:
+            is_forgotten = meta.get("is_forgotten", False)
+            if isinstance(is_forgotten, str):
+                is_forgotten = is_forgotten.lower() == "true"
+
+            category_str = meta.get("category", "observations")
+            category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
+
+            tags_str = meta.get("tags", "")
+            tags = tags_str.split(",") if tags_str else []
+
+            created_at_str = meta.get("created_at", datetime.now().isoformat())
+            try:
+                created_at = datetime.fromisoformat(created_at_str)
+            except ValueError:
+                created_at = datetime.now()
+
+            forgotten_at_str = meta.get("forgotten_at")
+            forgotten_at = None
+            if forgotten_at_str:
+                try:
+                    forgotten_at = datetime.fromisoformat(forgotten_at_str)
+                except ValueError:
+                    pass
+
+            return Lesson(
+                id=meta.get("id", doc_id),
+                distilled_text=text,
+                metadata=LessonMetadata(
+                    category=category,
+                    created_at=created_at,
+                    source=meta.get("source", "unknown"),
+                    original_input=meta.get("original_input", ""),
+                    distilled_by_model=meta.get("distilled_by_model", "unknown"),
+                    tags=tags,
+                    is_forgotten=is_forgotten,
+                    forgotten_at=forgotten_at,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Error parsing lesson from doc {doc_id}: {e}")
+            return None
+
     def add_lesson(self, lesson: Lesson) -> str:
         """Add a lesson to the store."""
         doc = Document(
@@ -191,55 +245,23 @@ class MemoryPalaceDB:
 
         results = []
         for node in nodes:
-            try:
-                is_forgotten = node.metadata.get("is_forgotten", False)
-                if isinstance(is_forgotten, str):
-                    is_forgotten = is_forgotten.lower() == "true"
+            meta = node.metadata
+            is_forgotten = meta.get("is_forgotten", False)
+            if isinstance(is_forgotten, str):
+                is_forgotten = is_forgotten.lower() == "true"
 
-                if is_forgotten and not include_forgotten:
-                    continue
-
-                category_str = node.metadata.get("category", "observations")
-                category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
-
-                tags_str = node.metadata.get("tags", "")
-                tags = tags_str.split(",") if tags_str else []
-
-                created_at_str = node.metadata.get("created_at", datetime.now().isoformat())
-                try:
-                    created_at = datetime.fromisoformat(created_at_str)
-                except ValueError:
-                    created_at = datetime.now()
-
-                forgotten_at_str = node.metadata.get("forgotten_at")
-                forgotten_at = None
-                if forgotten_at_str:
-                    try:
-                        forgotten_at = datetime.fromisoformat(forgotten_at_str)
-                    except ValueError:
-                        pass
-
-                lesson = Lesson(
-                    id=node.metadata.get("id", str(uuid.uuid4())),
-                    distilled_text=node.get_content(),
-                    metadata=LessonMetadata(
-                        category=category,
-                        created_at=created_at,
-                        source=node.metadata.get("source", "unknown"),
-                        original_input=node.metadata.get("original_input", ""),
-                        distilled_by_model=node.metadata.get("distilled_by_model", "unknown"),
-                        tags=tags,
-                        is_forgotten=is_forgotten,
-                        forgotten_at=forgotten_at,
-                    )
-                )
-                results.append(SimilarLesson(lesson=lesson, similarity_score=node.score or 0.0))
-
-                if len(results) >= top_k:
-                    break
-            except Exception as e:
-                logger.warning(f"Error parsing node: {e}")
+            if is_forgotten and not include_forgotten:
                 continue
+
+            doc_id = meta.get("id", str(uuid.uuid4()))
+            lesson = self._parse_lesson_from_doc(doc_id, meta, node.get_content())
+            if lesson is None:
+                continue
+
+            results.append(SimilarLesson(lesson=lesson, similarity_score=node.score or 0.0))
+
+            if len(results) >= top_k:
+                break
 
         return results
 
@@ -319,54 +341,18 @@ class MemoryPalaceDB:
         lessons = []
         try:
             for doc_id, data in self._store.docs.items():
-                try:
-                    meta = data.get("metadata", {})
+                meta = data.get("metadata", {})
 
-                    is_forgotten = meta.get("is_forgotten", False)
-                    if isinstance(is_forgotten, str):
-                        is_forgotten = is_forgotten.lower() == "true"
+                is_forgotten = meta.get("is_forgotten", False)
+                if isinstance(is_forgotten, str):
+                    is_forgotten = is_forgotten.lower() == "true"
 
-                    if is_forgotten and not include_forgotten:
-                        continue
-
-                    category_str = meta.get("category", "observations")
-                    category = LessonCategory(category_str) if category_str in [c.value for c in LessonCategory] else LessonCategory.OBSERVATIONS
-
-                    tags_str = meta.get("tags", "")
-                    tags = tags_str.split(",") if tags_str else []
-
-                    created_at_str = meta.get("created_at", datetime.now().isoformat())
-                    try:
-                        created_at = datetime.fromisoformat(created_at_str)
-                    except ValueError:
-                        created_at = datetime.now()
-
-                    forgotten_at_str = meta.get("forgotten_at")
-                    forgotten_at = None
-                    if forgotten_at_str:
-                        try:
-                            forgotten_at = datetime.fromisoformat(forgotten_at_str)
-                        except ValueError:
-                            pass
-
-                    lesson = Lesson(
-                        id=meta.get("id", doc_id),
-                        distilled_text=data.get("text", ""),
-                        metadata=LessonMetadata(
-                            category=category,
-                            created_at=created_at,
-                            source=meta.get("source", "unknown"),
-                            original_input=meta.get("original_input", ""),
-                            distilled_by_model=meta.get("distilled_by_model", "unknown"),
-                            tags=tags,
-                            is_forgotten=is_forgotten,
-                            forgotten_at=forgotten_at,
-                        )
-                    )
-                    lessons.append(lesson)
-                except Exception as e:
-                    logger.warning(f"Error parsing document {doc_id}: {e}")
+                if is_forgotten and not include_forgotten:
                     continue
+
+                lesson = self._parse_lesson_from_doc(doc_id, meta, data.get("text", ""))
+                if lesson is not None:
+                    lessons.append(lesson)
         except Exception as e:
             logger.error(f"Error enumerating store: {e}")
 
@@ -410,7 +396,7 @@ class MemoryPalaceDB:
             return False
 
         try:
-            for doc_id, data in self._store.docs.items():
+            for doc_id, data in self._store._documents.items():
                 meta = data.get("metadata", {})
                 if meta.get("id") == lesson_id:
                     meta["is_forgotten"] = True

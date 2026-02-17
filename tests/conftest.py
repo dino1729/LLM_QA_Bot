@@ -187,7 +187,7 @@ def mock_unified_llm_client():
     client = Mock()
     client.chat_completion.return_value = "Test response"
     client.get_embedding.return_value = [0.1] * 1536
-    client.stream_chat_completion.return_value = iter(["Test ", "response"])
+    client.stream_chat_completion.side_effect = lambda *a, **kw: iter(["Test ", "response"])
 
     return client
 

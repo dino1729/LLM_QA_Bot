@@ -145,6 +145,29 @@ class TestSimpleVectorStore:
             assert isinstance(r, RetrievalResult)
             assert r.score is not None
 
+    def test_search_results_ordered_by_similarity(self, tmp_path):
+        """Test that search results are returned in descending similarity order."""
+        # Use an embedding function that produces distinct vectors per text
+        def directional_embed(text, input_type="passage"):
+            if "artificial intelligence" in text.lower():
+                return [0.9, 0.1, 0.0, 0.0]
+            elif "machine learning" in text.lower():
+                return [0.7, 0.3, 0.0, 0.0]
+            elif "cooking recipes" in text.lower():
+                return [0.0, 0.0, 0.9, 0.1]
+            return [0.5, 0.5, 0.0, 0.0]  # default / query
+
+        store = SimpleVectorStore(persist_dir=str(tmp_path / "store"), embed_fn=directional_embed)
+        store.insert(Document(text="cooking recipes for dinner", doc_id="d1"))
+        store.insert(Document(text="artificial intelligence research", doc_id="d2"))
+        store.insert(Document(text="machine learning algorithms", doc_id="d3"))
+
+        results = store.search("artificial intelligence overview", top_k=3)
+        assert len(results) >= 2
+        # Results must be in descending similarity order
+        for i in range(len(results) - 1):
+            assert results[i].score >= results[i + 1].score
+
     def test_search_empty_store(self, tmp_path, embed_fn):
         store = SimpleVectorStore(persist_dir=str(tmp_path / "store"), embed_fn=embed_fn)
         results = store.search("query", top_k=5)

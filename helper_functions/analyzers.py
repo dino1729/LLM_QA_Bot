@@ -95,7 +95,7 @@ def build_index():
             ))
 
     # Build vector store with embeddings
-    vector_store = SimpleVectorStore.from_documents(
+    SimpleVectorStore.from_documents(
         chunked_docs,
         persist_dir=VECTOR_FOLDER,
         embed_fn=default_client.get_embedding
@@ -148,6 +148,10 @@ def ask_fromfullcontext(question, fullcontext_template):
 
     with open(full_text_path, "r") as f:
         context = f.read()
+
+    # Truncate context to stay within model context limits
+    if max_input_size and len(context) > max_input_size:
+        context = context[:max_input_size]
 
     # Format the prompt template with context and question
     prompt = fullcontext_template.format(context_str=context, query_str=question)
