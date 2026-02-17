@@ -17,27 +17,36 @@ with patch('helper_functions.llm_client.get_client', return_value=Mock()):
 class TestClearAllFiles:
     """Tests for clearallfiles() function"""
     
-    def test_clearallfiles_empty_folder(self, temp_upload_folder, monkeypatch):
+    def test_clearallfiles_empty_folder(self, temp_upload_folder, temp_vector_folder,
+                                       temp_summary_folder, monkeypatch):
         """Test clearing an empty folder"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
+        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
         analyzers.clearallfiles()
         assert len(os.listdir(temp_upload_folder)) == 0
-    
-    def test_clearallfiles_with_files(self, temp_upload_folder, monkeypatch):
+
+    def test_clearallfiles_with_files(self, temp_upload_folder, temp_vector_folder,
+                                      temp_summary_folder, monkeypatch):
         """Test clearing a folder with files"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
+        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
         # Create test files
         for i in range(3):
             with open(os.path.join(temp_upload_folder, f"test{i}.txt"), "w") as f:
                 f.write("test content")
-        
+
         assert len(os.listdir(temp_upload_folder)) == 3
         analyzers.clearallfiles()
         assert len(os.listdir(temp_upload_folder)) == 0
-    
-    def test_clearallfiles_with_subdirectories(self, temp_upload_folder, monkeypatch):
+
+    def test_clearallfiles_with_subdirectories(self, temp_upload_folder, temp_vector_folder,
+                                               temp_summary_folder, monkeypatch):
         """Test clearing folder with subdirectories"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
+        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
+        monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
         # Create subdirectory with files
         subdir = os.path.join(temp_upload_folder, "subdir")
         os.makedirs(subdir)
@@ -103,6 +112,8 @@ class TestBuildIndex:
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
         monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
         monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
+        mock_client = Mock()
+        monkeypatch.setattr(analyzers, '_get_default_client', lambda: mock_client)
 
         # Mock document loading - return Document-like objects with text and metadata
         mock_doc1 = Mock()
@@ -148,6 +159,8 @@ class TestBuildIndex:
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
         monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
         monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
+        mock_client = Mock()
+        monkeypatch.setattr(analyzers, '_get_default_client', lambda: mock_client)
         mock_read_docs.return_value = []
         mock_vector_store.from_documents.return_value = Mock()
 
@@ -226,10 +239,10 @@ class TestAskFromFullContext:
         with open(full_text_path, "w") as f:
             f.write("This is the document context for testing.")
 
-        # Mock the default_client.chat_completion method
+        # Mock the _get_default_client() to return our mock client
         mock_client = Mock()
         mock_client.chat_completion.return_value = "This is the answer"
-        monkeypatch.setattr(analyzers, 'default_client', mock_client)
+        monkeypatch.setattr(analyzers, '_get_default_client', lambda: mock_client)
 
         # Use a template string with {context_str} and {query_str} placeholders
         template = "Context: {context_str}\nQuestion: {query_str}"
@@ -263,10 +276,10 @@ class TestAskFromFullContext:
         with open(full_text_path, "w") as f:
             f.write("Some document text.")
 
-        # Mock the default_client to return empty string
+        # Mock the _get_default_client() to return mock with empty response
         mock_client = Mock()
         mock_client.chat_completion.return_value = ""
-        monkeypatch.setattr(analyzers, 'default_client', mock_client)
+        monkeypatch.setattr(analyzers, '_get_default_client', lambda: mock_client)
 
         template = "Context: {context_str}\nQuestion: {query_str}"
         result = analyzers.ask_fromfullcontext("Test question", template)

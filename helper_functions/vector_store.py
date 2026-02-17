@@ -58,11 +58,13 @@ def chunk_text(text: str, chunk_size: int = 1024, overlap: int = 200) -> List[st
 
     Args:
         text: Text to split
-        chunk_size: Target chunk size in characters
-        overlap: Number of overlap characters between chunks
+        chunk_size: Target chunk size in characters (must be > 0)
+        overlap: Number of overlap characters between chunks (clamped to < chunk_size)
     """
     if not text.strip():
         return []
+    chunk_size = max(chunk_size, 1)
+    overlap = max(0, min(overlap, chunk_size - 1))
     sentences = re.split(r'(?<=[.!?])\s+', text)
     if not sentences:
         return []
@@ -122,11 +124,7 @@ def read_documents_from_directory(directory: str) -> List[Document]:
                 reader = pypdf.PdfReader(str(file_path))
                 text = '\n'.join(page.extract_text() or '' for page in reader.pages)
             except ImportError:
-                # Fallback: try reading as text
-                try:
-                    text = file_path.read_text(errors='ignore')
-                except Exception:
-                    logger.warning(f"Cannot read PDF {file_path}: pypdf not installed")
+                logger.warning(f"Cannot read PDF {file_path}: pypdf not installed")
             except Exception as e:
                 logger.warning(f"Failed to read PDF {file_path}: {e}")
 
@@ -183,7 +181,7 @@ class SimpleVectorStore:
         store_file = self._store_file()
         if store_file.exists():
             try:
-                with open(store_file) as f:
+                with open(store_file, encoding="utf-8") as f:
                     self._documents = json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to load vector store from {store_file}: {e}")
@@ -194,7 +192,7 @@ class SimpleVectorStore:
         store_file = self._store_file()
         fd, tmp_path = tempfile.mkstemp(dir=str(self.persist_dir), suffix=".tmp")
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._documents, f)
             os.replace(tmp_path, str(store_file))
         except Exception:
@@ -235,7 +233,7 @@ class SimpleVectorStore:
         self.persist()
 
     def search(self, query: str, top_k: int = 5) -> List[RetrievalResult]:
-        """Search by cosine similarity."""
+        """Search by cosine similarity (O(n) linear scan over all documents)."""
         if not self._documents or not self.embed_fn:
             return []
 

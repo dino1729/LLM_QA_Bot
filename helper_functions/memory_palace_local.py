@@ -152,7 +152,20 @@ def prepare_memory_stream(
     client = _get_client_for_model(model_name)
     store = SimpleVectorStore(persist_dir=persist_dir, embed_fn=client.get_embedding)
     results = store.search(message, top_k=top_k)
-    context = "\n\n".join([r.text for r in results])
+
+    # Cap context to avoid exceeding model context limits
+    try:
+        max_context_chars = int(config.max_input_size) or 100_000
+    except (TypeError, ValueError, AttributeError):
+        max_context_chars = 100_000
+    parts = []
+    current_size = 0
+    for r in results:
+        if current_size + len(r.text) > max_context_chars:
+            break
+        parts.append(r.text)
+        current_size += len(r.text)
+    context = "\n\n".join(parts)
 
     mp_qa_prompt = (
         "You are a helpful AI assistant with access to a Memory Palace.\n"

@@ -43,8 +43,19 @@ keywords = config.keywords
 # Set a flag for lite mode: Choose lite mode if you don't want to analyze videos without transcripts
 lite_mode = False
 
-# Initialize unified LLM client for summary/example generation
-default_client = get_client(provider=config.default_analyzers_provider, model_tier=config.default_analyzers_tier)
+# Lazy-initialized LLM client (avoids import-time side effects)
+_default_client = None
+
+
+def _get_default_client():
+    """Return the default LLM client, creating it on first use."""
+    global _default_client
+    if _default_client is None:
+        _default_client = get_client(
+            provider=config.default_analyzers_provider,
+            model_tier=config.default_analyzers_tier,
+        )
+    return _default_client
 
 example_qs = []
 summary = "No Summary available yet"
@@ -63,11 +74,14 @@ if not os.path.exists(VECTOR_FOLDER):
 
 
 def clearallfiles():
-    """Clear all files in the upload folder"""
-    for root, dirs, files in os.walk(UPLOAD_FOLDER):
-        for file in files:
-            file_path = os.path.join(root, file)
-            os.remove(file_path)
+    """Clear all files in upload, vector, and summary folders."""
+    for folder in (UPLOAD_FOLDER, VECTOR_FOLDER, SUMMARY_FOLDER):
+        if not os.path.exists(folder):
+            continue
+        for root, dirs, files in os.walk(folder):
+            for file in files:
+                file_path = os.path.join(root, file)
+                os.remove(file_path)
 
 
 def fileformatvaliditycheck(files):
@@ -94,11 +108,16 @@ def build_index():
                 metadata={**doc.metadata, "chunk_index": i}
             ))
 
+    # Purge existing vector store to avoid stale vectors from previous uploads
+    for f in os.listdir(VECTOR_FOLDER):
+        os.remove(os.path.join(VECTOR_FOLDER, f))
+
     # Build vector store with embeddings
+    client = _get_default_client()
     SimpleVectorStore.from_documents(
         chunked_docs,
         persist_dir=VECTOR_FOLDER,
-        embed_fn=default_client.get_embedding
+        embed_fn=client.get_embedding
     )
 
     # Save raw text for full-context operations (summaries, examples)
@@ -157,7 +176,7 @@ def ask_fromfullcontext(question, fullcontext_template):
     prompt = fullcontext_template.format(context_str=context, query_str=question)
 
     # Direct LLM call instead of LlamaIndex query engine
-    response = default_client.chat_completion(
+    response = _get_default_client().chat_completion(
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
         max_tokens=max_tokens

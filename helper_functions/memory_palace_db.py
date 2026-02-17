@@ -354,7 +354,7 @@ class MemoryPalaceDB:
                 if lesson is not None:
                     lessons.append(lesson)
         except Exception as e:
-            logger.error(f"Error enumerating store: {e}")
+            logger.exception(f"Error enumerating store: {e}")
 
         return lessons
 
@@ -366,10 +366,17 @@ class MemoryPalaceDB:
                 (isinstance(l.metadata.category, LessonCategory) and l.metadata.category.value == category_value)]
 
     def get_lesson_count(self) -> int:
-        """Get the total number of lessons in the database."""
+        """Get the total number of active (non-forgotten) lessons."""
         if self._store is None:
             return 0
-        return len(self._store)
+        count = 0
+        for data in self._store._documents.values():
+            is_forgotten = data.get("metadata", {}).get("is_forgotten", False)
+            if isinstance(is_forgotten, str):
+                is_forgotten = is_forgotten.lower() == "true"
+            if not is_forgotten:
+                count += 1
+        return count
 
     def get_category_stats(self) -> Dict[str, int]:
         """Get lesson count per category."""
@@ -415,7 +422,7 @@ class MemoryPalaceDB:
             return False
 
         try:
-            for doc_id, data in self._store.docs.items():
+            for doc_id, data in self._store._documents.items():
                 meta = data.get("metadata", {})
                 if meta.get("id") == lesson_id:
                     meta["is_forgotten"] = False
