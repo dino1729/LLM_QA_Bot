@@ -1,13 +1,15 @@
 """
 Content Analyzers for Files, Videos, Articles, and Media
-Uses unified LLM client, removed Supabase dependency
+Uses unified LLM client with simple vector store (no LlamaIndex dependency)
 """
 from config import config
 from helper_functions.llm_client import get_client
+from helper_functions.vector_store import (
+    SimpleVectorStore, Document, chunk_text, read_documents_from_directory
+)
 import os
 import shutil
 import re
-import tiktoken
 import ast
 import whisper
 import wget
@@ -19,12 +21,6 @@ from bs4 import BeautifulSoup
 import yt_dlp
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from youtube_transcript_api import YouTubeTranscriptApi
-from llama_index.core import VectorStoreIndex, PromptHelper, SimpleDirectoryReader, StorageContext, load_index_from_storage, get_response_synthesizer
-from llama_index.core.indices import SummaryIndex
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core import PromptTemplate
-from llama_index.core import Settings
 from helper_functions.memory_palace_local import save_memory
 
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
@@ -47,22 +43,23 @@ keywords = config.keywords
 # Set a flag for lite mode: Choose lite mode if you don't want to analyze videos without transcripts
 lite_mode = False
 
-# Initialize unified LLM client for summary/example generation
-# Uses configured default_analyzers_provider and default_analyzers_tier from config.yml
-default_client = get_client(provider=config.default_analyzers_provider, model_tier=config.default_analyzers_tier)
+# Lazy-initialized LLM client (avoids import-time side effects)
+_default_client = None
 
-Settings.llm = default_client.get_llamaindex_llm()
-Settings.embed_model = default_client.get_llamaindex_embedding()
-text_splitter = SentenceSplitter()
-Settings.text_splitter = text_splitter
-Settings.prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap_ratio)
+
+def _get_default_client():
+    """Return the default LLM client, creating it on first use."""
+    global _default_client
+    if _default_client is None:
+        _default_client = get_client(
+            provider=config.default_analyzers_provider,
+            model_tier=config.default_analyzers_tier,
+        )
+    return _default_client
 
 example_qs = []
 summary = "No Summary available yet"
 example_queries = config.example_queries
-summary_template = PromptTemplate(sum_template)
-example_template = PromptTemplate(eg_template)
-qa_template = PromptTemplate(ques_template)
 
 UPLOAD_FOLDER = config.UPLOAD_FOLDER
 SUMMARY_FOLDER = config.SUMMARY_FOLDER
@@ -77,11 +74,14 @@ if not os.path.exists(VECTOR_FOLDER):
 
 
 def clearallfiles():
-    """Clear all files in the upload folder"""
-    for root, dirs, files in os.walk(UPLOAD_FOLDER):
-        for file in files:
-            file_path = os.path.join(root, file)
-            os.remove(file_path)
+    """Clear all files in upload, vector, and summary folders."""
+    for folder in (UPLOAD_FOLDER, VECTOR_FOLDER, SUMMARY_FOLDER):
+        if not os.path.exists(folder):
+            continue
+        for root, dirs, files in os.walk(folder):
+            for file in files:
+                file_path = os.path.join(root, file)
+                os.remove(file_path)
 
 
 def fileformatvaliditycheck(files):
@@ -95,15 +95,35 @@ def fileformatvaliditycheck(files):
 
 
 def build_index():
-    """Build vector and summary indexes from uploaded documents"""
-    documents = SimpleDirectoryReader(UPLOAD_FOLDER).load_data()
-    questionindex = VectorStoreIndex.from_documents(documents)
-    questionindex.set_index_id("vector_index")
-    questionindex.storage_context.persist(persist_dir=VECTOR_FOLDER)
+    """Build vector index from uploaded documents using SimpleVectorStore"""
+    documents = read_documents_from_directory(UPLOAD_FOLDER)
 
-    summaryindex = SummaryIndex.from_documents(documents)
-    summaryindex.set_index_id("summary_index")
-    summaryindex.storage_context.persist(persist_dir=SUMMARY_FOLDER)
+    # Chunk documents for vector search
+    chunked_docs = []
+    for doc in documents:
+        chunks = chunk_text(doc.text, chunk_size=1024, overlap=200)
+        for i, chunk in enumerate(chunks):
+            chunked_docs.append(Document(
+                text=chunk,
+                metadata={**doc.metadata, "chunk_index": i}
+            ))
+
+    # Purge existing vector store to avoid stale vectors from previous uploads
+    for f in os.listdir(VECTOR_FOLDER):
+        os.remove(os.path.join(VECTOR_FOLDER, f))
+
+    # Build vector store with embeddings
+    client = _get_default_client()
+    SimpleVectorStore.from_documents(
+        chunked_docs,
+        persist_dir=VECTOR_FOLDER,
+        embed_fn=client.get_embedding
+    )
+
+    # Save raw text for full-context operations (summaries, examples)
+    all_text = "\n\n".join(doc.text for doc in documents)
+    with open(os.path.join(SUMMARY_FOLDER, "full_text.txt"), "w") as f:
+        f.write(all_text)
 
 
 def summary_generator():
@@ -111,7 +131,7 @@ def summary_generator():
     try:
         summary = ask_fromfullcontext(
             "Generate a concise, high-level executive summary of the input context.",
-            summary_template
+            sum_template
         ).lstrip('\n')
         print(f"Summary generated successfully, length: {len(summary) if summary else 0}")
     except Exception as e:
@@ -125,7 +145,7 @@ def example_generator():
     try:
         llmresponse = ask_fromfullcontext(
             "Generate upto 8 questions. Output must be a valid python literal formatted as a list of lists, where each inner list contains only one question in string format enclosed in double quotes and square braces. It must be compatible for postprocessing with ast.literal_eval",
-            example_template
+            eg_template
         ).lstrip('\n')
 
         # Check if the response is wrapped in a code block
@@ -140,24 +160,29 @@ def example_generator():
 
 
 def ask_fromfullcontext(question, fullcontext_template):
-    """Query the summary index with a question"""
-    storage_context = StorageContext.from_defaults(persist_dir=SUMMARY_FOLDER)
-    summary_index = load_index_from_storage(storage_context, index_id="summary_index")
-    retriever = summary_index.as_retriever(retriever_mode="default")
-    response_synthesizer = get_response_synthesizer(
-        llm=Settings.llm,  # Explicitly pass the LLM from Settings
-        response_mode="tree_summarize",
-        summary_template=fullcontext_template,
+    """Query the full document context with a question using direct LLM call"""
+    full_text_path = os.path.join(SUMMARY_FOLDER, "full_text.txt")
+    if not os.path.exists(full_text_path):
+        return "No documents indexed yet."
+
+    with open(full_text_path, "r") as f:
+        context = f.read()
+
+    # Truncate context to stay within model context limits
+    if max_input_size and len(context) > max_input_size:
+        context = context[:max_input_size]
+
+    # Format the prompt template with context and question
+    prompt = fullcontext_template.format(context_str=context, query_str=question)
+
+    # Direct LLM call instead of LlamaIndex query engine
+    response = _get_default_client().chat_completion(
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens
     )
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=response_synthesizer,
-    )
-    response = query_engine.query(question)
-    answer = response.response
-    if not answer:
-        logging.warning("Empty response from query engine")
-    return answer
+
+    return response if response else ""
 
 
 # ========== YouTube Video Analysis ==========
@@ -246,7 +271,7 @@ def analyze_ytvideo(url, memorize, lite_mode=False, model_name="LITELLM"):
             "video_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, video_title = process_video(url, memorize, lite_mode)
-    
+
     memory_status = "Memory upload skipped"
     if memorize and summary:
         try:
@@ -316,7 +341,7 @@ def analyze_file(files, memorize, model_name="LITELLM"):
             "file_memoryupload_status": "Memory upload skipped"
         }
     message, summary, example_queries, file_title = process_files(files, memorize)
-    
+
     memory_status = "Memory upload skipped"
     if memorize and summary:
         try:
@@ -565,8 +590,5 @@ def analyze_media(url, memorize, model_name="LITELLM"):
         "media_title": media_title,
         "media_memoryupload_status": memory_status
     }
-    
+
     return results
-
-
-# Note: upload_data_to_supabase function has been removed as Supabase is no longer used

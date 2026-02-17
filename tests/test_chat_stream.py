@@ -1,11 +1,19 @@
 """
 Unit tests for helper_functions/chat_stream.py
-Tests for preparing chat streaming with LlamaIndex
+Tests for preparing chat streaming with SimpleVectorStore and UnifiedLLMClient
 """
 import os
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from llama_index.core import Settings as LlamaSettings
+from unittest.mock import Mock, MagicMock, patch, call
+
+
+@pytest.fixture(autouse=True)
+def reset_settings():
+    """Override conftest reset_settings and clear the store cache between tests."""
+    from helper_functions import chat_stream
+    chat_stream._store_cache.clear()
+    yield
+    chat_stream._store_cache.clear()
 
 
 class TestPrepareChatStream:
@@ -17,17 +25,14 @@ class TestPrepareChatStream:
         vector_folder = tmp_path / "vector"
         vector_folder.mkdir()
         # Create some mock files to simulate existing index
-        (vector_folder / "docstore.json").write_text("{}")
-        (vector_folder / "index_store.json").write_text("{}")
+        (vector_folder / "index.json").write_text("{}")
+        (vector_folder / "embeddings.json").write_text("{}")
         return str(vector_folder)
 
     @pytest.fixture
     def mock_qa_template(self):
-        """Create a mock QA template"""
-        from llama_index.core import PromptTemplate
-        return PromptTemplate(
-            "Context: {context_str}\nQuestion: {query_str}\nAnswer:"
-        )
+        """Create a plain string QA template"""
+        return "Context: {context_str}\nQuestion: {query_str}\nAnswer:"
 
     @pytest.fixture
     def mock_parse_model_func(self):
@@ -41,16 +46,10 @@ class TestPrepareChatStream:
                 return ("litellm", "smart", model_name)
         return parser
 
-    @patch('helper_functions.chat_stream.LlamaSettings')
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
     @patch('helper_functions.chat_stream.get_client')
-    @patch('helper_functions.chat_stream.get_response_synthesizer')
-    @patch('helper_functions.chat_stream.VectorIndexRetriever')
-    @patch('helper_functions.chat_stream.RetrieverQueryEngine')
     def test_prepare_chat_stream_litellm_provider(
-        self, mock_engine_cls, mock_retriever_cls, mock_synthesizer,
-        mock_get_client, mock_storage_ctx, mock_load_index, mock_settings,
+        self, mock_get_client, mock_vector_store_cls,
         mock_vector_folder, mock_qa_template, mock_parse_model_func
     ):
         """Test prepare_chat_stream with LiteLLM provider"""
@@ -58,23 +57,18 @@ class TestPrepareChatStream:
 
         # Setup mocks
         mock_client = Mock()
-        mock_llm = Mock()
-        mock_embed = Mock()
-        mock_client.get_llamaindex_llm.return_value = mock_llm
-        mock_client.get_llamaindex_embedding.return_value = mock_embed
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(["chunk1", "chunk2"])
         mock_get_client.return_value = mock_client
 
-        mock_index = Mock()
-        mock_load_index.return_value = mock_index
+        mock_result1 = Mock()
+        mock_result1.text = "Document chunk 1"
+        mock_result2 = Mock()
+        mock_result2.text = "Document chunk 2"
 
-        mock_retriever = Mock()
-        mock_retriever_cls.return_value = mock_retriever
-
-        mock_response = Mock()
-        mock_response.response_gen = iter(["chunk1", "chunk2"])
-        mock_engine = Mock()
-        mock_engine.query.return_value = mock_response
-        mock_engine_cls.return_value = mock_engine
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result1, mock_result2]
+        mock_vector_store_cls.return_value = mock_store
 
         # Execute
         response = prepare_chat_stream(
@@ -89,19 +83,16 @@ class TestPrepareChatStream:
         mock_get_client.assert_called_once_with(
             provider="litellm", model_tier="smart", model_name="test-litellm-model"
         )
-        mock_engine.query.assert_called_once_with("What is AI?")
-        assert response == mock_response
+        mock_vector_store_cls.assert_called_once_with(
+            persist_dir=mock_vector_folder, embed_fn=mock_client.get_embedding
+        )
+        mock_store.search.assert_called_once_with("What is AI?", top_k=10)
+        assert hasattr(response, 'response_gen')
 
-    @patch('helper_functions.chat_stream.LlamaSettings')
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
     @patch('helper_functions.chat_stream.get_client')
-    @patch('helper_functions.chat_stream.get_response_synthesizer')
-    @patch('helper_functions.chat_stream.VectorIndexRetriever')
-    @patch('helper_functions.chat_stream.RetrieverQueryEngine')
     def test_prepare_chat_stream_ollama_provider(
-        self, mock_engine_cls, mock_retriever_cls, mock_synthesizer,
-        mock_get_client, mock_storage_ctx, mock_load_index, mock_settings,
+        self, mock_get_client, mock_vector_store_cls,
         mock_vector_folder, mock_qa_template, mock_parse_model_func
     ):
         """Test prepare_chat_stream with Ollama provider"""
@@ -109,22 +100,15 @@ class TestPrepareChatStream:
 
         # Setup mocks
         mock_client = Mock()
-        mock_llm = Mock()
-        mock_embed = Mock()
-        mock_client.get_llamaindex_llm.return_value = mock_llm
-        mock_client.get_llamaindex_embedding.return_value = mock_embed
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(["chunk1", "chunk2"])
         mock_get_client.return_value = mock_client
 
-        mock_index = Mock()
-        mock_load_index.return_value = mock_index
-
-        mock_retriever = Mock()
-        mock_retriever_cls.return_value = mock_retriever
-
-        mock_response = Mock()
-        mock_engine = Mock()
-        mock_engine.query.return_value = mock_response
-        mock_engine_cls.return_value = mock_engine
+        mock_result = Mock()
+        mock_result.text = "Some relevant content"
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result]
+        mock_vector_store_cls.return_value = mock_store
 
         # Execute
         response = prepare_chat_stream(
@@ -139,25 +123,26 @@ class TestPrepareChatStream:
         mock_get_client.assert_called_once_with(
             provider="ollama", model_tier="smart", model_name="test-ollama-model"
         )
-        assert response == mock_response
+        assert hasattr(response, 'response_gen')
 
     def test_prepare_chat_stream_missing_index(
         self, mock_qa_template, mock_parse_model_func, tmp_path
     ):
-        """Test prepare_chat_stream raises error when index doesn't exist"""
+        """Test prepare_chat_stream raises error when index doesn't exist (empty folder)"""
         from helper_functions.chat_stream import prepare_chat_stream
 
         empty_folder = str(tmp_path / "empty_vector")
         os.makedirs(empty_folder, exist_ok=True)
 
-        with pytest.raises(Exception) as excinfo:
-            prepare_chat_stream(
-                question="Test question",
-                model_name="LITELLM_SMART",
-                vector_folder=empty_folder,
-                qa_template=mock_qa_template,
-                parse_model_name_func=mock_parse_model_func
-            )
+        with patch('helper_functions.chat_stream.get_client'):
+            with pytest.raises(Exception) as excinfo:
+                prepare_chat_stream(
+                    question="Test question",
+                    model_name="LITELLM_SMART",
+                    vector_folder=empty_folder,
+                    qa_template=mock_qa_template,
+                    parse_model_name_func=mock_parse_model_func
+                )
 
         assert "Index not found" in str(excinfo.value) or "not found" in str(excinfo.value).lower()
 
@@ -169,81 +154,36 @@ class TestPrepareChatStream:
 
         nonexistent_folder = str(tmp_path / "nonexistent")
 
-        with pytest.raises(Exception):
-            prepare_chat_stream(
-                question="Test question",
-                model_name="LITELLM_SMART",
-                vector_folder=nonexistent_folder,
-                qa_template=mock_qa_template,
-                parse_model_name_func=mock_parse_model_func
-            )
+        with patch('helper_functions.chat_stream.get_client'):
+            with pytest.raises(Exception) as excinfo:
+                prepare_chat_stream(
+                    question="Test question",
+                    model_name="LITELLM_SMART",
+                    vector_folder=nonexistent_folder,
+                    qa_template=mock_qa_template,
+                    parse_model_name_func=mock_parse_model_func
+                )
+            assert "not found" in str(excinfo.value).lower() or "Index" in str(excinfo.value)
 
-    @patch('helper_functions.chat_stream.LlamaSettings')
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
     @patch('helper_functions.chat_stream.get_client')
-    @patch('helper_functions.chat_stream.get_response_synthesizer')
-    @patch('helper_functions.chat_stream.VectorIndexRetriever')
-    @patch('helper_functions.chat_stream.RetrieverQueryEngine')
-    def test_prepare_chat_stream_restores_settings(
-        self, mock_engine_cls, mock_retriever_cls, mock_synthesizer,
-        mock_get_client, mock_storage_ctx, mock_load_index, mock_settings,
+    def test_prepare_chat_stream_search_top_k(
+        self, mock_get_client, mock_vector_store_cls,
         mock_vector_folder, mock_qa_template, mock_parse_model_func
     ):
-        """Test that original LlamaSettings are restored after stream preparation"""
-        from helper_functions.chat_stream import prepare_chat_stream
-
-        # Setup mocks
-        mock_client = Mock()
-        mock_client.get_llamaindex_llm.return_value = Mock()
-        mock_client.get_llamaindex_embedding.return_value = Mock()
-        mock_get_client.return_value = mock_client
-
-        mock_load_index.return_value = Mock()
-        mock_retriever_cls.return_value = Mock()
-
-        mock_engine = Mock()
-        mock_engine.query.return_value = Mock()
-        mock_engine_cls.return_value = mock_engine
-
-        # Execute
-        prepare_chat_stream(
-            question="Test question",
-            model_name="LITELLM_SMART",
-            vector_folder=mock_vector_folder,
-            qa_template=mock_qa_template,
-            parse_model_name_func=mock_parse_model_func
-        )
-
-        # Settings should be restored - verify llm was set
-        assert mock_settings.llm is not None
-
-    @patch('helper_functions.chat_stream.LlamaSettings')
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
-    @patch('helper_functions.chat_stream.get_client')
-    @patch('helper_functions.chat_stream.get_response_synthesizer')
-    @patch('helper_functions.chat_stream.VectorIndexRetriever')
-    @patch('helper_functions.chat_stream.RetrieverQueryEngine')
-    def test_prepare_chat_stream_retriever_config(
-        self, mock_engine_cls, mock_retriever_cls, mock_synthesizer,
-        mock_get_client, mock_storage_ctx, mock_load_index, mock_settings,
-        mock_vector_folder, mock_qa_template, mock_parse_model_func
-    ):
-        """Test that retriever is configured with correct top_k"""
+        """Test that vector store search is called with top_k=10"""
         from helper_functions.chat_stream import prepare_chat_stream
 
         mock_client = Mock()
-        mock_client.get_llamaindex_llm.return_value = Mock()
-        mock_client.get_llamaindex_embedding.return_value = Mock()
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(["chunk"])
         mock_get_client.return_value = mock_client
 
-        mock_index = Mock()
-        mock_load_index.return_value = mock_index
-
-        mock_engine = Mock()
-        mock_engine.query.return_value = Mock()
-        mock_engine_cls.return_value = mock_engine
+        mock_result = Mock()
+        mock_result.text = "Some context"
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result]
+        mock_vector_store_cls.return_value = mock_store
 
         prepare_chat_stream(
             question="Test",
@@ -253,40 +193,32 @@ class TestPrepareChatStream:
             parse_model_name_func=mock_parse_model_func
         )
 
-        # Check retriever was created with index and top_k=10
-        mock_retriever_cls.assert_called_once()
-        call_kwargs = mock_retriever_cls.call_args[1]
-        assert call_kwargs['index'] == mock_index
-        assert call_kwargs['similarity_top_k'] == 10
+        # Check search was called with top_k=10
+        mock_store.search.assert_called_once_with("Test", top_k=10)
 
-    @patch('helper_functions.chat_stream.LlamaSettings')
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
     @patch('helper_functions.chat_stream.get_client')
-    @patch('helper_functions.chat_stream.get_response_synthesizer')
-    @patch('helper_functions.chat_stream.VectorIndexRetriever')
-    @patch('helper_functions.chat_stream.RetrieverQueryEngine')
-    def test_prepare_chat_stream_streaming_enabled(
-        self, mock_engine_cls, mock_retriever_cls, mock_synthesizer,
-        mock_get_client, mock_storage_ctx, mock_load_index, mock_settings,
+    def test_prepare_chat_stream_streaming_behavior(
+        self, mock_get_client, mock_vector_store_cls,
         mock_vector_folder, mock_qa_template, mock_parse_model_func
     ):
-        """Test that response synthesizer is configured with streaming=True"""
+        """Test that streaming is enabled and response_gen yields chunks"""
         from helper_functions.chat_stream import prepare_chat_stream
 
+        expected_chunks = ["Hello", " world", "!"]
+
         mock_client = Mock()
-        mock_client.get_llamaindex_llm.return_value = Mock()
-        mock_client.get_llamaindex_embedding.return_value = Mock()
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(expected_chunks)
         mock_get_client.return_value = mock_client
 
-        mock_load_index.return_value = Mock()
-        mock_retriever_cls.return_value = Mock()
+        mock_result = Mock()
+        mock_result.text = "Some context"
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result]
+        mock_vector_store_cls.return_value = mock_store
 
-        mock_engine = Mock()
-        mock_engine.query.return_value = Mock()
-        mock_engine_cls.return_value = mock_engine
-
-        prepare_chat_stream(
+        response = prepare_chat_stream(
             question="Test",
             model_name="LITELLM_SMART",
             vector_folder=mock_vector_folder,
@@ -294,45 +226,86 @@ class TestPrepareChatStream:
             parse_model_name_func=mock_parse_model_func
         )
 
-        # Check synthesizer was created with streaming=True
-        mock_synthesizer.assert_called_once()
-        call_kwargs = mock_synthesizer.call_args[1]
-        assert call_kwargs['streaming'] is True
+        # stream_chat_completion should have been called
+        mock_client.stream_chat_completion.assert_called_once()
 
-    @patch('helper_functions.chat_stream.load_index_from_storage')
-    @patch('helper_functions.chat_stream.StorageContext')
-    def test_prepare_chat_stream_non_litellm_ollama_provider(
-        self, mock_storage_ctx, mock_load_index,
+        # Verify response_gen yields chunks
+        chunks = list(response.response_gen)
+        assert chunks == expected_chunks
+
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
+    @patch('helper_functions.chat_stream.get_client')
+    def test_prepare_chat_stream_prompt_formatting(
+        self, mock_get_client, mock_vector_store_cls,
+        mock_vector_folder, mock_qa_template, mock_parse_model_func
+    ):
+        """Test that the prompt is correctly formatted with context and question"""
+        from helper_functions.chat_stream import prepare_chat_stream
+
+        mock_client = Mock()
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(["answer"])
+        mock_get_client.return_value = mock_client
+
+        mock_result1 = Mock()
+        mock_result1.text = "First chunk"
+        mock_result2 = Mock()
+        mock_result2.text = "Second chunk"
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result1, mock_result2]
+        mock_vector_store_cls.return_value = mock_store
+
+        prepare_chat_stream(
+            question="What is AI?",
+            model_name="LITELLM_SMART",
+            vector_folder=mock_vector_folder,
+            qa_template=mock_qa_template,
+            parse_model_name_func=mock_parse_model_func
+        )
+
+        # Verify the prompt was formatted correctly
+        call_args = mock_client.stream_chat_completion.call_args
+        _, kwargs = call_args
+        messages = kwargs['messages']
+        prompt_content = messages[0]["content"]
+
+        expected_context = "First chunk\n\nSecond chunk"
+        assert expected_context in prompt_content
+        assert "What is AI?" in prompt_content
+
+    @patch('helper_functions.chat_stream.SimpleVectorStore')
+    @patch('helper_functions.chat_stream.get_client')
+    def test_prepare_chat_stream_gemini_provider(
+        self, mock_get_client, mock_vector_store_cls,
         mock_vector_folder, mock_qa_template
     ):
-        """Test prepare_chat_stream with non-litellm/ollama provider"""
+        """Test prepare_chat_stream with a non-litellm/ollama provider (gemini)"""
         from helper_functions.chat_stream import prepare_chat_stream
 
         def gemini_parser(model_name):
             return ("gemini", "smart", "test-gemini-model")
 
-        mock_index = Mock()
-        mock_load_index.return_value = mock_index
+        mock_client = Mock()
+        mock_client.get_embedding = Mock()
+        mock_client.stream_chat_completion.return_value = iter(["response"])
+        mock_get_client.return_value = mock_client
 
-        with patch('helper_functions.chat_stream.get_response_synthesizer') as mock_synth, \
-             patch('helper_functions.chat_stream.VectorIndexRetriever') as mock_ret, \
-             patch('helper_functions.chat_stream.RetrieverQueryEngine') as mock_eng:
+        mock_result = Mock()
+        mock_result.text = "Some context"
+        mock_store = Mock()
+        mock_store.search.return_value = [mock_result]
+        mock_vector_store_cls.return_value = mock_store
 
-            mock_ret.return_value = Mock()
-            mock_engine = Mock()
-            mock_engine.query.return_value = Mock()
-            mock_eng.return_value = mock_engine
+        response = prepare_chat_stream(
+            question="Test",
+            model_name="GEMINI",
+            vector_folder=mock_vector_folder,
+            qa_template=mock_qa_template,
+            parse_model_name_func=gemini_parser
+        )
 
-            # For non-litellm/ollama providers, get_client should NOT be called
-            with patch('helper_functions.chat_stream.get_client') as mock_get_client:
-                response = prepare_chat_stream(
-                    question="Test",
-                    model_name="GEMINI",
-                    vector_folder=mock_vector_folder,
-                    qa_template=mock_qa_template,
-                    parse_model_name_func=gemini_parser
-                )
-
-                # get_client should not be called for gemini
-                mock_get_client.assert_not_called()
-
+        # get_client should be called for all providers now
+        mock_get_client.assert_called_once_with(
+            provider="gemini", model_tier="smart", model_name="test-gemini-model"
+        )
+        assert hasattr(response, 'response_gen')

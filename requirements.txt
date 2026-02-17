@@ -2,9 +2,7 @@
 gradio
 requests
 openai
-llama-index
-llama-index-llms-openai
-llama-index-embeddings-openai
+pypdf                # PDF text extraction (lightweight replacement for llama-index readers)
 newspaper3k
 beautifulsoup4
 aiohttp
