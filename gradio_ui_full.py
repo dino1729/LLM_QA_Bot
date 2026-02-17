@@ -225,8 +225,8 @@ def parse_model_name(model_name):
         # Use configured fallback provider and tier
         return config.default_parse_fallback_provider, config.default_parse_fallback_tier, None
 
-async def set_model_context(model_name: str):
-    """Set the LLM model for the current session (Thread/Async safe wrapper).
+def set_model_context(model_name: str):
+    """Log the model context for the current request.
     No-op after LlamaIndex removal - model context is now per-request."""
     provider, tier, actual_model = parse_model_name(model_name)
     logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
@@ -369,7 +369,7 @@ async def endpoint_analyze_file(
     model_name: str = Form(config.default_analyze_model_name)
 ):
     async with api_lock:
-        await set_model_context(model_name)
+        set_model_context(model_name)
         
         tmp_dir = tempfile.mkdtemp()
         file_objs = []
@@ -403,19 +403,19 @@ async def endpoint_analyze_file(
 @app.post("/api/analyze/youtube")
 async def endpoint_analyze_youtube(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_ytvideo(req.url, req.memorize)
 
 @app.post("/api/analyze/article")
 async def endpoint_analyze_article(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_article(req.url, req.memorize)
 
 @app.post("/api/analyze/media")
 async def endpoint_analyze_media(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_media(req.url, req.memorize)
 
 @app.post("/api/docqa/reset")
@@ -466,7 +466,7 @@ async def endpoint_chat_internet(req: InternetChatRequest):
 @app.post("/api/memory_palace/save")
 async def endpoint_memory_save(req: MemorySaveRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             result = save_memory(
                 title=req.title,
@@ -486,7 +486,7 @@ async def endpoint_memory_search(req: MemorySearchRequest):
     # but VectorIndexRetriever might trigger embedding generation for the query.
     # So we should lock and set context.
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             results = search_memories(
                 query=req.query,
@@ -501,7 +501,7 @@ async def endpoint_memory_search(req: MemorySearchRequest):
 @app.post("/api/memory_palace/ask_stream")
 async def endpoint_memory_ask_stream(req: MemoryChatRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             response = prepare_memory_stream(
                 message=req.message,
@@ -580,7 +580,7 @@ async def endpoint_archive_search(req: ArchiveSearchRequest):
     from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
 
     async with api_lock:
-        await set_model_context(config.default_memory_model_name)
+        set_model_context(config.default_memory_model_name)
         db = KnowledgeArchiveDB()
         results = db.find_similar(req.query, top_k=req.top_k)
 
@@ -698,11 +698,17 @@ async def endpoint_image_upload(file: UploadFile = File(...)):
     # Save uploaded image for editing
     if not os.path.exists("data/uploads"):
         os.makedirs("data/uploads")
-    
-    file_path = f"data/uploads/{file.filename}"
+
+    # Sanitize filename to prevent path traversal (mirrors endpoint_analyze_file)
+    raw_name = os.path.basename(file.filename) if file.filename else "upload"
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
+    if not safe_name or safe_name.strip('.') == '':
+        safe_name = "upload"
+    unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    file_path = os.path.join("data/uploads", unique_filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
+
     return {"file_path": file_path}
 
 @app.post("/api/image/enhance")

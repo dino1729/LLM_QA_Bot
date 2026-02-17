@@ -3,7 +3,7 @@ Tests for the Knowledge Archive Database module.
 
 Tests cover:
 - Pydantic model validation
-- LlamaIndex CRUD operations
+- SimpleVectorStore CRUD operations
 - URL-based deduplication
 - Semantic search
 - Statistics and listing

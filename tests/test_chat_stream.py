@@ -9,8 +9,11 @@ from unittest.mock import Mock, MagicMock, patch, call
 
 @pytest.fixture(autouse=True)
 def reset_settings():
-    """Override conftest reset_settings to remove LlamaIndex dependency for this module."""
+    """Override conftest reset_settings and clear the store cache between tests."""
+    from helper_functions import chat_stream
+    chat_stream._store_cache.clear()
     yield
+    chat_stream._store_cache.clear()
 
 
 class TestPrepareChatStream:
@@ -152,7 +155,7 @@ class TestPrepareChatStream:
         nonexistent_folder = str(tmp_path / "nonexistent")
 
         with patch('helper_functions.chat_stream.get_client'):
-            with pytest.raises(Exception):
+            with pytest.raises(Exception) as excinfo:
                 prepare_chat_stream(
                     question="Test question",
                     model_name="LITELLM_SMART",
@@ -160,6 +163,7 @@ class TestPrepareChatStream:
                     qa_template=mock_qa_template,
                     parse_model_name_func=mock_parse_model_func
                 )
+            assert "not found" in str(excinfo.value).lower() or "Index" in str(excinfo.value)
 
     @patch('helper_functions.chat_stream.SimpleVectorStore')
     @patch('helper_functions.chat_stream.get_client')
@@ -175,8 +179,10 @@ class TestPrepareChatStream:
         mock_client.stream_chat_completion.return_value = iter(["chunk"])
         mock_get_client.return_value = mock_client
 
+        mock_result = Mock()
+        mock_result.text = "Some context"
         mock_store = Mock()
-        mock_store.search.return_value = []
+        mock_store.search.return_value = [mock_result]
         mock_vector_store_cls.return_value = mock_store
 
         prepare_chat_stream(
@@ -258,8 +264,9 @@ class TestPrepareChatStream:
         )
 
         # Verify the prompt was formatted correctly
-        call_kwargs = mock_client.stream_chat_completion.call_args
-        messages = call_kwargs[1].get('messages') or call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1]['messages']
+        call_args = mock_client.stream_chat_completion.call_args
+        _, kwargs = call_args
+        messages = kwargs['messages']
         prompt_content = messages[0]["content"]
 
         expected_context = "First chunk\n\nSecond chunk"
@@ -283,8 +290,10 @@ class TestPrepareChatStream:
         mock_client.stream_chat_completion.return_value = iter(["response"])
         mock_get_client.return_value = mock_client
 
+        mock_result = Mock()
+        mock_result.text = "Some context"
         mock_store = Mock()
-        mock_store.search.return_value = []
+        mock_store.search.return_value = [mock_result]
         mock_vector_store_cls.return_value = mock_store
 
         response = prepare_chat_stream(

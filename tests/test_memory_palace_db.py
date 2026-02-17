@@ -3,7 +3,7 @@ Tests for the Memory Palace Database module.
 
 Tests cover:
 - Pydantic model validation
-- LlamaIndex CRUD operations
+- SimpleVectorStore CRUD operations
 - Duplicate detection
 - Recency tracking
 - LLM distillation
@@ -324,9 +324,9 @@ class TestMemoryPalaceDB:
         )
         db.add_lesson(lesson)
 
-        # Mock find_similar to return low similarity (below 0.75 threshold)
-        # This is needed because LlamaIndex's test embedding model returns
-        # constant vectors, resulting in similarity scores of 1.0
+        # Mock find_similar to force a low similarity score (below 0.75 threshold)
+        # because the test embedding mock returns constant vectors, making all
+        # similarity scores 1.0
         with patch.object(db, 'find_similar') as mock_find_similar:
             mock_find_similar.return_value = [
                 SimilarLesson(lesson=lesson, similarity_score=0.4)

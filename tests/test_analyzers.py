@@ -2,14 +2,16 @@
 Unit tests for helper_functions/analyzers.py
 Tests for content analysis functions for files, videos, articles, and media
 """
+import importlib
 import os
 import pytest
 from unittest.mock import Mock, MagicMock, patch, mock_open
 
-# Mock get_client before importing analyzers to prevent module-level
-# initialization from failing when config has empty provider values
+# Temporarily patch get_client only during module import to prevent the
+# module-level get_client() call from failing when config has empty provider
+# values.  The mock is removed once the import completes.
 with patch('helper_functions.llm_client.get_client', return_value=Mock()):
-    from helper_functions import analyzers
+    analyzers = importlib.import_module('helper_functions.analyzers')
 
 
 class TestClearAllFiles:
@@ -140,10 +142,11 @@ class TestBuildIndex:
     @patch('helper_functions.analyzers.SimpleVectorStore')
     @patch('helper_functions.analyzers.read_documents_from_directory')
     def test_build_index_with_empty_folder(self, mock_read_docs, mock_vector_store,
-                                           temp_upload_folder, temp_summary_folder, monkeypatch):
+                                           temp_upload_folder, temp_vector_folder,
+                                           temp_summary_folder, monkeypatch):
         """Test building index with empty folder"""
         monkeypatch.setattr(analyzers, 'UPLOAD_FOLDER', temp_upload_folder)
-        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_upload_folder)
+        monkeypatch.setattr(analyzers, 'VECTOR_FOLDER', temp_vector_folder)
         monkeypatch.setattr(analyzers, 'SUMMARY_FOLDER', temp_summary_folder)
         mock_read_docs.return_value = []
         mock_vector_store.from_documents.return_value = Mock()
@@ -237,7 +240,8 @@ class TestAskFromFullContext:
         # Verify chat_completion was called with the formatted prompt
         mock_client.chat_completion.assert_called_once()
         call_args = mock_client.chat_completion.call_args
-        messages = call_args[1].get('messages') or call_args[0][0] if call_args[0] else call_args[1]['messages']
+        _, kwargs = call_args
+        messages = kwargs.get('messages') or call_args[0][0]
         prompt_content = messages[0]['content']
         assert "This is the document context for testing." in prompt_content
         assert "Test question" in prompt_content

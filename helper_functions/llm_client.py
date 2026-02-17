@@ -2,9 +2,12 @@
 Unified LLM Client for LiteLLM and Ollama
 Provides a consistent interface for interacting with different LLM providers
 """
+import logging
 from openai import OpenAI
 from typing import List, Optional
 from config import config
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedLLMClient:
@@ -81,9 +84,10 @@ class UnifiedLLMClient:
         )
 
         # Log the model being used for debugging
-        print(f"  LLM Client initialized: provider={provider}, tier={model_tier}, model={self.model}")
+        logger.info(f"LLM Client initialized: provider={provider}, tier={model_tier}, model={self.model}")
 
-    def _strip_prefix(self, name: str) -> str:
+    @staticmethod
+    def _strip_prefix(name: str) -> str:
         """Strip provider prefix (openai:, ollama:) from model names."""
         if ":" in name:
             return name.split(":", 1)[1]
