@@ -18,344 +18,6 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-class TestCustomOpenAIEmbedding:
-    """Test CustomOpenAIEmbedding class - uses test placeholder model names"""
-
-    def test_initialization(self):
-        """Test CustomOpenAIEmbedding initialization"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="test-embed-model",
-            api_key="test-key",
-            api_base="http://localhost:4000",
-            embed_batch_size=10
-        )
-
-        assert embedding._model_name == "test-embed-model"
-        assert embedding._api_key == "test-key"
-        assert embedding._api_base == "http://localhost:4000"
-        assert embedding._is_asymmetric == False
-
-    def test_asymmetric_model_detection(self):
-        """Test asymmetric model detection (NVIDIA NIM models)"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        # Test NVIDIA NIM model - asymmetric detection is path-based
-        embedding = CustomOpenAIEmbedding(
-            model_name="nvidia/test-asymmetric-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        assert embedding._is_asymmetric == True
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_get_query_embedding(self, mock_openai):
-        """Test get query embedding"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        # Mock OpenAI client
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.1] * 1536)]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="test-embed-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = embedding._get_query_embedding("test query")
-
-        assert len(result) == 1536
-        assert result[0] == 0.1
-        mock_client.embeddings.create.assert_called_once()
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_get_text_embedding(self, mock_openai):
-        """Test get text embedding"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.2] * 1536)]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="test-embed-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = embedding._get_text_embedding("test text")
-
-        assert len(result) == 1536
-        mock_client.embeddings.create.assert_called_once()
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_get_text_embeddings_batch(self, mock_openai):
-        """Test batch text embeddings"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [
-            Mock(embedding=[0.1] * 1536),
-            Mock(embedding=[0.2] * 1536),
-            Mock(embedding=[0.3] * 1536)
-        ]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="test-embed-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = embedding._get_text_embeddings(["text1", "text2", "text3"])
-
-        assert len(result) == 3
-        assert all(len(emb) == 1536 for emb in result)
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_asymmetric_input_type_query(self, mock_openai):
-        """Test asymmetric model with query input_type"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.1] * 1536)]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="nvidia/nv-embedqa-e5-v5",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        embedding._get_query_embedding("test")
-
-        # Verify input_type=query was passed
-        call_kwargs = mock_client.embeddings.create.call_args[1]
-        assert call_kwargs['extra_body']['input_type'] == 'query'
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_asymmetric_input_type_passage(self, mock_openai):
-        """Test asymmetric model with passage input_type"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.1] * 1536)]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="nvidia/nv-embed-v2",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        embedding._get_text_embedding("test")
-
-        # Verify input_type=passage was passed
-        call_kwargs = mock_client.embeddings.create.call_args[1]
-        assert call_kwargs['extra_body']['input_type'] == 'passage'
-
-    @pytest.mark.asyncio
-    @patch('helper_functions.llm_client.OpenAI')
-    async def test_async_get_query_embedding(self, mock_openai):
-        """Test async get query embedding"""
-        from helper_functions.llm_client import CustomOpenAIEmbedding
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.1] * 1536)]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        embedding = CustomOpenAIEmbedding(
-            model_name="test-embed-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = await embedding._aget_query_embedding("test")
-
-        assert len(result) == 1536
-
-
-class TestCustomOpenAILLM:
-    """Test CustomOpenAILLM class"""
-
-    def test_initialization(self):
-        """Test CustomOpenAILLM initialization"""
-        from helper_functions.llm_client import CustomOpenAILLM
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000",
-            temperature=0.7,
-            max_tokens=2000
-        )
-
-        assert llm._model_name == "test-smart-model"
-        assert llm._api_key == "test-key"
-        assert llm._api_base == "http://localhost:4000"
-        assert llm._temperature == 0.7
-        assert llm._max_tokens == 2000
-
-    def test_metadata_property(self):
-        """Test metadata property"""
-        from helper_functions.llm_client import CustomOpenAILLM
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000",
-            max_tokens=2000
-        )
-
-        metadata = llm.metadata
-
-        assert metadata.model_name == "test-smart-model"
-        assert metadata.num_output == 2000
-        assert metadata.context_window == 128000
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_complete(self, mock_openai):
-        """Test complete method"""
-        from helper_functions.llm_client import CustomOpenAILLM
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_message = Mock(content="Test response", reasoning_content=None)
-        mock_response.choices = [Mock(message=mock_message)]
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = llm.complete("Test prompt")
-
-        assert result.text == "Test response"
-        mock_client.chat.completions.create.assert_called_once()
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_complete_reasoning_model(self, mock_openai):
-        """Test complete with reasoning model (o1, o3)"""
-        from helper_functions.llm_client import CustomOpenAILLM
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_message = Mock(content=None, reasoning_content="Reasoning response")
-        mock_response.choices = [Mock(message=mock_message)]
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        llm = CustomOpenAILLM(
-            model_name="o1-preview",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = llm.complete("Test prompt")
-
-        # Should extract reasoning_content
-        assert result.text == "Reasoning response"
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_stream_complete(self, mock_openai):
-        """Test stream complete method"""
-        from helper_functions.llm_client import CustomOpenAILLM
-
-        mock_client = Mock()
-        mock_chunks = [
-            Mock(choices=[Mock(delta=Mock(content="Hello"))]),
-            Mock(choices=[Mock(delta=Mock(content=" world"))]),
-            Mock(choices=[Mock(delta=Mock(content="!"))])
-        ]
-        mock_client.chat.completions.create.return_value = iter(mock_chunks)
-        mock_openai.return_value = mock_client
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        result = llm.stream_complete("Test prompt")
-        chunks = list(result)
-
-        assert len(chunks) == 3
-        assert chunks[-1].text == "Hello world!"
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_chat(self, mock_openai):
-        """Test chat method"""
-        from helper_functions.llm_client import CustomOpenAILLM
-        from llama_index.core.base.llms.types import ChatMessage
-
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_message = Mock(content="Chat response", reasoning_content=None)
-        mock_response.choices = [Mock(message=mock_message)]
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        messages = [
-            ChatMessage(role="user", content="Hello")
-        ]
-        result = llm.chat(messages)
-
-        assert result.message.content == "Chat response"
-        assert result.message.role == "assistant"
-
-    @patch('helper_functions.llm_client.OpenAI')
-    def test_stream_chat(self, mock_openai):
-        """Test stream chat method"""
-        from helper_functions.llm_client import CustomOpenAILLM
-        from llama_index.core.base.llms.types import ChatMessage
-
-        mock_client = Mock()
-        mock_chunks = [
-            Mock(choices=[Mock(delta=Mock(content="Hello"))]),
-            Mock(choices=[Mock(delta=Mock(content=" there"))])
-        ]
-        mock_client.chat.completions.create.return_value = iter(mock_chunks)
-        mock_openai.return_value = mock_client
-
-        llm = CustomOpenAILLM(
-            model_name="test-smart-model",
-            api_key="test-key",
-            api_base="http://localhost:4000"
-        )
-
-        messages = [ChatMessage(role="user", content="Hi")]
-        result = llm.stream_chat(messages)
-        chunks = list(result)
-
-        assert len(chunks) == 2
-        assert chunks[-1].message.content == "Hello there"
-
-
 class TestUnifiedLLMClient:
     """Test UnifiedLLMClient class"""
 
@@ -465,6 +127,114 @@ class TestUnifiedLLMClient:
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
+    def test_chat_completion_reasoning_model(self, mock_openai, mock_config):
+        """Test chat completion with reasoning model (content in reasoning_content)"""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock(content=None, reasoning_content="Reasoning response")
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        messages = [{"role": "user", "content": "Hello"}]
+        result = client.chat_completion(messages)
+
+        assert result == "Reasoning response"
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_chat_completion_empty_response(self, mock_openai, mock_config):
+        """Test chat completion returns empty string when no content"""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock(content=None, reasoning_content=None)
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        messages = [{"role": "user", "content": "Hello"}]
+        result = client.chat_completion(messages)
+
+        assert result == ""
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_stream_chat_completion(self, mock_openai, mock_config):
+        """Test streaming chat completion yields text chunks"""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+
+        mock_client = Mock()
+        mock_chunks = [
+            Mock(choices=[Mock(delta=Mock(content="Hello"))]),
+            Mock(choices=[Mock(delta=Mock(content=" world"))]),
+            Mock(choices=[Mock(delta=Mock(content="!"))]),
+        ]
+        mock_client.chat.completions.create.return_value = iter(mock_chunks)
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        messages = [{"role": "user", "content": "Hi"}]
+        chunks = list(client.stream_chat_completion(messages))
+
+        assert chunks == ["Hello", " world", "!"]
+        # Verify stream=True was passed
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs['stream'] is True
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_stream_chat_completion_skips_empty_chunks(self, mock_openai, mock_config):
+        """Test streaming chat completion skips chunks with no content"""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "test-smart-model"
+
+        mock_client = Mock()
+        mock_chunks = [
+            Mock(choices=[Mock(delta=Mock(content="Hello"))]),
+            Mock(choices=[Mock(delta=Mock(content=None))]),
+            Mock(choices=[Mock(delta=Mock(content=""))]),
+            Mock(choices=[Mock(delta=Mock(content=" world"))]),
+        ]
+        mock_client.chat.completions.create.return_value = iter(mock_chunks)
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        messages = [{"role": "user", "content": "Hi"}]
+        chunks = list(client.stream_chat_completion(messages))
+
+        assert chunks == ["Hello", " world"]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
     def test_get_embedding(self, mock_openai, mock_config):
         """Test get embedding"""
         from helper_functions.llm_client import UnifiedLLMClient
@@ -514,45 +284,53 @@ class TestUnifiedLLMClient:
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
-    def test_get_llamaindex_llm(self, mock_openai, mock_config):
-        """Test get LlamaIndex LLM"""
-        from helper_functions.llm_client import UnifiedLLMClient, CustomOpenAILLM
+    def test_get_embedding_asymmetric_nv_embed(self, mock_openai, mock_config):
+        """Test asymmetric model detection for nv-embed models"""
+        from helper_functions.llm_client import UnifiedLLMClient
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_embedding = "nvidia/nv-embed-v2"
         mock_config.litellm_smart_llm = "test-smart-model"
-        mock_config.temperature = 0.7
-        mock_config.max_tokens = 2000
 
-        mock_openai.return_value = Mock()
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1] * 1536)]
+        mock_client.embeddings.create.return_value = mock_response
+        mock_openai.return_value = mock_client
 
         client = UnifiedLLMClient(provider="litellm", model_tier="smart")
 
-        llm = client.get_llamaindex_llm()
+        client.get_embedding("test passage text", input_type="passage")
 
-        assert isinstance(llm, CustomOpenAILLM)
-        assert llm._model_name == "test-smart-model"
+        # Verify input_type=passage was passed for nv-embed model
+        call_kwargs = mock_client.embeddings.create.call_args[1]
+        assert call_kwargs['extra_body']['input_type'] == 'passage'
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
-    def test_get_llamaindex_embedding(self, mock_openai, mock_config):
-        """Test get LlamaIndex embedding"""
-        from helper_functions.llm_client import UnifiedLLMClient, CustomOpenAIEmbedding
+    def test_get_embedding_non_asymmetric_no_extra_body(self, mock_openai, mock_config):
+        """Test that non-asymmetric models do not send extra_body with input_type"""
+        from helper_functions.llm_client import UnifiedLLMClient
 
         mock_config.litellm_base_url = "http://litellm:4000"
         mock_config.litellm_api_key = "test-key"
-        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_embedding = "text-embedding-ada-002"
         mock_config.litellm_smart_llm = "test-smart-model"
 
-        mock_openai.return_value = Mock()
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1] * 1536)]
+        mock_client.embeddings.create.return_value = mock_response
+        mock_openai.return_value = mock_client
 
         client = UnifiedLLMClient(provider="litellm", model_tier="smart")
 
-        embedding = client.get_llamaindex_embedding()
+        client.get_embedding("test text")
 
-        assert isinstance(embedding, CustomOpenAIEmbedding)
-        assert embedding._model_name == "test-embed-model"
+        # Verify extra_body is empty (no input_type) for non-asymmetric model
+        call_kwargs = mock_client.embeddings.create.call_args[1]
+        assert call_kwargs['extra_body'] == {}
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')

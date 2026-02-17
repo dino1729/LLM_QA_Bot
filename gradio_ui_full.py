@@ -20,6 +20,20 @@ from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
 
+
+def _sanitize_upload_filename(raw_filename: str) -> str:
+    """Sanitize an upload filename to prevent path traversal and collisions.
+
+    1. Extracts basename to strip directory components.
+    2. Keeps only safe characters (letters, numbers, dash, underscore, dot).
+    3. Adds a UUID prefix to avoid filename collisions.
+    """
+    raw_name = os.path.basename(raw_filename) if raw_filename else "upload"
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
+    if not safe_name or safe_name.strip('.') == '':
+        safe_name = "upload"
+    return f"{uuid.uuid4().hex[:8]}_{safe_name}"
+
 # Import helpers
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
@@ -28,17 +42,13 @@ from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze
 from helper_functions.chat_generation import generate_chat
 from helper_functions import gptimage_tool as tool
 from helper_functions.llm_client import get_client, list_available_models
+from helper_functions.vector_store import SimpleVectorStore
 from helper_functions.memory_palace_local import (
     save_memory,
     search_memories,
     prepare_memory_stream,
     reset_memory_palace
 )
-from llama_index.core import Settings as LlamaSettings
-from llama_index.core import StorageContext, load_index_from_storage, get_response_synthesizer
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core import PromptTemplate
 from config import config
 
 # Load env vars
@@ -51,9 +61,9 @@ logger = logging.getLogger(__name__)
 # Constants
 VECTOR_FOLDER = config.VECTOR_FOLDER
 SUMMARY_FOLDER = config.SUMMARY_FOLDER
-qa_template = PromptTemplate(config.ques_template)
+qa_template = config.ques_template  # Plain string template with {context_str} and {query_str}
 
-# Global Lock for LlamaIndex Settings
+# Lock for serializing concurrent API requests
 api_lock = asyncio.Lock()
 
 app = FastAPI(title="LLM QA Bot API")
@@ -229,57 +239,39 @@ def parse_model_name(model_name):
         # Use configured fallback provider and tier
         return config.default_parse_fallback_provider, config.default_parse_fallback_tier, None
 
-async def set_model_context(model_name: str):
-    """Set the LLM model for the current session (Thread/Async safe wrapper)"""
+def set_model_context(model_name: str):
+    """Log the model context for the current request.
+    No-op after LlamaIndex removal - model context is now per-request."""
     provider, tier, actual_model = parse_model_name(model_name)
-    if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
-        LlamaSettings.llm = client.get_llamaindex_llm()
-        LlamaSettings.embed_model = client.get_llamaindex_embedding()
-        logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
+    logger.info(f"Set model context: provider={provider}, tier={tier}, model={actual_model}")
 
 def ask_query(question, model_name=None):
-    """Query the vector index using the specified model"""
-    # Use config default if no model specified
+    """Query the vector index using the specified model via direct RAG"""
     if model_name is None:
         model_name = config.default_chat_model_name
-    # Note: This function runs synchronously as per original logic.
-    # In FastAPI we wrap it or just run it. LlamaIndex is mostly sync.
-    provider, tier, actual_model = parse_model_name(model_name)
 
-    if provider in ["litellm", "ollama"]:
-        client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
-        original_llm = LlamaSettings.llm
-        original_embed = LlamaSettings.embed_model
-        LlamaSettings.llm = client.get_llamaindex_llm()
-        LlamaSettings.embed_model = client.get_llamaindex_embedding()
+    provider, tier, actual_model = parse_model_name(model_name)
+    client = get_client(provider=provider, model_tier=tier, model_name=actual_model)
 
     try:
         if not os.path.exists(VECTOR_FOLDER) or not os.listdir(VECTOR_FOLDER):
-             return "Index not found. Please upload documents first."
+            return "Index not found. Please upload documents first."
 
-        storage_context = StorageContext.from_defaults(persist_dir=VECTOR_FOLDER)
-        vector_index = load_index_from_storage(storage_context, index_id="vector_index")
-        retriever = VectorIndexRetriever(
-            index=vector_index,
-            similarity_top_k=10,
+        # Load vector store and search for relevant chunks
+        store = SimpleVectorStore(persist_dir=VECTOR_FOLDER, embed_fn=client.get_embedding)
+        results = store.search(question, top_k=10)
+        context = "\n\n".join([r.text for r in results])
+
+        # Format prompt and call LLM directly
+        prompt = qa_template.format(context_str=context, query_str=question)
+        answer = client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=config.temperature,
+            max_tokens=config.max_tokens
         )
-        response_synthesizer = get_response_synthesizer(
-            text_qa_template=qa_template,
-        )
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever,
-            response_synthesizer=response_synthesizer,
-        )
-        response = query_engine.query(question)
-        answer = str(response) # response.response
     except Exception as e:
         logger.error(f"Error querying index: {e}")
         return f"Error: {str(e)}"
-    finally:
-        if provider in ["litellm", "ollama"]:
-            LlamaSettings.llm = original_llm
-            LlamaSettings.embed_model = original_embed
 
     return answer
 
@@ -391,24 +383,13 @@ async def endpoint_analyze_file(
     model_name: str = Form(config.default_analyze_model_name)
 ):
     async with api_lock:
-        await set_model_context(model_name)
+        set_model_context(model_name)
         
         tmp_dir = tempfile.mkdtemp()
         file_objs = []
         try:
             for file in files:
-                # Sanitize filename to prevent path traversal attacks:
-                # 1. Extract basename to strip any directory components
-                # 2. Keep only safe characters (letters, numbers, dash, underscore, dot)
-                # 3. Add UUID prefix to avoid filename collisions
-                raw_name = os.path.basename(file.filename) if file.filename else "upload"
-                # Remove any character not in the safe whitelist
-                safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
-                # Ensure we have a valid filename (not empty, not just dots)
-                if not safe_name or safe_name.strip('.') == '':
-                    safe_name = "upload"
-                # Add UUID prefix to ensure uniqueness
-                unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+                unique_filename = _sanitize_upload_filename(file.filename)
                 file_path = os.path.join(tmp_dir, unique_filename)
                 with open(file_path, "wb") as buffer:
                     shutil.copyfileobj(file.file, buffer)
@@ -425,19 +406,19 @@ async def endpoint_analyze_file(
 @app.post("/api/analyze/youtube")
 async def endpoint_analyze_youtube(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_ytvideo(req.url, req.memorize)
 
 @app.post("/api/analyze/article")
 async def endpoint_analyze_article(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_article(req.url, req.memorize)
 
 @app.post("/api/analyze/media")
 async def endpoint_analyze_media(req: AnalyzeUrlRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         return analyze_media(req.url, req.memorize)
 
 @app.post("/api/docqa/reset")
@@ -473,14 +454,7 @@ async def endpoint_ask_stream(req: ChatRequest):
 @app.post("/api/chat/internet")
 async def endpoint_chat_internet(req: InternetChatRequest):
     # Internet connected chatbot handles its own context/history
-    # But it might use global LlamaIndex settings?
-    # helper_functions/chat_generation_with_internet.py uses get_client and Settings.
-    # It seems to set Settings.llm inside the module globally on import, 
-    # but the function `internet_connected_chatbot` doesn't explicitly set them?
-    # Wait, internet_connected_chatbot calls `generate_chat` or `get_web_results`.
-    # `get_web_results` calls `firecrawl_researcher` which calls `conduct_research_firecrawl`.
-    # Let's assume it's safe or we need the lock if it modifies global Settings.
-    # Given the complexity, locking is safer.
+    # Lock for serialization of concurrent requests
     async with api_lock:
         response = internet_connected_chatbot(
             query=req.message,
@@ -495,7 +469,7 @@ async def endpoint_chat_internet(req: InternetChatRequest):
 @app.post("/api/memory_palace/save")
 async def endpoint_memory_save(req: MemorySaveRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             result = save_memory(
                 title=req.title,
@@ -515,7 +489,7 @@ async def endpoint_memory_search(req: MemorySearchRequest):
     # but VectorIndexRetriever might trigger embedding generation for the query.
     # So we should lock and set context.
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             results = search_memories(
                 query=req.query,
@@ -530,7 +504,7 @@ async def endpoint_memory_search(req: MemorySearchRequest):
 @app.post("/api/memory_palace/ask_stream")
 async def endpoint_memory_ask_stream(req: MemoryChatRequest):
     async with api_lock:
-        await set_model_context(req.model_name)
+        set_model_context(req.model_name)
         try:
             response = prepare_memory_stream(
                 message=req.message,
@@ -609,7 +583,7 @@ async def endpoint_archive_search(req: ArchiveSearchRequest):
     from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
 
     async with api_lock:
-        await set_model_context(config.default_memory_model_name)
+        set_model_context(config.default_memory_model_name)
         db = KnowledgeArchiveDB()
         results = db.find_similar(req.query, top_k=req.top_k)
 
@@ -727,11 +701,12 @@ async def endpoint_image_upload(file: UploadFile = File(...)):
     # Save uploaded image for editing
     if not os.path.exists("data/uploads"):
         os.makedirs("data/uploads")
-    
-    file_path = f"data/uploads/{file.filename}"
+
+    unique_filename = _sanitize_upload_filename(file.filename)
+    file_path = os.path.join("data/uploads", unique_filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
+
     return {"file_path": file_path}
 
 @app.post("/api/image/enhance")

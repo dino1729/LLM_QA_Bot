@@ -187,13 +187,8 @@ def mock_unified_llm_client():
     client = Mock()
     client.chat_completion.return_value = "Test response"
     client.get_embedding.return_value = [0.1] * 1536
-    
-    # Mock LlamaIndex objects
-    mock_llm = Mock()
-    mock_embedding = Mock()
-    client.get_llamaindex_llm.return_value = mock_llm
-    client.get_llamaindex_embedding.return_value = mock_embedding
-    
+    client.stream_chat_completion.side_effect = lambda *a, **kw: iter(["Test ", "response"])
+
     return client
 
 
@@ -298,9 +293,5 @@ def mock_supabase_client():
 
 @pytest.fixture(autouse=True)
 def reset_settings():
-    """Reset LlamaIndex Settings after each test"""
+    """No-op after LlamaIndex removal - kept for fixture compatibility."""
     yield
-    # Reset Settings to default after each test
-    from llama_index.core import Settings
-    Settings.llm = None
-    Settings.embed_model = None

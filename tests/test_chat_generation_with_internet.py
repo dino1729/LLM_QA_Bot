@@ -621,15 +621,11 @@ class TestKeywordsConfiguration:
 
 
 class TestSettingsConfiguration:
-    """Tests for LlamaIndex Settings configuration"""
-    
-    def test_settings_initialized(self):
-        """Test that LlamaIndex Settings are initialized"""
-        from llama_index.core import Settings
-        
-        # Settings should have LLM and embed_model configured
-        assert Settings.llm is not None or True  # May be None in test environment
-        assert Settings.embed_model is not None or True
+    """Tests for module configuration"""
+
+    def test_module_imports_successfully(self):
+        """Test that the chat_generation_with_internet module loads without error"""
+        assert chat_generation_with_internet is not None
 
 
 class TestFolderInitialization:
