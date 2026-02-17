@@ -20,6 +20,20 @@ from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
 
+
+def _sanitize_upload_filename(raw_filename: str) -> str:
+    """Sanitize an upload filename to prevent path traversal and collisions.
+
+    1. Extracts basename to strip directory components.
+    2. Keeps only safe characters (letters, numbers, dash, underscore, dot).
+    3. Adds a UUID prefix to avoid filename collisions.
+    """
+    raw_name = os.path.basename(raw_filename) if raw_filename else "upload"
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
+    if not safe_name or safe_name.strip('.') == '':
+        safe_name = "upload"
+    return f"{uuid.uuid4().hex[:8]}_{safe_name}"
+
 # Import helpers
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
 from helper_functions.trip_planner import generate_trip_plan
@@ -375,18 +389,7 @@ async def endpoint_analyze_file(
         file_objs = []
         try:
             for file in files:
-                # Sanitize filename to prevent path traversal attacks:
-                # 1. Extract basename to strip any directory components
-                # 2. Keep only safe characters (letters, numbers, dash, underscore, dot)
-                # 3. Add UUID prefix to avoid filename collisions
-                raw_name = os.path.basename(file.filename) if file.filename else "upload"
-                # Remove any character not in the safe whitelist
-                safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
-                # Ensure we have a valid filename (not empty, not just dots)
-                if not safe_name or safe_name.strip('.') == '':
-                    safe_name = "upload"
-                # Add UUID prefix to ensure uniqueness
-                unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+                unique_filename = _sanitize_upload_filename(file.filename)
                 file_path = os.path.join(tmp_dir, unique_filename)
                 with open(file_path, "wb") as buffer:
                     shutil.copyfileobj(file.file, buffer)
@@ -699,12 +702,7 @@ async def endpoint_image_upload(file: UploadFile = File(...)):
     if not os.path.exists("data/uploads"):
         os.makedirs("data/uploads")
 
-    # Sanitize filename to prevent path traversal (mirrors endpoint_analyze_file)
-    raw_name = os.path.basename(file.filename) if file.filename else "upload"
-    safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
-    if not safe_name or safe_name.strip('.') == '':
-        safe_name = "upload"
-    unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    unique_filename = _sanitize_upload_filename(file.filename)
     file_path = os.path.join("data/uploads", unique_filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)

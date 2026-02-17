@@ -150,7 +150,7 @@ class UnifiedLLMClient:
         )
 
         for chunk in response:
-            if chunk.choices[0].delta.content:
+            if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
     def get_embedding(self, text, input_type="passage"):

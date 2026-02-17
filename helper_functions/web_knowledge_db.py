@@ -269,12 +269,13 @@ class WebKnowledgeDB:
             return True
 
         try:
-            for doc_id, data in self._store.docs.items():
-                if data["metadata"].get("id") == knowledge_id:
-                    expires_at_str = data["metadata"].get("expires_at")
-                    if expires_at_str:
-                        expires_at = datetime.fromisoformat(expires_at_str)
-                        return expires_at < datetime.now()
+            # Direct lookup since add_knowledge uses doc_id=knowledge.id
+            data = self._store._documents.get(knowledge_id)
+            if data is not None:
+                expires_at_str = data["metadata"].get("expires_at")
+                if expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    return expires_at < datetime.now()
             return True  # Not found = stale
         except Exception as e:
             logger.warning(f"Error checking staleness: {e}")
@@ -364,7 +365,7 @@ class WebKnowledgeDB:
                     logger.warning(f"Error parsing document {doc_id}: {e}")
                     continue
         except Exception as e:
-            logger.error(f"Error enumerating store: {e}")
+            logger.exception(f"Error enumerating store: {e}")
 
         return knowledge_list
 

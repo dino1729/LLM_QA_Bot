@@ -216,8 +216,8 @@ class KnowledgeArchiveDB:
             return None
 
         try:
-            if entry_id in self._store.docs:
-                data = self._store.docs[entry_id]
+            data = self._store._documents.get(entry_id)
+            if data is not None:
                 return self._data_to_entry(entry_id, data)
         except Exception as e:
             logger.error(f"Error looking up entry: {e}")
@@ -328,7 +328,7 @@ class KnowledgeArchiveDB:
 
         entries = []
         try:
-            for doc_id, data in self._store.docs.items():
+            for doc_id, data in self._store._documents.items():
                 try:
                     entry = self._data_to_entry(doc_id, data)
                     entries.append(entry)
@@ -336,7 +336,7 @@ class KnowledgeArchiveDB:
                     logger.warning(f"Error parsing document {doc_id}: {e}")
                     continue
         except Exception as e:
-            logger.error(f"Error enumerating store: {e}")
+            logger.exception(f"Error enumerating store: {e}")
 
         return entries
 
@@ -429,12 +429,10 @@ class KnowledgeArchiveDB:
             return False
 
         try:
-            if entry_id not in self._store.docs:
-                return False
-
-            self._store.delete_document(entry_id)
-            logger.info(f"Deleted entry {entry_id[:8]}... from Knowledge Archive")
-            return True
+            deleted = self._store.delete_document(entry_id)
+            if deleted:
+                logger.info(f"Deleted entry {entry_id[:8]}... from Knowledge Archive")
+            return deleted
 
         except Exception as e:
             logger.error(f"Error deleting entry: {e}")
