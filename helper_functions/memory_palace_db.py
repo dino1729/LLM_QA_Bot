@@ -122,6 +122,92 @@ class LessonDistillationResult(BaseModel):
     suggested_tags: List[str] = Field(default_factory=list)
 
 
+def _extract_first_json_object(text: str) -> Optional[str]:
+    """Extract the first balanced JSON object from text."""
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+
+        if ch == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+
+    return None
+
+
+def _build_fallback_distilled_text(raw_input: str, max_chars: int = 400) -> str:
+    """Build a readable fallback summary when LLM JSON parsing fails."""
+    normalized = re.sub(r"\s+", " ", raw_input).strip()
+    normalized = re.sub(r"^(save this lesson)\s*:\s*", "", normalized, flags=re.IGNORECASE)
+
+    if not normalized:
+        return "No lesson content provided."
+
+    if len(normalized) <= max_chars:
+        return normalized
+
+    candidate = normalized[:max_chars + 1]
+    sentence_cutoffs = [candidate.rfind(". "), candidate.rfind("! "), candidate.rfind("? ")]
+    sentence_cutoff = max(sentence_cutoffs)
+
+    if sentence_cutoff >= int(max_chars * 0.6):
+        trimmed = candidate[:sentence_cutoff + 1].strip()
+    else:
+        word_cutoff = candidate.rfind(" ")
+        trimmed = candidate[:word_cutoff].strip() if word_cutoff > 0 else candidate[:max_chars].strip()
+
+    if len(trimmed) > max_chars - 3:
+        trimmed = trimmed[: max_chars - 3].rstrip()
+
+    return f"{trimmed}..."
+
+
+def _parse_distillation_response(response_text: str) -> Dict[str, Any]:
+    """Parse distillation response JSON, tolerating wrapper text."""
+    cleaned = response_text.strip()
+
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        extracted = _extract_first_json_object(cleaned)
+        if not extracted:
+            raise
+        return json.loads(extracted)
+
+
 class MemoryPalaceDB:
     """
     Database wrapper for Memory Palace lessons using SimpleVectorStore.
@@ -507,28 +593,28 @@ JSON RESPONSE:"""
             max_tokens=500
         )
 
-        response_text = response.strip()
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
-
-        result = json.loads(response_text)
+        result = _parse_distillation_response(response)
 
         suggested_category = result.get("suggested_category", "observations")
         if suggested_category not in [c.value for c in LessonCategory]:
             suggested_category = "observations"
 
+        distilled_text = (result.get("distilled_text") or "").strip()
+        if not distilled_text:
+            distilled_text = _build_fallback_distilled_text(raw_input)
+
         return LessonDistillationResult(
-            distilled_text=result.get("distilled_text", raw_input[:200]),
+            distilled_text=distilled_text,
             suggested_category=suggested_category,
             suggested_tags=result.get("suggested_tags", []),
         )
 
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse LLM JSON response: {e}. Using fallback.")
+        fallback_text = _build_fallback_distilled_text(raw_input)
         return LessonDistillationResult(
-            distilled_text=raw_input[:200] if len(raw_input) > 200 else raw_input,
-            suggested_category="observations",
+            distilled_text=fallback_text,
+            suggested_category=suggest_category(fallback_text),
             suggested_tags=[],
         )
     except Exception as e:
