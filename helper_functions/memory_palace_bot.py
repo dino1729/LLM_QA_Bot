@@ -250,6 +250,8 @@ class MemoryPalaceBot:
     """Telegram bot for Memory Palace interactions - powered by EDITH."""
 
     MAX_CONTEXT_TURNS = 10  # Session context window
+    REMINDER_INTERVAL_HOURS = 8
+    REMINDER_JOB_NAME = "memory_palace_random_reminder"
 
     def __init__(self):
         """Initialize the bot with triple knowledge stores and answer engine."""
@@ -267,6 +269,7 @@ class MemoryPalaceBot:
 
         # Session context tracking (in-memory, lost on restart)
         self.session_contexts: Dict[int, List[dict]] = {}
+        self._reminder_task_started = False
 
         # Telegram token
         self.token = config.telegram_bot_token
@@ -1290,6 +1293,8 @@ class MemoryPalaceBot:
 
     async def _send_startup_message(self, application: Application) -> None:
         """Send a welcome message to the authorized user on bot startup."""
+        self._schedule_memory_reminder(application)
+
         user_id = config.memory_palace_telegram_user_id
         if not user_id:
             logger.info("No telegram_user_id configured, skipping startup message")
@@ -1316,6 +1321,117 @@ class MemoryPalaceBot:
             logger.info(f"Sent startup message to user {user_id}")
         except Exception as e:
             logger.warning(f"Failed to send startup message: {e}")
+
+    def _schedule_memory_reminder(self, application: Application) -> None:
+        """Schedule periodic random lesson reminders."""
+        user_id = config.memory_palace_telegram_user_id
+        if not user_id:
+            logger.info("No telegram_user_id configured, skipping reminder scheduling")
+            return
+
+        interval = timedelta(hours=self.REMINDER_INTERVAL_HOURS)
+
+        if application.job_queue is None:
+            if self._reminder_task_started:
+                logger.info("Async reminder loop already running")
+                return
+            application.create_task(
+                self._run_async_reminder_loop(application, user_id, interval),
+                name=self.REMINDER_JOB_NAME,
+            )
+            self._reminder_task_started = True
+            logger.info(
+                f"Job queue unavailable, using async reminder loop every {self.REMINDER_INTERVAL_HOURS} hours"
+            )
+            return
+
+        # Ensure only one reminder job exists after restart/reload.
+        existing_jobs = application.job_queue.get_jobs_by_name(self.REMINDER_JOB_NAME)
+        for job in existing_jobs:
+            job.schedule_removal()
+
+        application.job_queue.run_repeating(
+            callback=self._send_random_memory_reminder,
+            interval=interval,
+            first=interval,
+            name=self.REMINDER_JOB_NAME,
+            chat_id=user_id,
+        )
+        logger.info(
+            f"Scheduled memory reminder every {self.REMINDER_INTERVAL_HOURS} hours"
+        )
+
+    async def _run_async_reminder_loop(
+        self,
+        application: Application,
+        chat_id: int,
+        interval: timedelta,
+    ) -> None:
+        """Fallback reminder loop when PTB job queue is unavailable."""
+        delay_seconds = interval.total_seconds()
+        try:
+            while True:
+                try:
+                    await asyncio.sleep(delay_seconds)
+                    await self._send_random_memory_reminder_to_chat(
+                        bot=application.bot,
+                        chat_id=chat_id,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Async reminder loop iteration failed: {e}")
+        finally:
+            self._reminder_task_started = False
+
+    async def _send_random_memory_reminder(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Send a periodic memory reminder with recency-aware random selection."""
+        chat_id = (
+            getattr(getattr(context, "job", None), "chat_id", None)
+            or config.memory_palace_telegram_user_id
+        )
+        if not chat_id:
+            logger.info("No chat_id available for memory reminder")
+            return
+
+        await self._send_random_memory_reminder_to_chat(
+            bot=context.bot,
+            chat_id=chat_id,
+        )
+
+    async def _send_random_memory_reminder_to_chat(
+        self,
+        bot,
+        chat_id: int,
+    ) -> None:
+        """Send one recency-aware random reminder message to a chat."""
+        lesson = self.db.get_random_lesson(exclude_recent=True)
+        if not lesson:
+            logger.info("No lessons available for periodic reminder")
+            return
+
+        category_value = (
+            lesson.metadata.category.value
+            if isinstance(lesson.metadata.category, LessonCategory)
+            else str(lesson.metadata.category)
+        )
+        cat_display = CATEGORIES.get(category_value, {}).get("display", category_value)
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⏰ Memory reminder\n\n"
+                f"[{cat_display}]\n"
+                f"{lesson.distilled_text}"
+            ),
+        )
+
+        try:
+            self.db.mark_as_shown(lesson.id)
+        except Exception as e:
+            logger.warning(f"Failed to mark reminder lesson as shown: {e}")
 
     def build_application(self) -> Application:
         """Build the Telegram application with handlers."""

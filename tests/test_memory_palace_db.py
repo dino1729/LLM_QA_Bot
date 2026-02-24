@@ -535,6 +535,77 @@ class TestDistillLesson:
 
     @patch("helper_functions.memory_palace_db.get_client")
     @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_json_parse_error_long_input_not_hard_cut(
+        self, mock_config, mock_get_client
+    ):
+        """Test fallback avoids hard 200-char clipping for long input."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = "Definitely not JSON"
+        mock_get_client.return_value = mock_client
+
+        long_input = "A" * 1200
+        result = distill_lesson(long_input)
+
+        assert isinstance(result, LessonDistillationResult)
+        assert result.suggested_category == "observations"
+        assert len(result.distilled_text) > 200
+        assert len(result.distilled_text) <= 400
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_handles_json_with_preface_text(
+        self, mock_config, mock_get_client
+    ):
+        """Test handling JSON preceded by non-JSON text."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = (
+            "Sure - here is the structured output:\n"
+            '{"distilled_text":"Bayesian updates improve judgment under uncertainty.",'
+            '"suggested_category":"science","suggested_tags":["bayes","reasoning"]}'
+        )
+        mock_get_client.return_value = mock_client
+
+        result = distill_lesson("Long Bayes text")
+
+        assert result.distilled_text == "Bayesian updates improve judgment under uncertainty."
+        assert result.suggested_category == "science"
+        assert result.suggested_tags == ["bayes", "reasoning"]
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_missing_distilled_text_uses_smart_fallback(
+        self, mock_config, mock_get_client
+    ):
+        """Test parsed JSON without distilled_text uses smart fallback."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = json.dumps({
+            "suggested_category": "science",
+            "suggested_tags": ["bayes"]
+        })
+        mock_get_client.return_value = mock_client
+
+        long_input = "A" * 1200
+        result = distill_lesson(long_input)
+
+        assert isinstance(result, LessonDistillationResult)
+        assert result.suggested_category == "science"
+        assert len(result.distilled_text) > 200
+        assert len(result.distilled_text) <= 400
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
     def test_distill_lesson_with_few_shot(self, mock_config, mock_get_client):
         """Test distillation with custom few-shot examples."""
         mock_config.memory_palace_provider = "litellm"

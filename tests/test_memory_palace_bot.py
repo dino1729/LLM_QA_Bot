@@ -9,6 +9,7 @@ Tests cover:
 """
 
 import asyncio
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -709,3 +710,136 @@ class TestBotApplication:
         assert app is not None
         # Should have handlers registered
         assert len(app.handlers) > 0
+
+
+class TestScheduledReminders:
+    """Tests for periodic random memory reminders."""
+
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    def test_schedule_memory_reminder_registers_8h_job(self, mock_db_class, mock_config):
+        """Test reminder scheduler registers an 8-hour repeating job."""
+        mock_db_class.return_value = MagicMock()
+
+        bot = MemoryPalaceBot()
+        app = MagicMock()
+        app.job_queue = MagicMock()
+        app.job_queue.get_jobs_by_name.return_value = []
+
+        bot._schedule_memory_reminder(app)
+
+        app.job_queue.run_repeating.assert_called_once()
+        call_kwargs = app.job_queue.run_repeating.call_args.kwargs
+        assert call_kwargs["interval"] == timedelta(hours=8)
+        assert call_kwargs["first"] == timedelta(hours=8)
+        assert call_kwargs["chat_id"] == mock_config.memory_palace_telegram_user_id
+
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    def test_schedule_memory_reminder_skips_when_user_missing(self, mock_db_class, mock_config):
+        """Test scheduler is skipped when no authorized user is configured."""
+        mock_db_class.return_value = MagicMock()
+        mock_config.memory_palace_telegram_user_id = None
+
+        bot = MemoryPalaceBot()
+        app = MagicMock()
+        app.job_queue = MagicMock()
+
+        bot._schedule_memory_reminder(app)
+
+        app.job_queue.run_repeating.assert_not_called()
+
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    def test_schedule_memory_reminder_falls_back_without_job_queue(self, mock_db_class, mock_config):
+        """Test scheduler uses async fallback when PTB job queue is unavailable."""
+        mock_db_class.return_value = MagicMock()
+
+        bot = MemoryPalaceBot()
+        app = MagicMock()
+        app.job_queue = None
+        app.create_task = MagicMock(side_effect=lambda coro, **kwargs: coro.close())
+
+        bot._schedule_memory_reminder(app)
+
+        app.create_task.assert_called_once()
+        assert bot._reminder_task_started is True
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_random_reminder_sends_lesson_and_marks_shown(self, mock_db_class, mock_config):
+        """Test reminder sends a lesson and updates shown history."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        lesson = Lesson(
+            distilled_text="Reminder lesson",
+            metadata=LessonMetadata(
+                category=LessonCategory.STRATEGY,
+                original_input="input",
+                distilled_by_model="test-model",
+            ),
+        )
+        mock_db.get_random_lesson.return_value = lesson
+
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
+        context.job = MagicMock()
+        context.job.chat_id = mock_config.memory_palace_telegram_user_id
+
+        bot = MemoryPalaceBot()
+        await bot._send_random_memory_reminder(context)
+
+        mock_db.get_random_lesson.assert_called_once_with(exclude_recent=True)
+        mock_db.mark_as_shown.assert_called_once_with(lesson.id)
+        context.bot.send_message.assert_called_once()
+        sent_text = context.bot.send_message.call_args.kwargs["text"]
+        assert "Memory reminder" in sent_text
+        assert "Reminder lesson" in sent_text
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_random_reminder_no_lessons_sends_nothing(self, mock_db_class, mock_config):
+        """Test reminder does nothing when lesson store is empty."""
+        mock_db = MagicMock()
+        mock_db.get_random_lesson.return_value = None
+        mock_db_class.return_value = mock_db
+
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
+        context.job = MagicMock()
+        context.job.chat_id = mock_config.memory_palace_telegram_user_id
+
+        bot = MemoryPalaceBot()
+        await bot._send_random_memory_reminder(context)
+
+        mock_db.get_random_lesson.assert_called_once_with(exclude_recent=True)
+        mock_db.mark_as_shown.assert_not_called()
+        context.bot.send_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_random_reminder_send_failure_does_not_mark_shown(
+        self, mock_db_class, mock_config
+    ):
+        """Test failed send does not consume reminder recency slot."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        lesson = Lesson(
+            distilled_text="Reminder lesson",
+            metadata=LessonMetadata(
+                category=LessonCategory.STRATEGY,
+                original_input="input",
+                distilled_by_model="test-model",
+            ),
+        )
+        mock_db.get_random_lesson.return_value = lesson
+
+        context = MagicMock()
+        context.bot.send_message = AsyncMock(side_effect=RuntimeError("telegram error"))
+        context.job = MagicMock()
+        context.job.chat_id = mock_config.memory_palace_telegram_user_id
+
+        bot = MemoryPalaceBot()
+        with pytest.raises(RuntimeError, match="telegram error"):
+            await bot._send_random_memory_reminder(context)
+
+        mock_db.mark_as_shown.assert_not_called()

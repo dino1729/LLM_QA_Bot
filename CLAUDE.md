@@ -348,6 +348,46 @@ Install core deps: `pip install -r requirements.txt`
 | Newsletter (full cache) | `python year_progress_and_news_reporter_litellm.py --full-cache --skip-email --local-tts` |
 | List LLM models | `python -c "from helper_functions.llm_client import list_available_models; print(list_available_models('litellm'))"` |
 | Setup Blackwell GPU | See `docs/BLACKWELL_GPU_SETUP.md` |
+| Start EDITH bot | `systemctl --user start edith-bot` |
+| Stop EDITH bot | `systemctl --user stop edith-bot` |
+| Restart EDITH bot | `systemctl --user restart edith-bot` |
+| EDITH status | `systemctl --user status edith-bot` |
+| EDITH logs | `tail -f edith-bot.log` |
+
+## EDITH Telegram Bot (Memory Palace Agent)
+
+EDITH (`helper_functions/memory_palace_bot.py`) is a Telegram bot for adding, searching, and querying the Memory Palace. It runs as a **systemd user service** for persistence.
+
+### Service Details
+
+- **Service file**: `~/.config/systemd/user/edith-bot.service`
+- **Python**: Uses pyenv Python 3.11.9 (`~/.pyenv/versions/3.11.9/bin/python`) - the project venv has Python 3.10 which lacks `StrEnum`
+- **Logs**: `edith-bot.log` in the project root
+- **Auto-restart**: Restarts on failure with 10-second delay
+- **Linger enabled**: Service survives user logout
+
+### Config Requirements
+
+In `config/config.yml`:
+```yaml
+telegram_bot_token: "token-from-botfather"
+
+memory_palace:
+  telegram_user_id: 562487104  # numeric Telegram user ID
+```
+
+### Running Manually (without systemd)
+
+```bash
+# Foreground with verbose logging
+python -m helper_functions.memory_palace_bot -v
+
+# Discovery mode (find your Telegram user ID)
+python -m helper_functions.memory_palace_bot --discover
+
+# Background with nohup
+nohup python -m helper_functions.memory_palace_bot > mp_bot.log 2>&1 &
+```
 
 ## Architecture Decision Records
 
