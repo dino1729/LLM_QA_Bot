@@ -175,6 +175,50 @@ defaults:
 # Research agent configuration
 research_agent_tool_calling_hint: "Ensure you are using a model that supports tool calling in config.yml"
 
+# Newsletter auto-ingestion pipeline
+# This polls RSS feeds, filters links, and ingests new issues into:
+# 1) EDITH lessons, 2) Local Memory Palace, 3) Knowledge Archive.
+newsletter_ingestion:
+  enabled: false
+  state_dir: "./memory_palace/newsletter_ingestion"
+  log_dir: "./memory_palace/newsletter_ingestion/logs"
+  lock_file: "./memory_palace/newsletter_ingestion/newsletter_ingestion.lock"
+  model_tier: "smart"
+  max_retries: 3
+  base_retry_delay_seconds: 30
+  run_timeout_minutes: 90
+  per_source_limit: 20
+  feed_timeout_seconds: 20
+  backfill_count: 10
+  max_seen_ids: 2000
+  telegram_alerts: true
+  sources:
+    - name: "source_one"
+      enabled: true
+      feed_url: "https://example.com/feed.xml"
+      # Optional fallback discovery when feed matching returns zero entries.
+      # Useful for sources whose primary feed does not isolate a newsletter section.
+      listing_page_url: "https://example.com/newsletter/"
+      listing_link_pattern: '/newsletter/[a-z0-9-]+/?$'
+      include_url_patterns:
+        - '/newsletter/'
+      exclude_url_patterns: []
+      backfill_count: 10
+    - name: "source_two"
+      enabled: true
+      feed_url: "https://example.org/rss.xml"
+      include_url_patterns:
+        - '/articles/'
+      exclude_url_patterns: []
+      backfill_count: 10
+    - name: "source_three"
+      enabled: true
+      feed_url: "https://example.net/updates/rss.xml"
+      include_url_patterns:
+        - '/updates/'
+      exclude_url_patterns: []
+      backfill_count: 10
+
 paths:
   UPLOAD_FOLDER: "./data"                     # Base folder for uploaded files
   WEB_SEARCH_FOLDER: "./web_search_data"      # Folder for web search results

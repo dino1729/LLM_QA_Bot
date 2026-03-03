@@ -27,6 +27,8 @@ from helper_functions.memory_palace_db import (
     MemoryPalaceDB,
     SimilarLesson,
     distill_lesson,
+    is_objective_lesson_text,
+    rewrite_to_objective_lesson,
     suggest_category,
 )
 
@@ -182,6 +184,33 @@ class TestSuggestCategory:
         assert suggest_category("GAME THEORY STRATEGY") == "strategy"
 
 
+class TestObjectiveLessonValidation:
+    """Tests for objective lesson style validation and rewriting."""
+
+    def test_rejects_author_reference(self):
+        ok, reasons = is_objective_lesson_text(
+            "The author predicts that domain-specific chatbots will emerge as a game-changing technology."
+        )
+        assert ok is False
+        assert "author_reference" in reasons
+
+    def test_accepts_objective_statement(self):
+        ok, reasons = is_objective_lesson_text(
+            "Domain-specific chatbots can become a game-changing technology in narrow workflows."
+        )
+        assert ok is True
+        assert reasons == []
+
+    def test_deterministic_rewrite_for_author_prefix(self):
+        rewritten = rewrite_to_objective_lesson(
+            "The author predicts that domain-specific chatbots will emerge as a game-changing technology."
+        )
+        ok, reasons = is_objective_lesson_text(rewritten)
+        assert ok is True
+        assert reasons == []
+        assert rewritten.startswith("Domain-specific chatbots")
+
+
 @pytest.fixture
 def temp_db_dir():
     """Create a temporary directory for test database."""
@@ -242,6 +271,58 @@ class TestMemoryPalaceDB:
         all_lessons = db.get_all_lessons()
         assert len(all_lessons) == 1
         assert all_lessons[0].distilled_text == lesson.distilled_text
+
+    def test_get_lesson_by_id(self, mock_config):
+        """Test direct lesson lookup by ID."""
+        db = MemoryPalaceDB()
+        lesson = Lesson(
+            distilled_text="Initial lesson text for direct lookup.",
+            metadata=LessonMetadata(
+                category=LessonCategory.OBSERVATIONS,
+                original_input="Raw input",
+                distilled_by_model="test-model",
+            ),
+        )
+        db.add_lesson(lesson)
+
+        fetched = db.get_lesson_by_id(lesson.id)
+        assert fetched is not None
+        assert fetched.id == lesson.id
+        assert fetched.distilled_text == lesson.distilled_text
+
+    def test_update_lesson_text_preserves_identity_and_metadata(self, mock_config):
+        """Test update API rewrites text without changing lesson identity."""
+        db = MemoryPalaceDB()
+        lesson = Lesson(
+            distilled_text="The author observes that an abundance of resources often naturally leads to wastage.",
+            metadata=LessonMetadata(
+                category=LessonCategory.PSYCHOLOGY,
+                source="migration:Little Observations.pdf",
+                original_input="Original raw lesson input",
+                distilled_by_model="migration",
+                tags=["philosophy_and_psychology"],
+            ),
+        )
+        db.add_lesson(lesson)
+
+        updated = db.update_lesson_text(
+            lesson.id,
+            "Abundant resources often increase wastage unless incentives enforce disciplined use.",
+            rewritten_by_model="cleanup-model",
+            append_tags=["auto-cleanup"],
+        )
+        assert updated is True
+
+        refreshed = db.get_lesson_by_id(lesson.id)
+        assert refreshed is not None
+        assert refreshed.id == lesson.id
+        assert refreshed.metadata.category == lesson.metadata.category
+        assert refreshed.metadata.source == lesson.metadata.source
+        assert refreshed.metadata.original_input == lesson.metadata.original_input
+        assert refreshed.metadata.distilled_by_model == "cleanup-model"
+        assert "auto-cleanup" in refreshed.metadata.tags
+        ok, reasons = is_objective_lesson_text(refreshed.distilled_text)
+        assert ok is True, reasons
 
     def test_get_lesson_count(self, mock_config):
         """Test lesson counting."""
@@ -497,6 +578,27 @@ class TestDistillLesson:
 
     @patch("helper_functions.memory_palace_db.get_client")
     @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_rewrites_source_referential_output(self, mock_config, mock_get_client):
+        """Test distillation normalizes source-referential phrasing."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = json.dumps({
+            "distilled_text": "The author predicts that domain-specific chatbots will emerge as a game-changing technology.",
+            "suggested_category": "technology",
+            "suggested_tags": ["ai"],
+        })
+        mock_get_client.return_value = mock_client
+
+        result = distill_lesson("Raw source text")
+        assert "author" not in result.distilled_text.lower()
+        ok, reasons = is_objective_lesson_text(result.distilled_text)
+        assert ok is True, reasons
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
     def test_distill_lesson_invalid_category_fallback(self, mock_config, mock_get_client):
         """Test fallback when LLM suggests invalid category."""
         mock_config.memory_palace_provider = "litellm"
@@ -647,6 +749,65 @@ class TestDistillLesson:
 
         assert result.distilled_text == "Test insight"
         assert result.suggested_category == "history"
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_repair_attempt_after_invalid_json(self, mock_config, mock_get_client):
+        """Test repair attempt converts invalid JSON response into valid output."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+        mock_config.memory_palace_fallback_model = "fallback-model"
+
+        mock_client = Mock()
+        mock_client.chat_completion.side_effect = [
+            "not-json",
+            json.dumps({
+                "distilled_text": "Rapid feedback loops expose weak assumptions before they become expensive mistakes.",
+                "suggested_category": "strategy",
+                "suggested_tags": ["decision making", "feedback loops"],
+            }),
+        ]
+        mock_get_client.return_value = mock_client
+
+        result = distill_lesson("Test input")
+
+        assert result.suggested_category == "strategy"
+        assert result.distilled_text.startswith("Rapid feedback loops")
+        assert result.suggested_tags == ["decision-making", "feedback-loops"]
+        assert mock_client.chat_completion.call_count == 2
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_uses_fallback_model_when_primary_and_repair_fail(
+        self, mock_config, mock_get_client
+    ):
+        """Test configured fallback model is used after primary + repair parse failures."""
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "primary-model"
+        mock_config.memory_palace_fallback_model = "fallback-model"
+
+        primary_client = Mock()
+        primary_client.chat_completion.side_effect = [
+            "not-json",
+            "still-not-json",
+        ]
+        fallback_client = Mock()
+        fallback_client.chat_completion.return_value = json.dumps({
+            "distilled_text": "Compounding discipline beats bursts of motivation over long time horizons.",
+            "suggested_category": "psychology",
+            "suggested_tags": ["discipline", "habits"],
+        })
+
+        mock_get_client.side_effect = [primary_client, fallback_client]
+
+        result = distill_lesson("Test input")
+
+        assert result.suggested_category == "psychology"
+        assert result.distilled_text.startswith("Compounding discipline")
+        assert result.suggested_tags == ["discipline", "habits"]
+        assert mock_get_client.call_count == 2
 
 
 class TestLessonDistillationResult:

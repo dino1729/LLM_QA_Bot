@@ -320,6 +320,41 @@ class TestExtractTakeaways:
         assert "Eliminate debt" in result[2]
 
     @patch("scripts.ingest_to_memory.get_client")
+    def test_parses_markdown_wrapped_numbered_headings(self, mock_get_client, sample_content):
+        """Handles responses where numbering is wrapped in markdown bold."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = (
+            "Here are key takeaways:\n"
+            "**1. First insight title**\n"
+            "The first insight body is detailed enough to pass filtering.\n"
+            "**2. Second insight title**\n"
+            "The second insight body is also substantial and actionable.\n"
+        )
+        mock_get_client.return_value = mock_client
+
+        result = extract_takeaways(sample_content, 2, "fast")
+
+        assert len(result) == 2
+        assert "First insight title" in result[0]
+        assert "second insight body" in result[1].lower()
+
+    @patch("scripts.ingest_to_memory.get_client")
+    def test_parses_parenthesized_numbering(self, mock_get_client, sample_content):
+        """Handles alternate list formats like `1)`."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = (
+            "1) First point with enough supporting detail to be useful in practice.\n"
+            "2) Second point with enough supporting detail to be useful in practice.\n"
+        )
+        mock_get_client.return_value = mock_client
+
+        result = extract_takeaways(sample_content, 2, "fast")
+
+        assert len(result) == 2
+        assert "First point" in result[0]
+        assert "Second point" in result[1]
+
+    @patch("scripts.ingest_to_memory.get_client")
     def test_strips_markdown_bold(self, mock_get_client, sample_content):
         mock_client = Mock()
         mock_client.chat_completion.return_value = (
@@ -471,6 +506,55 @@ class TestUploadToEdith:
         count = upload_to_edith(sample_takeaways, sample_content, skip_distill=True)
 
         assert count == 2  # 2 of 3 succeeded
+
+    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    def test_skip_distill_skips_source_referential_takeaway(self, mock_db_class, sample_content):
+        """Skip-distill mode rejects obvious source-referential preamble entries."""
+        mock_db = Mock()
+        mock_db.add_lesson.return_value = "lesson-id"
+        mock_db_class.return_value = mock_db
+        takeaways = [
+            "Based on the video, these are the main points from the speaker:",
+            "Focused feedback loops reveal weak assumptions before they get expensive.",
+        ]
+
+        count = upload_to_edith(takeaways, sample_content, skip_distill=True)
+
+        assert count == 1
+        assert mock_db.add_lesson.call_count == 1
+        stored = mock_db.add_lesson.call_args[0][0]
+        assert "speaker" not in stored.distilled_text.lower()
+
+    @patch("scripts.ingest_to_memory.distill_lesson")
+    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    def test_distillation_skips_non_objective_output(self, mock_db_class, mock_distill, sample_content):
+        """Distilled entries that still contain source framing are skipped."""
+        mock_db = Mock()
+        mock_db.add_lesson.return_value = "lesson-id"
+        mock_db.get_few_shot_examples.return_value = ["Example 1"]
+        mock_db_class.return_value = mock_db
+
+        mock_distill.side_effect = [
+            Mock(
+                distilled_text="The author observes that excess resources lead to waste.",
+                suggested_category="psychology",
+                suggested_tags=["behavior"],
+            ),
+            Mock(
+                distilled_text="Excess resources often lead to waste when constraints are weak.",
+                suggested_category="psychology",
+                suggested_tags=["behavior"],
+            ),
+        ]
+
+        count = upload_to_edith(
+            ["Takeaway 1", "Takeaway 2"],
+            sample_content,
+            skip_distill=False,
+        )
+
+        assert count == 1
+        assert mock_db.add_lesson.call_count == 1
 
 
 # --- Upload to Local Memory ---

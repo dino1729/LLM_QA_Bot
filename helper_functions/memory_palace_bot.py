@@ -58,6 +58,7 @@ from helper_functions.memory_palace_db import (
     LessonMetadata,
     MemoryPalaceDB,
     distill_lesson,
+    is_objective_lesson_text,
 )
 from helper_functions.web_knowledge_db import (
     ConfidenceTier,
@@ -1407,7 +1408,28 @@ class MemoryPalaceBot:
         chat_id: int,
     ) -> None:
         """Send one recency-aware random reminder message to a chat."""
-        lesson = self.db.get_random_lesson(exclude_recent=True)
+        lesson = None
+        attempted_ids = set()
+        max_attempts = 5
+        for _ in range(max_attempts):
+            candidate = self.db.get_random_lesson(exclude_recent=True)
+            if not candidate:
+                break
+            if candidate.id in attempted_ids:
+                break
+            attempted_ids.add(candidate.id)
+
+            is_objective, reasons = is_objective_lesson_text(candidate.distilled_text)
+            if is_objective:
+                lesson = candidate
+                break
+
+            logger.info(
+                "Skipping non-objective reminder lesson %s (%s)",
+                candidate.id[:8],
+                ",".join(reasons),
+            )
+
         if not lesson:
             logger.info("No lessons available for periodic reminder")
             return

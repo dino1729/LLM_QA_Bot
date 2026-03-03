@@ -189,7 +189,7 @@ def _build_fallback_distilled_text(raw_input: str, max_chars: int = 400) -> str:
 
 def _parse_distillation_response(response_text: str) -> Dict[str, Any]:
     """Parse distillation response JSON, tolerating wrapper text."""
-    cleaned = response_text.strip()
+    cleaned = (response_text or "").strip()
 
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
@@ -206,6 +206,321 @@ def _parse_distillation_response(response_text: str) -> Dict[str, Any]:
         if not extracted:
             raise
         return json.loads(extracted)
+
+
+def _normalize_distilled_text(text: str, max_chars: int = 220) -> str:
+    """Normalize and cap distilled text length."""
+    normalized = re.sub(r"\s+", " ", (text or "")).strip().strip('"').strip("'")
+    if not normalized:
+        return ""
+
+    if len(normalized) <= max_chars:
+        return normalized
+
+    # Prefer cutting at sentence boundary for readability.
+    candidate = normalized[: max_chars + 1]
+    sentence_cutoffs = [candidate.rfind(". "), candidate.rfind("! "), candidate.rfind("? ")]
+    sentence_cutoff = max(sentence_cutoffs)
+
+    if sentence_cutoff >= int(max_chars * 0.6):
+        trimmed = candidate[:sentence_cutoff + 1].strip()
+    else:
+        word_cutoff = candidate.rfind(" ")
+        trimmed = candidate[:word_cutoff].strip() if word_cutoff > 0 else candidate[:max_chars].strip()
+
+    if len(trimmed) > max_chars:
+        trimmed = trimmed[:max_chars].rstrip()
+
+    return trimmed
+
+
+def _normalize_suggested_tags(tags: Any) -> List[str]:
+    """Normalize tag list into lowercase slug-style values."""
+    if isinstance(tags, str):
+        raw_tags = [t.strip() for t in tags.split(",") if t.strip()]
+    elif isinstance(tags, list):
+        raw_tags = [str(t).strip() for t in tags if str(t).strip()]
+    else:
+        raw_tags = []
+
+    normalized: List[str] = []
+    for tag in raw_tags:
+        tag_norm = re.sub(r"\s+", "-", tag.lower())
+        tag_norm = re.sub(r"[^a-z0-9-]", "", tag_norm)
+        tag_norm = re.sub(r"-{2,}", "-", tag_norm).strip("-")
+        if not tag_norm:
+            continue
+        if tag_norm not in normalized:
+            normalized.append(tag_norm)
+        if len(normalized) >= 3:
+            break
+
+    return normalized
+
+
+OBJECTIVE_LESSON_META_PATTERNS: Tuple[Tuple[str, re.Pattern], ...] = (
+    (
+        "author_reference",
+        re.compile(
+            r"\b(?:the\s+)?author\s+(?:predicts|observes|argues|suggests|states|notes|believes|expresses|poses)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "article_reference",
+        re.compile(r"\b(?:this|the)\s+(?:article|essay|post|piece|chapter)\b", re.IGNORECASE),
+    ),
+    (
+        "source_reference",
+        re.compile(r"\b(?:based on|from)\s+(?:the\s+)?(?:video|podcast|article|book)\b", re.IGNORECASE),
+    ),
+    (
+        "speaker_reference",
+        re.compile(r"\b(?:the\s+)?(?:speaker|presenter)\b", re.IGNORECASE),
+    ),
+    (
+        "takeaway_preamble",
+        re.compile(
+            r"^\s*(?:here are|these are|the following|key takeaways|takeaways from)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+
+def _ensure_sentence_ending(text: str) -> str:
+    """Ensure rewritten lessons end with sentence punctuation."""
+    if not text:
+        return text
+    if text.endswith((".", "!", "?")):
+        return text
+    return f"{text}."
+
+
+def _unique_non_empty(items: List[str]) -> List[str]:
+    """Return unique non-empty values preserving order."""
+    seen = set()
+    deduped: List[str] = []
+    for item in items:
+        item_norm = item.strip()
+        if not item_norm or item_norm in seen:
+            continue
+        seen.add(item_norm)
+        deduped.append(item_norm)
+    return deduped
+
+
+def is_objective_lesson_text(text: str) -> Tuple[bool, List[str]]:
+    """Validate whether lesson text is objective and source-agnostic."""
+    normalized = re.sub(r"\s+", " ", (text or "")).strip()
+    if not normalized:
+        return False, ["empty_text"]
+
+    reasons: List[str] = []
+    for reason, pattern in OBJECTIVE_LESSON_META_PATTERNS:
+        if pattern.search(normalized):
+            reasons.append(reason)
+
+    return len(reasons) == 0, reasons
+
+
+def _apply_deterministic_objective_rewrite(raw_text: str) -> str:
+    """
+    Best-effort non-LLM rewrite for obvious meta phrasing.
+    Returns empty string when no clean deterministic rewrite is available.
+    """
+    text = _normalize_distilled_text(raw_text, max_chars=260)
+    if not text:
+        return ""
+
+    replacements = (
+        (
+            r"^\s*(?:based on|from)\s+(?:the\s+)?(?:video|podcast|article|book)[^:]*:\s*",
+            "",
+        ),
+        (
+            r"^\s*(?:based on|from)\s+(?:the\s+)?(?:video|podcast|article|book)\s*,\s*",
+            "",
+        ),
+        (
+            r"^\s*(?:the\s+)?author\s+expresses\s+a\s+desire\s+for\s+",
+            "",
+        ),
+        (
+            r"^\s*(?:the\s+)?author\s+poses\s+(?:theoretical\s+)?question\s+of\s+whether\s+",
+            "Whether ",
+        ),
+        (
+            r"^\s*(?:the\s+)?author\s+(?:predicts|observes|argues|suggests|states|notes|believes|highlights|discusses|explores)\s+that\s+",
+            "",
+        ),
+        (
+            r"^\s*(?:the\s+)?author\s+(?:predicts|observes|argues|suggests|states|notes|believes|highlights|discusses|explores)\s+",
+            "",
+        ),
+        (
+            r"^\s*(?:the\s+)?speaker\s+(?:argues|explains|notes|says|suggests|states)\s+that\s+",
+            "",
+        ),
+        (
+            r"^\s*(?:the\s+)?speaker\s+(?:argues|explains|notes|says|suggests|states)\s+",
+            "",
+        ),
+    )
+
+    rewritten = text
+    for pattern, replacement in replacements:
+        rewritten = re.sub(pattern, replacement, rewritten, flags=re.IGNORECASE)
+
+    rewritten = _normalize_distilled_text(rewritten, max_chars=220)
+    if rewritten:
+        rewritten = rewritten[0].upper() + rewritten[1:] if len(rewritten) > 1 else rewritten.upper()
+        rewritten = _ensure_sentence_ending(rewritten)
+    return rewritten
+
+
+def _parse_rewrite_response(response_text: str) -> Optional[str]:
+    """Extract rewritten lesson text from a JSON response."""
+    try:
+        parsed = _parse_distillation_response(response_text)
+    except Exception:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    for key in ("distilled_text", "rewritten_text", "lesson", "text"):
+        value = parsed.get(key)
+        if isinstance(value, str) and value.strip():
+            return _normalize_distilled_text(value, max_chars=220)
+
+    return None
+
+
+def _rewrite_to_objective_with_client(
+    client: Any,
+    raw_text: str,
+    max_tokens: int = 220,
+) -> Optional[str]:
+    """Call model once to rewrite text into objective lesson form."""
+    prompt = f"""Rewrite the following lesson into ONE objective standalone sentence.
+
+Rules:
+- Keep the same core idea.
+- Do not mention author, speaker, article, video, podcast, or source.
+- No preamble, no list markers, no commentary.
+- 90-220 characters.
+- Active voice, present tense.
+- Return JSON only: {{"distilled_text":"..."}}
+
+INPUT:
+{raw_text}
+"""
+
+    try:
+        response = _chat_distillation_prompt(client, prompt, temperature=0.1, max_tokens=max_tokens)
+    except Exception:
+        return None
+
+    rewritten = _parse_rewrite_response(response)
+    if not rewritten:
+        return None
+
+    rewritten = _ensure_sentence_ending(rewritten)
+    return rewritten
+
+
+def rewrite_to_objective_lesson(
+    raw_text: str,
+    provider: str = None,
+    model_tier: str = None,
+    model_name: str = None,
+    client: Any = None,
+    fallback_model_name: str = None,
+) -> str:
+    """Rewrite lesson text into objective style using deterministic+LLM fallback."""
+    normalized = _normalize_distilled_text(raw_text, max_chars=260)
+    if not normalized:
+        return ""
+
+    is_valid, _ = is_objective_lesson_text(normalized)
+    if is_valid:
+        return _ensure_sentence_ending(normalized)
+
+    deterministic = _apply_deterministic_objective_rewrite(normalized)
+    if deterministic:
+        deterministic_valid, _ = is_objective_lesson_text(deterministic)
+        if deterministic_valid:
+            return deterministic
+
+    provider = provider or config.memory_palace_provider
+    model_tier = model_tier or config.memory_palace_model_tier
+    model_name = model_name or config.memory_palace_primary_model
+    fallback_model_name = (
+        fallback_model_name
+        if fallback_model_name is not None
+        else _coerce_fallback_model(getattr(config, "memory_palace_fallback_model", None))
+    )
+
+    primary_client = client or get_client(
+        provider=provider,
+        model_tier=model_tier,
+        model_name=model_name,
+    )
+    rewritten = _rewrite_to_objective_with_client(primary_client, normalized)
+    if rewritten:
+        rewritten_valid, _ = is_objective_lesson_text(rewritten)
+        if rewritten_valid:
+            return rewritten
+
+    if fallback_model_name and fallback_model_name != model_name:
+        try:
+            fallback_client = get_client(
+                provider=provider,
+                model_tier=model_tier,
+                model_name=fallback_model_name,
+            )
+            fallback_rewrite = _rewrite_to_objective_with_client(fallback_client, normalized)
+            if fallback_rewrite:
+                fallback_valid, _ = is_objective_lesson_text(fallback_rewrite)
+                if fallback_valid:
+                    return fallback_rewrite
+        except Exception:
+            logger.warning("Fallback rewrite model '%s' failed", fallback_model_name)
+
+    return deterministic or normalized
+
+
+def _coerce_fallback_model(model_name: Any) -> Optional[str]:
+    """Return fallback model only when configured as a non-empty string."""
+    if not isinstance(model_name, str):
+        return None
+    model_name = model_name.strip()
+    return model_name or None
+
+
+def _chat_distillation_prompt(
+    client: Any,
+    prompt: str,
+    temperature: float = 0.15,
+    max_tokens: int = 320,
+) -> str:
+    """
+    Request distillation output and prefer strict JSON mode when supported.
+    """
+    try:
+        return client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+    except Exception:
+        return client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
 
 class MemoryPalaceDB:
@@ -297,9 +612,9 @@ class MemoryPalaceDB:
             logger.warning(f"Error parsing lesson from doc {doc_id}: {e}")
             return None
 
-    def add_lesson(self, lesson: Lesson) -> str:
-        """Add a lesson to the store."""
-        doc = Document(
+    def _lesson_to_document(self, lesson: Lesson) -> Document:
+        """Convert Lesson model into vector store document."""
+        return Document(
             text=lesson.distilled_text,
             metadata={
                 "id": lesson.id,
@@ -315,9 +630,28 @@ class MemoryPalaceDB:
             doc_id=lesson.id,
         )
 
-        self._store.insert(doc)
+    def _insert_lesson(self, lesson: Lesson, persist: bool = True) -> str:
+        """Insert or overwrite a lesson by ID."""
+        doc = self._lesson_to_document(lesson)
+        try:
+            self._store.insert(doc, persist=persist)
+        except TypeError:
+            # Backwards compatibility in case insert() signature lacks persist.
+            self._store.insert(doc)
+            if not persist:
+                logger.warning("Vector store insert() does not support deferred persistence")
+        return lesson.id
+
+    def add_lesson(self, lesson: Lesson) -> str:
+        """Add a lesson to the store."""
+        self._insert_lesson(lesson, persist=True)
         logger.info(f"Added lesson {lesson.id[:8]}... to Memory Palace (category: {lesson.metadata.category})")
         return lesson.id
+
+    def persist(self):
+        """Persist store state to disk."""
+        if self._store is not None:
+            self._store.persist()
 
     def find_similar(
         self, text: str, top_k: int = 5, include_forgotten: bool = False
@@ -444,6 +778,83 @@ class MemoryPalaceDB:
 
         return lessons
 
+    def get_lesson_by_id(
+        self,
+        lesson_id: str,
+        include_forgotten: bool = True,
+    ) -> Optional[Lesson]:
+        """Get a lesson by ID."""
+        if self._store is None:
+            return None
+
+        for doc_id, data in self._store.docs.items():
+            meta = data.get("metadata", {})
+            entry_id = meta.get("id", doc_id)
+            if entry_id != lesson_id and doc_id != lesson_id:
+                continue
+
+            is_forgotten = meta.get("is_forgotten", False)
+            if isinstance(is_forgotten, str):
+                is_forgotten = is_forgotten.lower() == "true"
+            if is_forgotten and not include_forgotten:
+                return None
+
+            return self._parse_lesson_from_doc(entry_id, meta, data.get("text", ""))
+
+        return None
+
+    def update_lesson_text(
+        self,
+        lesson_id: str,
+        new_text: str,
+        *,
+        rewritten_by_model: str,
+        preserve_category: bool = True,
+        append_tags: Optional[List[str]] = None,
+        persist: bool = True,
+    ) -> bool:
+        """
+        Update lesson text while preserving lesson identity and metadata.
+        """
+        lesson = self.get_lesson_by_id(lesson_id, include_forgotten=True)
+        if lesson is None:
+            return False
+
+        normalized_text = _normalize_distilled_text(new_text, max_chars=220)
+        if not normalized_text:
+            return False
+
+        category_value = (
+            lesson.metadata.category.value
+            if isinstance(lesson.metadata.category, LessonCategory)
+            else str(lesson.metadata.category)
+        )
+        if not preserve_category:
+            category_value = suggest_category(normalized_text)
+
+        merged_tags = list(lesson.metadata.tags)
+        if append_tags:
+            merged_tags.extend(_normalize_suggested_tags(append_tags))
+        merged_tags = _unique_non_empty(merged_tags)
+
+        updated = Lesson(
+            id=lesson.id,
+            distilled_text=normalized_text,
+            metadata=LessonMetadata(
+                category=LessonCategory(category_value),
+                created_at=lesson.metadata.created_at,
+                source=lesson.metadata.source,
+                original_input=lesson.metadata.original_input,
+                distilled_by_model=rewritten_by_model,
+                tags=merged_tags,
+                is_forgotten=lesson.metadata.is_forgotten,
+                forgotten_at=lesson.metadata.forgotten_at,
+            ),
+        )
+
+        self._insert_lesson(updated, persist=persist)
+        return True
+
     def get_lessons_by_category(self, category: LessonCategory) -> List[Lesson]:
         """Get all lessons in a specific category."""
         all_lessons = self.get_all_lessons()
@@ -551,6 +962,9 @@ def distill_lesson(
     provider = provider or config.memory_palace_provider
     model_tier = model_tier or config.memory_palace_model_tier
     model_name = model_name or config.memory_palace_primary_model
+    fallback_model_name = _coerce_fallback_model(
+        getattr(config, "memory_palace_fallback_model", None)
+    )
 
     client = get_client(provider=provider, model_tier=model_tier, model_name=model_name)
 
@@ -565,61 +979,138 @@ def distill_lesson(
 """
 
     category_options = ", ".join([c.value for c in LessonCategory])
+    raw_input_compact = re.sub(r"\s+", " ", raw_input).strip()
+    raw_input_for_prompt = raw_input_compact[:3000] if len(raw_input_compact) > 3000 else raw_input_compact
 
-    prompt = f"""You are a wisdom curator. Distill the following input into a single, memorable insight.
+    prompt = f"""You are a strict JSON generator for lesson distillation.
+Return exactly ONE JSON object and nothing else.
 
 EXAMPLES of well-distilled insights (match this style - concise, standalone, quotable):
 {examples_text}
 
 USER INPUT:
-{raw_input}
+{raw_input_for_prompt}
 
 INSTRUCTIONS:
-1. Extract the core wisdom into ONE sentence (max 200 characters)
+1. Extract the core wisdom into ONE sentence (90-220 characters)
 2. Make it standalone and quotable (no "this shows" or "the user learned")
 3. Use active voice and present tense
 4. Suggest the most fitting category from: {category_options}
 5. Suggest 1-3 relevant tags (lowercase, no spaces)
+6. Do not copy full paragraphs, compress to one sharp lesson
+7. Never mention "the author", "the speaker", "this article", "the video", or source framing
+8. No markdown, no code fences, no commentary
 
 Respond in JSON format only:
 {{"distilled_text": "Your single-sentence insight here", "suggested_category": "category_name", "suggested_tags": ["tag1", "tag2"]}}
 
 JSON RESPONSE:"""
 
-    try:
-        response = client.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=500
-        )
-
-        result = _parse_distillation_response(response)
-
-        suggested_category = result.get("suggested_category", "observations")
+    def _build_result(parsed: Dict[str, Any]) -> LessonDistillationResult:
+        suggested_category = str(parsed.get("suggested_category", "observations")).strip().lower()
         if suggested_category not in [c.value for c in LessonCategory]:
             suggested_category = "observations"
 
-        distilled_text = (result.get("distilled_text") or "").strip()
+        distilled_text = _normalize_distilled_text(parsed.get("distilled_text", ""))
         if not distilled_text:
             distilled_text = _build_fallback_distilled_text(raw_input)
+
+        valid_text, _ = is_objective_lesson_text(distilled_text)
+        if not valid_text:
+            rewritten = rewrite_to_objective_lesson(
+                distilled_text or raw_input,
+                provider=provider,
+                model_tier=model_tier,
+                model_name=model_name,
+                client=client,
+                fallback_model_name=fallback_model_name,
+            )
+            rewritten = _normalize_distilled_text(rewritten, max_chars=220)
+            if rewritten:
+                distilled_text = rewritten
+
+        valid_text, _ = is_objective_lesson_text(distilled_text)
+        if not valid_text:
+            deterministic = _apply_deterministic_objective_rewrite(distilled_text or raw_input)
+            deterministic = _normalize_distilled_text(deterministic, max_chars=220)
+            if deterministic:
+                distilled_text = deterministic
+
+        tags = _normalize_suggested_tags(parsed.get("suggested_tags", []))
 
         return LessonDistillationResult(
             distilled_text=distilled_text,
             suggested_category=suggested_category,
-            suggested_tags=result.get("suggested_tags", []),
+            suggested_tags=tags,
         )
 
+    last_parse_error = None
+    primary_response = ""
+    try:
+        primary_response = _chat_distillation_prompt(client, prompt)
+        parsed = _parse_distillation_response(primary_response)
+        return _build_result(parsed)
     except json.JSONDecodeError as e:
-        logger.warning(f"Failed to parse LLM JSON response: {e}. Using fallback.")
-        fallback_text = _build_fallback_distilled_text(raw_input)
-        return LessonDistillationResult(
-            distilled_text=fallback_text,
-            suggested_category=suggest_category(fallback_text),
-            suggested_tags=[],
+        last_parse_error = e
+        logger.warning(
+            "Failed to parse distillation JSON from primary model '%s': %s",
+            model_name,
+            e,
         )
     except Exception as e:
-        logger.error(f"Distillation failed: {e}")
-        raise
+        logger.warning(
+            "Primary distillation call failed for model '%s': %s",
+            model_name,
+            e,
+        )
+
+    # Repair attempt: ask same model to convert its prior response into strict JSON.
+    repair_prompt = f"""Convert the following text into a valid JSON object with this exact schema:
+{{"distilled_text":"...", "suggested_category":"...", "suggested_tags":["tag1","tag2"]}}
+
+Allowed categories: {category_options}
+Rules:
+- distilled_text must be one sentence (90-220 chars)
+- suggested_tags must be 1-3 lowercase tokens
+- Return JSON only
+
+TEXT TO CONVERT:
+{primary_response}
+"""
+    try:
+        repair_response = _chat_distillation_prompt(client, repair_prompt, temperature=0.0, max_tokens=250)
+        parsed = _parse_distillation_response(repair_response)
+        return _build_result(parsed)
+    except Exception as e:
+        logger.warning("Repair distillation attempt failed for model '%s': %s", model_name, e)
+
+    # Final model fallback attempt if configured.
+    if fallback_model_name and fallback_model_name != model_name:
+        try:
+            fallback_client = get_client(
+                provider=provider,
+                model_tier=model_tier,
+                model_name=fallback_model_name,
+            )
+            fallback_response = _chat_distillation_prompt(fallback_client, prompt)
+            parsed = _parse_distillation_response(fallback_response)
+            return _build_result(parsed)
+        except Exception as e:
+            logger.warning(
+                "Fallback distillation model '%s' failed: %s",
+                fallback_model_name,
+                e,
+            )
+
+    if last_parse_error:
+        logger.warning("Falling back to local distilled text after JSON parse failures")
+
+    fallback_text = _build_fallback_distilled_text(raw_input)
+    return LessonDistillationResult(
+        distilled_text=fallback_text,
+        suggested_category=suggest_category(fallback_text),
+        suggested_tags=[],
+    )
 
 
 def suggest_category(text: str) -> str:

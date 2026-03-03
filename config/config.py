@@ -193,6 +193,40 @@ knowledge_archive_archive_org_timeout = knowledge_archive_config.get("archive_or
 knowledge_archive_min_word_count = knowledge_archive_config.get("min_word_count", 75)
 knowledge_archive_batch_delay = knowledge_archive_config.get("batch_delay_seconds", 1.0)
 
+# Newsletter auto-ingestion configuration
+newsletter_ingestion_config = config_yaml.get("newsletter_ingestion", {})
+newsletter_ingestion_enabled = newsletter_ingestion_config.get("enabled", False)
+newsletter_ingestion_state_dir = newsletter_ingestion_config.get(
+    "state_dir", "./memory_palace/newsletter_ingestion"
+)
+newsletter_ingestion_log_dir = newsletter_ingestion_config.get(
+    "log_dir", "./memory_palace/newsletter_ingestion/logs"
+)
+newsletter_ingestion_lock_file = newsletter_ingestion_config.get(
+    "lock_file",
+    "./memory_palace/newsletter_ingestion/newsletter_ingestion.lock",
+)
+newsletter_ingestion_model_tier = newsletter_ingestion_config.get("model_tier", "smart")
+newsletter_ingestion_max_retries = newsletter_ingestion_config.get("max_retries", 3)
+newsletter_ingestion_base_retry_delay_seconds = newsletter_ingestion_config.get(
+    "base_retry_delay_seconds", 30
+)
+newsletter_ingestion_run_timeout_minutes = newsletter_ingestion_config.get(
+    "run_timeout_minutes", 90
+)
+newsletter_ingestion_per_source_limit = newsletter_ingestion_config.get(
+    "per_source_limit", 20
+)
+newsletter_ingestion_feed_timeout_seconds = newsletter_ingestion_config.get(
+    "feed_timeout_seconds", 20
+)
+newsletter_ingestion_backfill_count = newsletter_ingestion_config.get("backfill_count", 10)
+newsletter_ingestion_max_seen_ids = newsletter_ingestion_config.get("max_seen_ids", 2000)
+newsletter_ingestion_telegram_alerts = newsletter_ingestion_config.get(
+    "telegram_alerts", True
+)
+newsletter_ingestion_sources = newsletter_ingestion_config.get("sources", [])
+
 # Default model selectors for API endpoints
 # These are loaded from the 'defaults' section in config.yml
 defaults_config = config_yaml.get("defaults", {})

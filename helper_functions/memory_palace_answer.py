@@ -86,6 +86,7 @@ class AnswerEngine:
         archive_db: KnowledgeArchiveDB = None,
         provider: str = None,
         model_tier: str = None,
+        model_name: str = None,
     ):
         """
         Initialize the answer engine.
@@ -96,12 +97,14 @@ class AnswerEngine:
             archive_db: Knowledge Archive database (indexed articles)
             provider: LLM provider for synthesis
             model_tier: Model tier for synthesis
+            model_name: Explicit model name for synthesis (overrides tier)
         """
         self.wisdom_db = wisdom_db or MemoryPalaceDB()
         self.knowledge_db = knowledge_db or WebKnowledgeDB()
         self.archive_db = archive_db or KnowledgeArchiveDB()
         self.provider = provider or config.memory_palace_provider
         self.model_tier = model_tier or "smart"  # Use smart model for synthesis
+        self.model_name = model_name or getattr(config, "memory_palace_primary_model", None)
 
     def answer(
         self,
@@ -253,7 +256,11 @@ class AnswerEngine:
         Returns:
             (answer_text, reasoning_prefix)
         """
-        client = get_client(provider=self.provider, model_tier=self.model_tier)
+        client = get_client(
+            provider=self.provider,
+            model_tier=self.model_tier,
+            model_name=self.model_name,
+        )
 
         # Build context from matches
         wisdom_context = ""
