@@ -46,6 +46,7 @@ from helper_functions.memory_palace_db import (
     LessonMetadata,
     LessonCategory,
     distill_lesson,
+    is_objective_lesson_text,
 )
 from helper_functions.memory_palace_local import save_memory
 
@@ -250,23 +251,27 @@ CONTENT:
         max_tokens=3000,
     )
 
-    # Parse numbered takeaways
+    # Parse numbered takeaways. Models sometimes emit variants like:
+    # "1. ...", "1) ...", or markdown-wrapped "**1. ...**".
+    numbered_prefix = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?\d+\s*[\.\)]\s*(?:\*\*)?\s*")
     takeaways = []
     current = ""
     for line in response.strip().split("\n"):
-        if re.match(r"^\d+\.\s", line.strip()):
+        stripped = line.strip()
+        if numbered_prefix.match(stripped):
             if current.strip():
                 takeaways.append(current.strip())
-            current = line.strip()
+            current = numbered_prefix.sub("", stripped, count=1).strip()
         else:
-            current += " " + line.strip()
+            # Ignore preamble text before the first numbered item.
+            if current.strip() and stripped:
+                current += " " + stripped
     if current.strip():
         takeaways.append(current.strip())
 
-    # Clean: remove number prefix and markdown bold
+    # Clean: remove markdown emphasis markers
     cleaned = []
     for t in takeaways:
-        t = re.sub(r"^\d+\.\s*", "", t)
         t = t.replace("**", "")
         if t.strip():
             cleaned.append(t.strip())
@@ -279,6 +284,42 @@ CONTENT:
     cleaned = [t for t in cleaned if len(t) > 40 and not preamble_patterns.search(t)]
 
     return cleaned[:num_takeaways]
+
+
+def _normalize_skip_distill_takeaway(takeaway: str) -> Optional[str]:
+    """Normalize raw takeaway text for skip-distill mode without calling LLM."""
+    text = re.sub(r"\s+", " ", (takeaway or "")).replace("**", "").strip()
+    if not text:
+        return None
+
+    rewrites = (
+        (
+            r"^\s*(?:based on|from)\s+(?:the\s+)?(?:video|podcast|article|book)[^:]*:\s*",
+            "",
+        ),
+        (
+            r"^\s*(?:based on|from)\s+(?:the\s+)?(?:video|podcast|article|book)\s*,\s*",
+            "",
+        ),
+        (
+            r"^\s*(?:here are|these are|the following|key takeaways|takeaways from)\b.*?:\s*",
+            "",
+        ),
+    )
+    for pattern, replacement in rewrites:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    if not text.endswith((".", "!", "?")):
+        text = f"{text}."
+    text = text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
+    valid, _ = is_objective_lesson_text(text)
+    if not valid:
+        return None
+    return text
 
 
 # --- Upload to Memory Palace stores ---
@@ -297,9 +338,14 @@ def upload_to_edith(
             if skip_distill:
                 # Store as-is with keyword-based category
                 from helper_functions.memory_palace_db import suggest_category
-                category = suggest_category(takeaway)
+                normalized_takeaway = _normalize_skip_distill_takeaway(takeaway)
+                if not normalized_takeaway:
+                    print(f"  [{i}/{len(takeaways)}] SKIPPED: non-objective takeaway format")
+                    continue
+
+                category = suggest_category(normalized_takeaway)
                 lesson = Lesson(
-                    distilled_text=takeaway,
+                    distilled_text=normalized_takeaway,
                     metadata=LessonMetadata(
                         category=LessonCategory(category),
                         source="manual",
@@ -312,6 +358,10 @@ def upload_to_edith(
                 # Full LLM distillation
                 few_shot = db.get_few_shot_examples(count=3)
                 result = distill_lesson(takeaway, few_shot_examples=few_shot)
+                valid_result, _ = is_objective_lesson_text(result.distilled_text)
+                if not valid_result:
+                    print(f"  [{i}/{len(takeaways)}] SKIPPED: distillation output remained source-referential")
+                    continue
                 lesson = Lesson(
                     distilled_text=result.distilled_text,
                     metadata=LessonMetadata(

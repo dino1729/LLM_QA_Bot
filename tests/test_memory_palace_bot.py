@@ -796,6 +796,47 @@ class TestScheduledReminders:
 
     @pytest.mark.asyncio
     @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_random_reminder_skips_non_objective_lesson_then_sends_objective(
+        self, mock_db_class, mock_config
+    ):
+        """Reminder selection should skip source-referential lessons."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        bad_lesson = Lesson(
+            distilled_text="The author predicts that domain-specific chatbots will emerge as a game-changing technology.",
+            metadata=LessonMetadata(
+                category=LessonCategory.TECHNOLOGY,
+                original_input="input",
+                distilled_by_model="test-model",
+            ),
+        )
+        good_lesson = Lesson(
+            distilled_text="Domain-specific chatbots can be game-changing in narrow workflows with clear feedback loops.",
+            metadata=LessonMetadata(
+                category=LessonCategory.TECHNOLOGY,
+                original_input="input",
+                distilled_by_model="test-model",
+            ),
+        )
+        mock_db.get_random_lesson.side_effect = [bad_lesson, good_lesson]
+
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
+        context.job = MagicMock()
+        context.job.chat_id = mock_config.memory_palace_telegram_user_id
+
+        bot = MemoryPalaceBot()
+        await bot._send_random_memory_reminder(context)
+
+        assert mock_db.get_random_lesson.call_count == 2
+        mock_db.mark_as_shown.assert_called_once_with(good_lesson.id)
+        sent_text = context.bot.send_message.call_args.kwargs["text"]
+        assert "Domain-specific chatbots" in sent_text
+        assert "author predicts" not in sent_text.lower()
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
     async def test_random_reminder_no_lessons_sends_nothing(self, mock_db_class, mock_config):
         """Test reminder does nothing when lesson store is empty."""
         mock_db = MagicMock()

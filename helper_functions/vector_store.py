@@ -202,7 +202,7 @@ class SimpleVectorStore:
                 pass
             raise
 
-    def insert(self, doc: Document):
+    def insert(self, doc: Document, persist: bool = True):
         """Insert a single document with its embedding.
 
         Note: This method persists to disk on every call. For batch
@@ -217,7 +217,8 @@ class SimpleVectorStore:
             "metadata": doc.metadata,
             "embedding": embedding
         }
-        self.persist()
+        if persist:
+            self.persist()
 
     def insert_many(self, docs: List[Document]):
         """Insert multiple documents."""
