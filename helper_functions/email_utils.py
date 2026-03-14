@@ -19,12 +19,17 @@ def send_email(subject, message, is_html=False, skip_send=False) -> bool:
         return True
 
     sender_email = config.yahoo_id
-    receiver_email = "katam.dinesh@hotmail.com"
+    receiver_email = config.receiver_email
     password = config.yahoo_app_password
 
     if not sender_email or not password:
         logger.error("Email credentials not configured in config.yml")
         print("ERROR: Email credentials missing - check yahoo_id and yahoo_app_password in config.yml")
+        return False
+
+    if not receiver_email:
+        logger.error("Receiver email not configured in config.yml")
+        print("ERROR: receiver_email missing - check receiver_email in config.yml")
         return False
 
     email_message = MIMEMultipart()

@@ -37,8 +37,14 @@ groq_model_name = config_yaml.get("groq_model_name")
 groq_llama_model_name = config_yaml.get("groq_llama_model_name")
 groq_qwen_model_name = config_yaml.get("groq_qwen_model_name")
 
-# LiteLLM Configuration - all model names must be specified in config.yml
-litellm_base_url = config_yaml.get("litellm_base_url")
+# LiteLLM Configuration - env override first, then config/.env, then config.yml
+litellm_base_url = (
+    os.getenv("LITELLM_BASE_URL")
+    or config_env.get("LITELLM_BASE_URL")
+    or config_yaml.get("litellm_base_url")
+)
+if not litellm_base_url or str(litellm_base_url).startswith("${"):
+    litellm_base_url = "http://localhost:4000"
 litellm_api_key = config_yaml.get("litellm_api_key")
 litellm_fast_llm = config_yaml.get("litellm_fast_llm")
 litellm_smart_llm = config_yaml.get("litellm_smart_llm")
@@ -168,6 +174,10 @@ pyowm_lon = config_yaml.get("pyowm_lon")
 # Email configuration
 yahoo_id = config_yaml.get("yahoo_id")
 yahoo_app_password = config_yaml.get("yahoo_app_password")
+receiver_email = config_yaml.get("receiver_email", "")
+
+# Local TTS service URL (legacy local_text_to_speech endpoint)
+local_tts_url = config_yaml.get("local_tts_url", "")
 
 # Telegram Bot Token
 telegram_bot_token = config_yaml.get("telegram_bot_token")

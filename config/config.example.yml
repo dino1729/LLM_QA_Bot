@@ -26,6 +26,10 @@ pyowm_lon: ""                   # Longitude
 # yahoo smtp server
 yahoo_id: ""
 yahoo_app_password: ""
+receiver_email: ""
+
+# Local TTS service (legacy local_text_to_speech endpoint)
+local_tts_url: ""
 
 # LiteLLM
 litellm_base_url: ""

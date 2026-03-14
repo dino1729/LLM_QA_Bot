@@ -78,10 +78,11 @@ class TestSendEmail:
         """Test successful plain text email sending"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password_123"
-        
+        mock_config.receiver_email = "test@example.com"
+
         mock_server = Mock()
         mock_smtp.return_value = mock_server
-        
+
         result = email_utils.send_email(
             subject="Test Subject",
             message="Plain text message body",
@@ -101,10 +102,11 @@ class TestSendEmail:
         """Test successful HTML email sending"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password_123"
-        
+        mock_config.receiver_email = "test@example.com"
+
         mock_server = Mock()
         mock_smtp.return_value = mock_server
-        
+
         result = email_utils.send_email(
             subject="HTML Email",
             message="<html><body><h1>Hello</h1></body></html>",
@@ -120,7 +122,8 @@ class TestSendEmail:
         """Test email sending with authentication error"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "wrong_password"
-        
+        mock_config.receiver_email = "test@example.com"
+
         mock_server = Mock()
         mock_server.login.side_effect = smtplib.SMTPAuthenticationError(535, "Authentication failed")
         mock_smtp.return_value = mock_server
@@ -138,6 +141,7 @@ class TestSendEmail:
         """Test email sending with connection error"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_smtp.side_effect = smtplib.SMTPConnectError(421, "Cannot connect")
         
@@ -154,6 +158,7 @@ class TestSendEmail:
         """Test email sending with generic SMTP exception"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_server.sendmail.side_effect = smtplib.SMTPException("SMTP error occurred")
@@ -172,6 +177,7 @@ class TestSendEmail:
         """Test email sending with general exception"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_server.starttls.side_effect = Exception("Unexpected error")
@@ -190,6 +196,7 @@ class TestSendEmail:
         """Test email sending with Unicode content"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
@@ -208,6 +215,7 @@ class TestSendEmail:
         """Test email sending with very long subject"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
@@ -227,6 +235,7 @@ class TestSendEmail:
         """Test email sending with very long message"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
@@ -246,6 +255,7 @@ class TestSendEmail:
         """Test HTML email with embedded image tags"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
@@ -274,6 +284,7 @@ class TestSendEmail:
         """Test email sending with empty message"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
@@ -292,6 +303,7 @@ class TestSendEmail:
         """Test email sending with server timeout"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_smtp.side_effect = Exception("Timeout during connection")
         
@@ -304,23 +316,38 @@ class TestSendEmail:
     
     @patch('helper_functions.email_utils.smtplib.SMTP')
     @patch('helper_functions.email_utils.config')
-    def test_send_email_receiver_is_hardcoded(self, mock_config, mock_smtp):
-        """Test that receiver email is hardcoded (design verification)"""
+    def test_send_email_receiver_from_config(self, mock_config, mock_smtp):
+        """Test that receiver email comes from config"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
-        
+        mock_config.receiver_email = "receiver@example.com"
+
         mock_server = Mock()
         mock_smtp.return_value = mock_server
-        
+
         email_utils.send_email(
             subject="Test",
             message="Test message"
         )
-        
-        # Verify sendmail is called with the hardcoded receiver
+
+        # Verify sendmail uses configured receiver
         args = mock_server.sendmail.call_args[0]
         assert args[0] == "sender@yahoo.com"  # sender
-        assert args[1] == "katam.dinesh@hotmail.com"  # hardcoded receiver
+        assert args[1] == "receiver@example.com"  # from config
+
+    @patch('helper_functions.email_utils.config')
+    def test_send_email_missing_receiver_email(self, mock_config):
+        """Test that missing receiver_email returns False"""
+        mock_config.yahoo_id = "sender@yahoo.com"
+        mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = ""
+
+        result = email_utils.send_email(
+            subject="Test",
+            message="Test message"
+        )
+
+        assert result is False
     
     @patch('helper_functions.email_utils.smtplib.SMTP')
     @patch('helper_functions.email_utils.config')
@@ -328,6 +355,7 @@ class TestSendEmail:
         """Test that SMTP debug level is set to 0"""
         mock_config.yahoo_id = "sender@yahoo.com"
         mock_config.yahoo_app_password = "app_password"
+        mock_config.receiver_email = "test@example.com"
         
         mock_server = Mock()
         mock_smtp.return_value = mock_server
