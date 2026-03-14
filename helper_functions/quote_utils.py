@@ -6,6 +6,15 @@ from helper_functions.llm_client import get_client
 logger = logging.getLogger(__name__)
 
 
+def _normalize_quotes(text: str) -> str:
+    """Replace Unicode curly/smart quotes with straight ASCII quotes."""
+    for ch in ("\u201c", "\u201d", "\u201e", "\u201f"):  # double curly quotes
+        text = text.replace(ch, '"')
+    for ch in ("\u2018", "\u2019", "\u201a", "\u201b"):  # single curly quotes
+        text = text.replace(ch, "'")
+    return text
+
+
 def generate_quote(random_personality: str, llm_provider: str, model_tier: str) -> str:
     """Generate an inspirational quote from the given personality."""
     logger.info("Generating quote for personality: %s", random_personality)
@@ -15,7 +24,7 @@ def generate_quote(random_personality: str, llm_provider: str, model_tier: str) 
         {
             "role": "system",
             "content": f"You provide famous quotes from {random_personality}. "
-            f"Reply with ONLY the quote in quotation marks - no introduction, no explanation, just the quote.",
+            f"Reply with ONLY the quote in quotation marks on a single line - no introduction, no explanation, just the quote.",
         },
         {"role": "user", "content": f"Give me an inspirational quote from {random_personality}"},
     ]
@@ -37,8 +46,12 @@ def generate_quote(random_personality: str, llm_provider: str, model_tier: str) 
             logger.warning("LLM returned empty response for quote generation")
             return _get_fallback_quote(random_personality)
 
-        cleaned = message.strip()
-        quote_matches = re.findall(r'"([^"]+)"', cleaned)
+        # Normalize curly/smart quotes to straight quotes before any parsing
+        cleaned = _normalize_quotes(message.strip())
+
+        # Try regex on newline-collapsed text so multi-line quotes aren't split
+        collapsed = " ".join(cleaned.split())
+        quote_matches = re.findall(r'"([^"]+)"', collapsed)
         logger.debug("Found %s quoted segments in response", len(quote_matches))
 
         if quote_matches:
@@ -49,6 +62,8 @@ def generate_quote(random_personality: str, llm_provider: str, model_tier: str) 
                 logger.info("Successfully extracted quote: %s...", result[:80])
                 return result
 
+        # Fallback: scan individual lines (preserving newlines so meta-text
+        # on separate lines can be skipped)
         lines = [l.strip() for l in cleaned.split("\n") if l.strip()]
         logger.debug("Searching %s lines for usable content", len(lines))
 
@@ -79,11 +94,11 @@ def generate_quote(random_personality: str, llm_provider: str, model_tier: str) 
                 logger.info("Using line as quote: %s...", line[:80])
                 return line
 
-        if 20 < len(cleaned) < 300 and "user" not in cleaned.lower():
-            if not (cleaned.startswith('"') and cleaned.endswith('"')):
-                cleaned = f'"{cleaned}"'
-            logger.info("Using cleaned response as quote: %s...", cleaned[:80])
-            return cleaned
+        if 20 < len(collapsed) < 300 and "user" not in collapsed.lower():
+            if not (collapsed.startswith('"') and collapsed.endswith('"')):
+                collapsed = f'"{collapsed}"'
+            logger.info("Using cleaned response as quote: %s...", collapsed[:80])
+            return collapsed
 
         logger.warning("Could not extract valid quote from response. Using fallback.")
         return _get_fallback_quote(random_personality)
