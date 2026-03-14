@@ -373,7 +373,7 @@ In `config/config.yml`:
 telegram_bot_token: "token-from-botfather"
 
 memory_palace:
-  telegram_user_id: 562487104  # numeric Telegram user ID
+  telegram_user_id: 123456789  # your numeric Telegram user ID
 ```
 
 ### Running Manually (without systemd)

@@ -22,7 +22,7 @@ def analyze_url(url, memorize=True):
 
 def send_email(subject, message):
     sender_email = config.yahoo_id
-    receiver_email = "katam.dinesh@hotmail.com"
+    receiver_email = config.receiver_email
     password = config.yahoo_app_password
 
     email_message = MIMEMultipart()

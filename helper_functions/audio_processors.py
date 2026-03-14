@@ -517,7 +517,7 @@ def text_to_speech_nospeak(text, output_path, language="en-US", model_name=None,
 
 def local_text_to_speech(text, output_path, model_name):
     
-    url = "http://10.0.0.164:8000/generate"
+    url = config.local_tts_url
     payload = json.dumps({
       "speaker_name": model_name,
       "input_text": text,

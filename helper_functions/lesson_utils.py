@@ -957,7 +957,7 @@ RULES:
 3. Keep each section brief (1-3 sentences)
 4. NO introductions, NO meta-commentary - just the formatted content
 
-Context: Dinesh is a Senior Analog Circuit Design Engineer who values first principles thinking."""
+Context: The user is an engineer who values first principles thinking and systems-level reasoning."""
 
     conversation = [
         {"role": "system", "content": syspromptmessage},
