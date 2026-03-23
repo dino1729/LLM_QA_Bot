@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -730,6 +732,34 @@ def test_bundle_creation():
     return bundle
 
 
+@pytest.fixture
+def bundle():
+    """Fixture version of the sample bundle used by the standalone HTML test."""
+    lesson = parse_lesson_to_dict(
+        "[KEY INSIGHT]\nTest insight.\n\n[HISTORICAL]\nHistorical context.\n\n[APPLICATION]\nApplication here.",
+        topic="Test Topic"
+    )
+    newsletter_sections = {
+        "tech": [{"source": "Test", "headline": "Test headline", "date_mmddyyyy": "12/11/2025", "url": "", "commentary": "Test"}],
+        "financial": [],
+        "india": []
+    }
+    return build_daily_bundle(
+        days_completed=345,
+        weeks_completed=49.29,
+        days_left=20,
+        weeks_left=2.86,
+        percent_days_left=5.48,
+        weather_data={"temp_c": 10, "status": "cloudy", "location": "Test City"},
+        quote_text="Test quote",
+        quote_author="Test Author",
+        lesson_dict=lesson,
+        news_raw_sources={"technology": "raw", "financial": "raw", "india": "raw"},
+        newsletter_sections=newsletter_sections,
+        voicebot_script="Test script"
+    )
+
+
 def test_html_rendering(bundle):
     """Test HTML rendering from bundle"""
     print("\n" + "=" * 70)
@@ -870,4 +900,3 @@ if __name__ == "__main__":
     print("✓ ALL TESTS PASSED!")
     print("=" * 70)
     print(f"\nOpen {OUTPUT_DIR / 'news_newsletter_report.html'} in a browser to view the example newsletter.")
-

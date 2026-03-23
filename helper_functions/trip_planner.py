@@ -20,7 +20,7 @@ def generate_trip_plan(city, days, model_name=None):
     """
     # Use config default if no model specified
     if model_name is None:
-        model_name = config.default_trip_model_name
+        model_name = "LITELLM_SMART"
     # Check if days input is a number
     try:
         days = int(days)
@@ -42,8 +42,6 @@ def generate_trip_plan(city, days, model_name=None):
             temperature=0.3,
             max_tokens=2048
         )
-
-        conversation.append({"role": "assistant", "content": str(response)})
 
         return f"Here is your trip plan for {city} for {days} day(s): {response}"
 

@@ -3,7 +3,6 @@ gradio
 requests
 openai
 pypdf                # PDF text extraction (lightweight replacement for llama-index readers)
-newspaper3k
 beautifulsoup4
 aiohttp
 tiktoken
@@ -13,11 +12,8 @@ youtube_transcript_api
 wget
 pyowm
 google-genai
-groq
 pinecone
-supabase
 soundfile
-sounddevice
 numpy
 Pillow
 python-dotenv
@@ -27,8 +23,7 @@ python-multipart
 
 # Optional features
 selenium             # only for misc_scripts/farnam_scraper.py
-torch                # required by Whisper
-openai-whisper       # Audio transcription
+torch                # local GPU/audio features
 nvidia-riva-client   # NVIDIA Riva ASR/TTS (includes grpcio-tools)
 pyrubberband         # High-quality time stretching for TTS speed adjustment
 librosa              # Audio processing (fallback for time stretching)

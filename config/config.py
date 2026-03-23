@@ -80,6 +80,7 @@ news_enhancement_tier = news_curation_config.get("enhancement_tier", "strategic"
 # Retriever Configuration
 retriever = config_yaml.get("retriever")
 firecrawl_server_url = config_yaml.get("firecrawl_server_url")
+perplexity_search_url = config_yaml.get("perplexity_search_url")
 tavily_api_key = config_yaml.get("tavily_api_key")
 firecrawl_default_provider = config_yaml.get("firecrawl_default_provider")
 firecrawl_default_model_name = config_yaml.get("firecrawl_default_model_name")
@@ -120,6 +121,17 @@ newsletter_news_voice = config_yaml.get("newsletter_news_voice")
 # Options: "fast", "smart", "strategic"
 newsletter_progress_llm_tier = config_yaml.get("newsletter_progress_llm_tier", "smart")
 newsletter_news_llm_tier = config_yaml.get("newsletter_news_llm_tier", "smart")
+
+# Per-stage newsletter model overrides (None = fall back to tier)
+newsletter_models_config = config_yaml.get("newsletter_models", {})
+newsletter_model_quote = newsletter_models_config.get("quote")
+newsletter_model_lesson = newsletter_models_config.get("lesson")
+newsletter_model_progress_voicebot = newsletter_models_config.get("progress_voicebot")
+newsletter_model_news_research = newsletter_models_config.get("news_research")
+newsletter_model_news_synthesis = newsletter_models_config.get("news_synthesis")
+newsletter_model_news_enhancement = newsletter_models_config.get("news_enhancement")
+newsletter_model_newsletter_sections = newsletter_models_config.get("newsletter_sections")
+newsletter_model_news_voicebot = newsletter_models_config.get("news_voicebot")
 
 # Podcast Configuration
 podcast_enabled = config_yaml.get("podcast_enabled", False)
@@ -283,21 +295,21 @@ news_max_concurrent_scrapes = news_researcher_config.get('max_concurrent_scrapes
 # Load prompts.yml config
 prompts_file_path = os.path.join(config_dir, "prompts.yml")
 with open(prompts_file_path, "r") as f:
-    prompts_config = yaml.safe_load(f)
+    prompts_config = yaml.safe_load(f) or {}
 
 # Accessing the templates
-sum_template = prompts_config["sum_template"]
-eg_template = prompts_config["eg_template"]
-ques_template = prompts_config["ques_template"]
+sum_template = prompts_config.get("sum_template", "{context_str}\n\n{query_str}")
+eg_template = prompts_config.get("eg_template", "{context_str}\n\n{query_str}")
+ques_template = prompts_config.get("ques_template", "{context_str}\n\n{query_str}")
 
-system_prompt_content = prompts_config["system_prompt_content"]
+system_prompt_content = prompts_config.get("system_prompt_content", "You are a helpful assistant.")
 system_prompt = [{
     "role": "system",
     "content": system_prompt_content
 }]
 
-example_queries = prompts_config['example_queries']
-example_memorypalacequeries = prompts_config['example_memorypalacequeries']
-example_internetqueries = prompts_config['example_internetqueries']
-example_bhagawatgeetaqueries = prompts_config['example_bhagawatgeetaqueries']
-keywords = prompts_config['keywords']
+example_queries = prompts_config.get('example_queries', [])
+example_memorypalacequeries = prompts_config.get('example_memorypalacequeries', [])
+example_internetqueries = prompts_config.get('example_internetqueries', [])
+example_bhagawatgeetaqueries = prompts_config.get('example_bhagawatgeetaqueries', [])
+keywords = prompts_config.get('keywords', [])

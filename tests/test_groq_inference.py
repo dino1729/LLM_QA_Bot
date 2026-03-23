@@ -10,7 +10,8 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config import config
-from groq import Groq
+
+Groq = pytest.importorskip("groq").Groq
 
 
 class TestGroqInferenceConfig:
@@ -341,4 +342,3 @@ class TestGroqErrorHandling:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
-

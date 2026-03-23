@@ -169,66 +169,61 @@ class TestGenerateChat:
         assert result == "Ollama strategic response"
         mock_get_client.assert_called_once_with(provider="ollama", model_tier="strategic")
     
-    @patch('helper_functions.chat_generation.cohere.Client')
-    def test_generate_chat_cohere(self, mock_cohere_class):
-        """Test Cohere provider"""
+    def test_generate_chat_cohere_invalid(self):
+        """Cohere is no longer a supported chat router token."""
+        conversation = [{"role": "user", "content": "Hello"}]
+        result = chat_generation.generate_chat(
+            "COHERE",
+            conversation,
+            0.7,
+            1000
+        )
+
+        assert "Invalid model name" in result
+    
+    @patch('helper_functions.chat_generation.get_client')
+    def test_generate_chat_gemini(self, mock_get_client):
+        """Test Gemini alias routing through LiteLLM."""
         mock_client = Mock()
-        mock_response = Mock()
-        mock_response.text = "Cohere response"
-        mock_client.chat.return_value = mock_response
-        mock_cohere_class.return_value = mock_client
-        
+        mock_client.chat_completion.return_value = "Gemini response"
+        mock_get_client.return_value = mock_client
+
         conversation = [{"role": "user", "content": "Hello"}]
         result = chat_generation.generate_chat(
-            "COHERE", 
-            conversation, 
-            0.7, 
+            "GEMINI",
+            conversation,
+            0.7,
             1000
         )
-        
-        assert result == "Cohere response"
-        mock_client.chat.assert_called_once()
-    
-    @patch('helper_functions.chat_generation.genai.configure')
-    @patch('helper_functions.chat_generation.genai.GenerativeModel')
-    def test_generate_chat_gemini(self, mock_model_class, mock_configure):
-        """Test Gemini provider"""
-        mock_model = Mock()
-        mock_response = Mock()
-        mock_response.text = "Gemini response"
-        mock_model.generate_content.return_value = mock_response
-        mock_model_class.return_value = mock_model
-        
-        conversation = [{"role": "user", "content": "Hello"}]
-        result = chat_generation.generate_chat(
-            "GEMINI", 
-            conversation, 
-            0.7, 
-            1000
-        )
-        
+
         assert result == "Gemini response"
-        mock_model.generate_content.assert_called_once()
-    
-    @patch('helper_functions.chat_generation.genai.configure')
-    @patch('helper_functions.chat_generation.genai.GenerativeModel')
-    def test_generate_chat_gemini_thinking(self, mock_model_class, mock_configure):
-        """Test Gemini Thinking model"""
-        mock_model = Mock()
-        mock_response = Mock()
-        mock_response.text = "Gemini thinking response"
-        mock_model.generate_content.return_value = mock_response
-        mock_model_class.return_value = mock_model
-        
+        mock_get_client.assert_called_once_with(
+            provider="litellm",
+            model_tier="fast",
+            model_name=chat_generation.gemini_model_name,
+        )
+
+    @patch('helper_functions.chat_generation.get_client')
+    def test_generate_chat_gemini_thinking(self, mock_get_client):
+        """Test Gemini thinking alias routing through LiteLLM."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = "Gemini thinking response"
+        mock_get_client.return_value = mock_client
+
         conversation = [{"role": "user", "content": "Complex question"}]
         result = chat_generation.generate_chat(
-            "GEMINI_THINKING", 
-            conversation, 
-            0.7, 
+            "GEMINI_THINKING",
+            conversation,
+            0.7,
             1000
         )
-        
+
         assert result == "Gemini thinking response"
+        mock_get_client.assert_called_once_with(
+            provider="litellm",
+            model_tier="smart",
+            model_name=chat_generation.gemini_thinkingmodel_name,
+        )
     
     @patch('helper_functions.chat_generation.Groq')
     def test_generate_chat_groq(self, mock_groq_class):
@@ -445,8 +440,6 @@ class TestAPIKeyConfiguration:
     
     def test_api_keys_loaded_from_config(self):
         """Test that API keys are loaded from config"""
-        assert hasattr(chat_generation, 'cohere_api_key')
-        assert hasattr(chat_generation, 'google_api_key')
         assert hasattr(chat_generation, 'groq_api_key')
     
     def test_model_names_loaded_from_config(self):
@@ -495,4 +488,3 @@ class TestEdgeCases:
         
         assert "café" in result
         assert "ñ" in result
-

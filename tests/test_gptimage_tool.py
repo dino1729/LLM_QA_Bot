@@ -2,6 +2,7 @@ import pytest
 import os
 import sys
 import base64
+import json
 from unittest.mock import Mock, patch, mock_open
 from helper_functions import gptimage_tool
 
@@ -234,6 +235,32 @@ class TestRunGenerate:
         
         with pytest.raises(Exception):
             run_generate("test", "1024x1024")
+
+    @patch('helper_functions.gptimage_tool.OpenAI')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_run_generate_uses_openai_base_url_fallback(self, mock_file, mock_openai):
+        """Use OPENAI_BASE_URL when OPENAI_API_BASE is unset."""
+        from helper_functions.gptimage_tool import run_generate
+
+        fake_image_data = base64.b64encode(b"fake_image_data").decode()
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(b64_json=fake_image_data)]
+        mock_client.images.generate.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "test-key",
+                "OPENAI_BASE_URL": "http://gateway:4000",
+            },
+            clear=True,
+        ):
+            run_generate("a sunset", "1024x1024")
+
+        _, kwargs = mock_openai.call_args
+        assert kwargs["base_url"] == "http://gateway:4000"
 
 class TestRunEdit:
     """Tests for run_edit() function"""

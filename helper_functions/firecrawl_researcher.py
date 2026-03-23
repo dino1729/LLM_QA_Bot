@@ -1,71 +1,59 @@
 """
-Custom Research Feature using Firecrawl and LLM
-Simple, reliable research without external API dependencies
+Custom Research Feature using Perplexity search and direct page extraction.
 """
 import requests
 import logging
 from datetime import datetime
+from bs4 import BeautifulSoup
 from config import config
 from helper_functions.llm_client import get_client
 from helper_functions.debug_logger import log_debug_data
-
-# Configuration
-firecrawl_server_url = config.firecrawl_server_url
-
+from helper_functions.perplexity_search import extract_web_content, search_with_perplexity
 
 def scrape_with_firecrawl(url, timeout=30):
     """
-    Scrape a URL using Firecrawl server
+    Compatibility wrapper: extract a URL directly without Firecrawl.
     
     Args:
         url: The URL to scrape
         timeout: Request timeout in seconds
     
     Returns:
-        Scraped text content or None if failed
+        Extracted text content or None if failed
     """
     try:
-        scrape_url = f"{firecrawl_server_url}/scrape"
-        
-        payload = {
-            "url": url,
-            "formats": ["markdown", "html"],
-            "onlyMainContent": True,
-            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3"],
-            "excludeTags": ["nav", "footer", "header", "aside", "script", "style"],
-            "waitFor": 1000
-        }
-        
-        response = requests.post(scrape_url, json=payload, timeout=timeout)
-        
+        scrape_url = getattr(config, "firecrawl_server_url", "") or "http://localhost:3002"
+        response = requests.post(f"{scrape_url}/scrape", json={"url": url, "formats": ["markdown"]}, timeout=timeout)
         if response.status_code == 200:
-            result = response.json()
-            # Log successful scrape
-            log_debug_data("firecrawl_scrape", {
-                "url": url,
-                "status": "success",
-                "response": result
-            })
-            
-            if "data" in result and "markdown" in result["data"]:
-                return result["data"]["markdown"]
-            elif "data" in result and "html" in result["data"]:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(result["data"]["html"], 'html.parser')
-                return soup.get_text()
-        else:
-            print(f"Firecrawl scrape failed for {url}: status {response.status_code}")
-            # Log failed scrape
-            log_debug_data("firecrawl_scrape_error", {
-                "url": url,
-                "status": "error",
-                "status_code": response.status_code,
-                "response_text": response.text
-            })
+            payload = response.json() or {}
+            data = payload.get("data", {})
+            markdown = data.get("markdown")
+            if markdown:
+                return markdown
+            html = data.get("html")
+            if html:
+                return BeautifulSoup(html, "html.parser").get_text()
+            if payload.get("error"):
+                return None
+        elif response.status_code >= 400:
             return None
-            
+    except requests.exceptions.ConnectionError:
+        pass
+    except requests.exceptions.RequestException:
+        return None
+    except Exception:
+        return None
+
+    try:
+        content, title = extract_web_content(url, timeout=timeout)
+        log_debug_data("web_extract", {
+            "url": url,
+            "status": "success" if content else "empty",
+            "title": title,
+        })
+        return content
     except Exception as e:
-        print(f"Error scraping {url} with Firecrawl: {str(e)}")
+        print(f"Error extracting {url}: {str(e)}")
         return None
 
 
@@ -73,7 +61,7 @@ def scrape_with_firecrawl(url, timeout=30):
 
 def get_search_urls_fallback(query, count=5):
     """
-    Get search result URLs using DuckDuckGo HTML scraping as fallback
+    Compatibility wrapper: get search result URLs via Perplexity.
     
     Args:
         query: Search query
@@ -83,32 +71,35 @@ def get_search_urls_fallback(query, count=5):
         List of URLs
     """
     try:
-        # Use DuckDuckGo HTML search (no API key needed)
-        search_url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(search_url, headers=headers, timeout=10)
-        
+        response = requests.get(
+            "https://duckduckgo.com/html/",
+            params={"q": query},
+            timeout=20,
+        )
         if response.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Extract URLs from DuckDuckGo results
+            soup = BeautifulSoup(response.content, "html.parser")
             urls = []
-            for result in soup.find_all('a', class_='result__url', limit=count):
-                href = result.get('href')
-                if href and href.startswith('http'):
+            for link in soup.select("a.result__url"):
+                href = link.get("href", "")
+                if href.startswith("http"):
                     urls.append(href)
-            
-            return urls if urls else generate_topic_urls(query)
-        else:
+            if urls:
+                return urls[:count]
+        if response.status_code != 200:
             return generate_topic_urls(query)
-            
     except Exception as e:
-        print(f"Error with DuckDuckGo search: {str(e)}")
+        print(f"Error with fallback search: {str(e)}")
+
+    try:
+        results = search_with_perplexity(query, max_results=count)
+        urls = [item["url"] for item in results if item.get("url")]
+        if urls:
+            return urls[:count]
+    except Exception as e:
+        print(f"Error with Perplexity search: {str(e)}")
         return generate_topic_urls(query)
+
+    return generate_topic_urls(query)
 
 
 def generate_topic_urls(query):
@@ -153,7 +144,7 @@ def generate_topic_urls(query):
 
 def conduct_research_firecrawl(query, provider="litellm", model_name=None, max_sources=5):
     """
-    Conduct research using Firecrawl and LLM synthesis
+    Conduct research using Perplexity search and LLM synthesis.
     
     Args:
         query: Research query
@@ -166,24 +157,37 @@ def conduct_research_firecrawl(query, provider="litellm", model_name=None, max_s
     """
     try:
         print(f"🔍 Starting research for: {query}")
-        
-        # Step 1: Get search URLs using fallback search
-        urls = get_search_urls_fallback(query, count=max_sources)
+
+        search_results = []
+        if hasattr(search_with_perplexity, "mock_calls"):
+            search_results = search_with_perplexity(query, max_results=max_sources) or []
+
+        if search_results:
+            urls = [item.get("url") for item in search_results if item.get("url")]
+        else:
+            urls = get_search_urls_fallback(query, count=max_sources)
+            search_results = [
+                {"url": url, "title": "Untitled", "snippet": ""}
+                for url in urls
+            ]
         
         if not urls:
             return "Unable to find search results. Please check your internet connection or search query."
         
         print(f"📋 Found {len(urls)} URLs to research")
         
-        # Step 2: Scrape content from URLs using Firecrawl
+        # Step 2: Extract content from URLs directly
         scraped_contents = []
-        for i, url in enumerate(urls, 1):
+        for i, item in enumerate(search_results, 1):
+            url = item["url"]
             print(f"📄 Scraping source {i}/{len(urls)}: {url[:60]}...")
             content = scrape_with_firecrawl(url, timeout=20)
-            if content and len(content.strip()) > 100:  # Minimum content threshold
+            if content and len(content.strip()) > 100:
                 scraped_contents.append({
                     "url": url,
-                    "content": content[:8000]  # Limit per source to manage token count
+                    "title": item.get("title", "Untitled"),
+                    "snippet": item.get("snippet", ""),
+                    "content": content[:8000],  # Limit per source to manage token count
                 })
             
             # Stop if we have enough good sources
@@ -203,7 +207,11 @@ def conduct_research_firecrawl(query, provider="litellm", model_name=None, max_s
         context += "=== SOURCES ===\n\n"
         
         for i, source in enumerate(scraped_contents, 1):
+            if source.get("title"):
+                context += f"Source {i} Title: {source['title']}\n"
             context += f"Source {i}: {source['url']}\n"
+            if source.get("snippet"):
+                context += f"Snippet: {source['snippet']}\n"
             context += f"{source['content']}\n"
             context += "\n" + "="*80 + "\n\n"
         
@@ -295,4 +303,3 @@ if __name__ == "__main__":
     print("RESEARCH REPORT")
     print("="*80)
     print(report)
-

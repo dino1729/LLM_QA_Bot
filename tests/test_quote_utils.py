@@ -190,11 +190,11 @@ The only way to do great work is to love what you do.
         quote_utils.generate_quote("Test Person", "litellm", "fast")
         
         # Verify client was created with correct provider and tier
-        mock_get_client.assert_called_once_with(provider="litellm", model_tier="fast")
+        mock_get_client.assert_called_once_with(provider="litellm", model_tier="fast", model_name=None)
         
         # Verify chat_completion was called with correct params
         args, kwargs = mock_client.chat_completion.call_args
-        assert kwargs["max_tokens"] == 250
+        assert kwargs["max_tokens"] == 1024
         assert kwargs["temperature"] == 0.8
         assert "messages" in kwargs
     
@@ -264,6 +264,50 @@ The only way to do great work is to love what you do.
         assert "Live as if you were to die tomorrow" in result
         assert "Learn as if you were to live forever" in result
 
+    @patch('helper_functions.quote_utils.get_client')
+    def test_generate_quote_repairs_multiline_quote_with_missing_closing_quote(self, mock_get_client):
+        """Test multi-line quote recovery when the model omits the closing quote."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = (
+            '"Most good programmers do programming not\n'
+            'because they expect to get paid or get adulation by the public, '
+            'but because it is fun to program.'
+        )
+        mock_get_client.return_value = mock_client
+
+        result = quote_utils.generate_quote("Linus Torvalds", "litellm", "fast")
+
+        assert result == (
+            '"Most good programmers do programming not because they expect to get paid '
+            'or get adulation by the public, but because it is fun to program."'
+        )
+
+    @patch('helper_functions.quote_utils.get_client')
+    def test_generate_quote_repairs_multiline_quote_with_meta_prefix_and_missing_closing_quote(self, mock_get_client):
+        """Test malformed multi-line quote recovery after skipping meta text."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = (
+            'Here is a famous quote from Gandhi:\n'
+            '"Live as if you were to die tomorrow.\n'
+            'Learn as if you were to live forever.'
+        )
+        mock_get_client.return_value = mock_client
+
+        result = quote_utils.generate_quote("Mahatma Gandhi", "litellm", "fast")
+
+        assert result == '"Live as if you were to die tomorrow. Learn as if you were to live forever."'
+
+    @patch('helper_functions.quote_utils.get_client')
+    def test_generate_quote_keeps_real_quotes_that_start_with_here_is(self, mock_get_client):
+        """Test that actual quotes are not filtered just because they start with 'Here is'."""
+        mock_client = Mock()
+        mock_client.chat_completion.return_value = "Here is to the crazy ones. The misfits. The rebels."
+        mock_get_client.return_value = mock_client
+
+        result = quote_utils.generate_quote("Steve Jobs", "litellm", "fast")
+
+        assert result == '"Here is to the crazy ones. The misfits. The rebels."'
+
 
 class TestNormalizeQuotes:
     """Tests for _normalize_quotes() helper"""
@@ -324,4 +368,3 @@ class TestGetFallbackQuote:
         """Test default fallback quote"""
         result = quote_utils._get_fallback_quote("Random Name")
         assert result == '"The only way to do great work is to love what you do."'
-

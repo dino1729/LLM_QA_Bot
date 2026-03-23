@@ -1,21 +1,29 @@
 """
 Chat Generation Module
-Supports multiple LLM providers: LiteLLM, Ollama, Gemini, and Groq
+Supports multiple LLM providers: LiteLLM, Ollama, Gemini aliases via LiteLLM, and Groq
 """
-from google import genai
-from google.genai import types
-from groq import Groq
+from openai import OpenAI
 from config import config
 from helper_functions.llm_client import get_client
 
-# API Keys
-google_api_key = config.google_api_key
-gemini_model_name = config.gemini_model_name
-gemini_thinkingmodel_name = config.gemini_thinkingmodel_name
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
+# Configured aliases for Gemini-compatible routes on LiteLLM
+gemini_model_name = config.gemini_model_name or config.litellm_fast_llm
+gemini_thinkingmodel_name = config.gemini_thinkingmodel_name or config.litellm_smart_llm
 groq_api_key = config.groq_api_key
 groq_model_name = config.groq_model_name
 groq_llama_model_name = config.groq_llama_model_name
 groq_qwen_model_name = config.groq_qwen_model_name
+
+
+def _generate_litellm_alias_chat(model_name, conversation, temperature, max_tokens, model_tier):
+    """Route compatibility aliases through LiteLLM with an explicit model name."""
+    client = get_client(provider="litellm", model_tier=model_tier, model_name=model_name)
+    return client.chat_completion(conversation, temperature, max_tokens)
 
 
 def generate_chat(model_name, conversation, temperature, max_tokens):
@@ -37,7 +45,6 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         # Extract the actual model name after the prefix
         actual_model = model_name.split("LITELLM:", 1)[1]
         # Use LiteLLM with the specific model
-        from openai import OpenAI
         client = OpenAI(
             base_url=config.litellm_base_url,
             api_key=config.litellm_api_key
@@ -54,7 +61,6 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         # Extract the actual model name after the prefix
         actual_model = model_name.split("OLLAMA:", 1)[1]
         # Use Ollama with the specific model
-        from openai import OpenAI
         client = OpenAI(
             base_url=config.ollama_base_url,
             api_key="ollama"  # Ollama doesn't need a real API key
@@ -93,37 +99,29 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         client = get_client(provider="ollama", model_tier="strategic")
         return client.chat_completion(conversation, temperature, max_tokens)
 
-    # Gemini models
+    # Gemini compatibility aliases now route through LiteLLM
     elif model_name == "GEMINI":
-        client = genai.Client(api_key=google_api_key)
-        response = client.models.generate_content(
-            model=gemini_model_name,
-            contents=str(conversation).replace("'", '"'),
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                top_p=0.9,
-                top_k=1,
-            )
+        return _generate_litellm_alias_chat(
+            gemini_model_name,
+            conversation,
+            temperature,
+            max_tokens,
+            model_tier="fast",
         )
-        return response.text
 
     elif model_name == "GEMINI_THINKING":
-        client = genai.Client(api_key=google_api_key)
-        response = client.models.generate_content(
-            model=gemini_thinkingmodel_name,
-            contents=str(conversation).replace("'", '"'),
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                top_p=0.9,
-                top_k=1,
-            )
+        return _generate_litellm_alias_chat(
+            gemini_thinkingmodel_name,
+            conversation,
+            temperature,
+            max_tokens,
+            model_tier="smart",
         )
-        return response.text
 
     # Groq
     elif model_name == "GROQ":
+        if Groq is None:
+            raise ImportError("groq package not installed")
         groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
             model=groq_model_name,
@@ -135,6 +133,8 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         return response.choices[0].message.content
 
     elif model_name == "GROQ_LLAMA":
+        if Groq is None:
+            raise ImportError("groq package not installed")
         groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
             model=groq_llama_model_name,
@@ -148,6 +148,8 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
         return response.choices[0].message.content
 
     elif model_name == "GROQ_MIXTRAL":
+        if Groq is None:
+            raise ImportError("groq package not installed")
         groq_client = Groq(api_key=groq_api_key)
         response = groq_client.chat.completions.create(
             model=groq_qwen_model_name,

@@ -78,6 +78,7 @@ news_curation:
 # Retriever and Firecrawl
 retriever: ""
 firecrawl_server_url: ""
+perplexity_search_url: ""   # LiteLLM Perplexity search endpoint, e.g. http://host:4000/v1/perplexity-search
 firecrawl_default_provider: ""
 firecrawl_default_model_name: ""
 
@@ -120,6 +121,18 @@ newsletter_news_voice: ""           # REQUIRED: Voice for news briefing script (
 # Options: "fast", "smart", "strategic" (maps to litellm_fast_llm, litellm_smart_llm, litellm_strategic_llm)
 newsletter_progress_llm_tier: ""   # LLM tier for year progress script generation
 newsletter_news_llm_tier: ""       # LLM tier for news briefing script generation
+
+# Per-stage newsletter model assignments (override tier-based selection)
+# Leave blank or remove a key to fall back to the tier-based selection above.
+newsletter_models:
+  quote: ""
+  lesson: ""
+  progress_voicebot: ""
+  news_research: ""
+  news_synthesis: ""
+  news_enhancement: ""
+  newsletter_sections: ""
+  news_voicebot: ""
 
 # Podcast Configuration
 podcast_enabled: false

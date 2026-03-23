@@ -20,7 +20,7 @@ def craving_satisfier(city, food_craving, model_name=None):
     """
     # Use config default if no model specified
     if model_name is None:
-        model_name = config.default_cravings_model_name
+        model_name = "LITELLM_SMART"
     try:
         # If the food craving is "idk", generate a random food craving
         if food_craving.lower() in ["idk", "i don't know", "i don't know what i want", "i don't know what i want to eat", "i don't know what i want to eat."]:
@@ -40,7 +40,6 @@ def craving_satisfier(city, food_craving, model_name=None):
                 max_tokens=32
             )
 
-            conversation1.append({"role": "assistant", "content": str(food_craving)})
             print(f"Don't worry, yo! I think you are craving for {food_craving}!")
         else:
             print(f"That's a great choice! My mouth is watering just thinking about {food_craving}!")
@@ -61,9 +60,7 @@ def craving_satisfier(city, food_craving, model_name=None):
             max_tokens=2048
         )
 
-        conversation2.append({"role": "assistant", "content": str(response)})
-
         return f'Here are 8 restaurants in {city} that serve {food_craving}! Bon Appetit!! \n{response}'
 
     except Exception as e:
-        return f"Error generating restaurant recommendations: {str(e)}"
+        return f"Error generating food plan: {str(e)}"

@@ -900,7 +900,7 @@ def get_random_topic():
     return topic
 
 
-def get_random_lesson(llm_provider: str, model_tier: str) -> Tuple[str, str]:
+def get_random_lesson(llm_provider: str, model_tier: str, model_name: str = None) -> Tuple[str, str]:
     """
     Generate a comprehensive daily lesson using LLM's knowledge.
     Returns (topic, lesson_text).
@@ -928,16 +928,118 @@ CRITICAL RULES:
 4. Keep each section brief - this is for a newsletter
 5. Do NOT skip any section - all three are required"""
 
-    lesson_learned = generate_lesson_response(prompt, llm_provider, model_tier=model_tier)
+    lesson_learned = generate_lesson_response(prompt, llm_provider, model_tier=model_tier, model_name=model_name)
     return topic, lesson_learned
 
 
-def generate_lesson_response(user_message: str, llm_provider: str, model_tier: str) -> str:
+def _extract_topic_from_prompt(user_message: str) -> str:
+    """Extract the topic from the lesson prompt when present."""
+    match = re.search(r"(?im)^Topic:\s*(.+?)\s*$", user_message or "")
+    return match.group(1).strip() if match else ""
+
+
+def _clean_lesson_response(message: str) -> Optional[str]:
+    """Normalize and validate a lesson response. Return None when unusable."""
+    logger.debug(
+        "Raw LLM response for lesson (first 300 chars): %s",
+        message[:300] if message else "EMPTY",
+    )
+    logger.debug("Full raw response length: %s", len(message) if message else 0)
+
+    if not message or len(message.strip()) == 0:
+        logger.warning("LLM returned empty response for lesson generation")
+        return None
+
+    cleaned = message.strip()
+
+    reasoning_patterns = [
+        "the user wants", "user wants", "user says", "user is asking",
+        "we need to", "we need", "we must", "let me provide", "let me",
+        "here's", "here is", "i'll provide", "i'll", "i will",
+        "task:", "topic:", "provide a", "generate", "create a lesson",
+        "write a lesson", "this lesson", "this response", "my response",
+        "to answer this", "in response", "based on"
+    ]
+
+    lines = cleaned.split("\n")
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip() and not any(
+            pattern in line.lower() for pattern in reasoning_patterns
+        ):
+            start_idx = i
+            break
+    cleaned = "\n".join(lines[start_idx:]).strip()
+
+    if cleaned.lower().startswith("assistant:"):
+        cleaned = cleaned[len("assistant:") :].strip()
+    if cleaned.lower().startswith("assistant"):
+        cleaned = cleaned[len("assistant") :].strip()
+    if cleaned.lower().startswith("edith"):
+        cleaned = cleaned[len("edith") :].strip()
+
+    for marker in ["[KEY INSIGHT]", "[HISTORICAL]", "[APPLICATION]"]:
+        if marker.lower() not in cleaned.lower():
+            logger.warning("Missing required marker (%s)", marker)
+            return None
+
+    reasoning_patterns += [
+        "reasoning process",
+        "let's think step by step",
+        "analysis",
+        "let me think",
+        "i will",
+    ]
+    for pattern in reasoning_patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+    cleaned = re.sub(r"(?m)^\s*(analysis|reasoning):\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(
+        r"(?m)^\s*(thinking|thought process):\s*", "", cleaned, flags=re.I
+    )
+    cleaned = cleaned.strip()
+
+    if cleaned.lower().startswith(("[key insight", "key insight")) is False:
+        if "[KEY INSIGHT]" not in cleaned:
+            cleaned = "[KEY INSIGHT]\n" + cleaned
+
+    first_para = cleaned.split("\n\n")[0] if "\n\n" in cleaned else cleaned[:250]
+    if any(pattern in first_para.lower() for pattern in reasoning_patterns):
+        logger.debug("Found reasoning patterns in first paragraph, using second paragraph")
+        paragraphs = cleaned.split("\n\n")
+        if len(paragraphs) > 1:
+            cleaned = "\n\n".join(paragraphs[1:]).strip()
+
+    if cleaned and len(cleaned) > 200:
+        return cleaned
+
+    logger.warning(
+        "Generated lesson too short (%s chars)",
+        len(cleaned) if cleaned else 0,
+    )
+    return None
+
+
+def _request_lesson_response(
+    conversation: list[dict[str, str]],
+    llm_provider: str,
+    model_tier: str,
+    model_name: Optional[str],
+) -> str:
+    """Request lesson content from the configured model."""
+    client = get_client(provider=llm_provider, model_tier=model_tier, model_name=model_name)
+    return client.chat_completion(
+        messages=conversation,
+        max_tokens=4000,
+        temperature=0.65,
+    )
+
+
+def generate_lesson_response(user_message: str, llm_provider: str, model_tier: str, model_name: str = None) -> str:
     """
     Generate a comprehensive lesson/learning content with historical context.
     """
     logger.info("Generating lesson for topic: %s...", user_message[:100])
-    client = get_client(provider=llm_provider, model_tier=model_tier)
 
     syspromptmessage = """You are EDITH, an expert teacher helping Dinesh master timeless principles of success.
 
@@ -964,107 +1066,53 @@ Context: The user is an engineer who values first principles thinking and system
         {"role": "user", "content": user_message},
     ]
 
-    try:
-        message = client.chat_completion(
-            messages=conversation,
-            max_tokens=4000,
-            temperature=0.65,
-        )
+    attempts = [(model_name, "configured model")] if model_name else []
+    attempts.append((None, "tier-default model"))
 
-        logger.debug(
-            "Raw LLM response for lesson (first 300 chars): %s",
-            message[:300] if message else "EMPTY",
-        )
-        logger.debug("Full raw response length: %s", len(message) if message else 0)
+    for attempt_model_name, attempt_label in attempts:
+        try:
+            message = _request_lesson_response(
+                conversation,
+                llm_provider,
+                model_tier,
+                attempt_model_name,
+            )
+            cleaned = _clean_lesson_response(message)
+            if cleaned:
+                logger.info(
+                    "Successfully generated lesson (%s chars) via %s",
+                    len(cleaned),
+                    attempt_label,
+                )
+                return cleaned
+            logger.warning("Lesson generation via %s returned unusable output", attempt_label)
+        except Exception as e:
+            logger.error(
+                "Error generating lesson via %s: %s",
+                attempt_label,
+                e,
+                exc_info=True,
+            )
 
-        if not message or len(message.strip()) == 0:
-            logger.warning("LLM returned empty response for lesson generation")
-            return _get_fallback_lesson()
-
-        cleaned = message.strip()
-
-        reasoning_patterns = [
-            "the user wants", "user wants", "user says", "user is asking",
-            "we need to", "we need", "we must", "let me provide", "let me",
-            "here's", "here is", "i'll provide", "i'll", "i will",
-            "task:", "topic:", "provide a", "generate", "create a lesson",
-            "write a lesson", "this lesson", "this response", "my response",
-            "to answer this", "in response", "based on"
-        ]
-
-        lines = cleaned.split("\n")
-        start_idx = 0
-        for i, line in enumerate(lines):
-            if line.strip() and not any(
-                pattern in line.lower() for pattern in reasoning_patterns
-            ):
-                start_idx = i
-                break
-        cleaned = "\n".join(lines[start_idx:]).strip()
-
-        if cleaned.lower().startswith("assistant:"):
-            cleaned = cleaned[len("assistant:") :].strip()
-        if cleaned.lower().startswith("assistant"):
-            cleaned = cleaned[len("assistant") :].strip()
-        if cleaned.lower().startswith("edith"):
-            cleaned = cleaned[len("edith") :].strip()
-
-        for marker in ["[KEY INSIGHT]", "[HISTORICAL]", "[APPLICATION]"]:
-            if marker.lower() not in cleaned.lower():
-                logger.warning("Missing required marker (%s), using fallback", marker)
-                return _get_fallback_lesson()
-
-        reasoning_patterns += [
-            "reasoning process",
-            "let's think step by step",
-            "analysis",
-            "let me think",
-            "i will",
-        ]
-        for pattern in reasoning_patterns:
-            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
-
-        cleaned = re.sub(r"(?m)^\s*(analysis|reasoning):\s*", "", cleaned, flags=re.I)
-        cleaned = re.sub(
-            r"(?m)^\s*(thinking|thought process):\s*", "", cleaned, flags=re.I
-        )
-        cleaned = cleaned.strip()
-
-        if cleaned.lower().startswith(("[key insight", "key insight")) is False:
-            if "[KEY INSIGHT]" not in cleaned:
-                cleaned = "[KEY INSIGHT]\n" + cleaned
-
-        first_para = cleaned.split("\n\n")[0] if "\n\n" in cleaned else cleaned[:250]
-        if any(pattern in first_para.lower() for pattern in reasoning_patterns):
-            logger.debug("Found reasoning patterns in first paragraph, using second paragraph")
-            paragraphs = cleaned.split("\n\n")
-            if len(paragraphs) > 1:
-                cleaned = "\n\n".join(paragraphs[1:]).strip()
-
-        if cleaned and len(cleaned) > 200:
-            logger.info("Successfully generated lesson (%s chars)", len(cleaned))
-            return cleaned
-
-        logger.warning(
-            "Generated lesson too short (%s chars), using fallback",
-            len(cleaned) if cleaned else 0,
-        )
-        return _get_fallback_lesson()
-
-    except Exception as e:
-        logger.error("Error generating lesson: %s", e, exc_info=True)
-        return _get_fallback_lesson()
+    return _get_fallback_lesson(_extract_topic_from_prompt(user_message))
 
 
-def _get_fallback_lesson():
-    """Return a fallback lesson when generation fails"""
-    fallback = """The pursuit of mastery requires understanding that excellence is not a destination but a continuous journey. Ancient philosophers like Aristotle understood this, coining the term "eudaimonia" to describe the flourishing that comes from living up to one's potential through disciplined practice.
+def _get_fallback_lesson(topic: str = ""):
+    """Return structured fallback lesson content when generation fails."""
+    topic_line = (
+        f"On the question of {topic}, start from the baseline people actually experience and judge value by the relative change that matters to them."
+        if topic
+        else "Start from the baseline people actually experience and judge value by the relative change that matters to them."
+    )
 
-Consider the example of Leonardo da Vinci, who kept detailed notebooks throughout his life, documenting not just his artistic techniques but his observations of nature, engineering concepts, and philosophical musings. This habit of systematic learning and documentation allowed him to make connections across domains that others missed.
+    fallback = f"""[KEY INSIGHT]
+{topic_line} Durable judgment comes from first principles, measured feedback, and disciplined iteration rather than from abstract theory alone.
 
-For modern engineers and leaders, this translates to three practical principles: First, maintain a learning system - whether notebooks, digital tools, or structured reflection time. Second, seek cross-domain knowledge, as innovation often happens at the intersection of fields. Third, embrace deliberate practice over mere repetition, focusing on the areas where improvement is most needed.
+[HISTORICAL]
+History repeatedly rewards builders who stay close to observable reality. From Roman aqueduct engineers to Renaissance workshops, durable progress came from measuring constraints carefully, documenting what worked, and improving systems through repeated refinement.
 
-The historical parallel to the Roman aqueduct engineers is instructive: they built systems that lasted millennia not through revolutionary innovation alone, but through meticulous attention to fundamentals, redundancy in design, and deep understanding of the materials and forces they worked with."""
+[APPLICATION]
+In engineering and leadership, compare improvements against the current state the user or team actually feels. Make changes legible, test where perception thresholds move, and prioritize the interventions that create a meaningful shift in experience."""
 
     logger.info("Using fallback lesson content")
     return fallback

@@ -884,3 +884,364 @@ class TestScheduledReminders:
             await bot._send_random_memory_reminder(context)
 
         mock_db.mark_as_shown.assert_not_called()
+
+
+class TestLinkPreviewFlow:
+    """Tests for pasted-link preview and save flow."""
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.detect_intent")
+    @patch("helper_functions.memory_palace_bot.prepare_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.asyncio.to_thread")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_receive_youtube_url_routes_to_link_preview(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_to_thread,
+        mock_prepare_link_preview,
+        mock_detect_intent,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_to_thread.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+
+        preview = MagicMock()
+        preview.content = MagicMock(
+            source_ref="https://youtu.be/abc123",
+            source_type="video",
+            title="Test Video",
+            word_count=1200,
+            text="Transcript text",
+        )
+        preview.takeaways = [
+            "First insight with enough detail to matter in practice.",
+            "Second insight with enough detail to matter in practice.",
+        ]
+        preview.already_archived = False
+        mock_prepare_link_preview.return_value = preview
+
+        update = MagicMock()
+        update.effective_user.id = 123456789
+        update.message.text = "https://youtu.be/abc123"
+        update.message.reply_text = AsyncMock()
+
+        context = MagicMock()
+        context.user_data = {}
+
+        bot = MemoryPalaceBot()
+        result = await bot.receive_lesson_text(update, context)
+
+        assert result == State.CONFIRMING_LINK_PREVIEW
+        mock_detect_intent.assert_not_called()
+        mock_prepare_link_preview.assert_called_once_with(
+            "https://youtu.be/abc123",
+            num_takeaways=5,
+            tier="fast",
+        )
+        assert "pending_link_preview" in context.user_data
+        assert context.user_data["pending_link_preview"]["source_url"] == "https://youtu.be/abc123"
+        assert context.user_data["pending_link_preview"]["title"] == "Test Video"
+        preview_text = update.message.reply_text.call_args_list[-1][0][0]
+        assert "Test Video" in preview_text
+        assert "First insight" in preview_text
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceBot._handle_help", new_callable=AsyncMock)
+    @patch("helper_functions.memory_palace_bot.detect_intent")
+    @patch("helper_functions.memory_palace_bot.prepare_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_non_url_text_still_uses_intent_detection(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_prepare_link_preview,
+        mock_detect_intent,
+        mock_handle_help,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_detect_intent.return_value = IntentResult(intent=UserIntent.HELP)
+        mock_handle_help.return_value = State.AWAITING_LESSON
+
+        update = MagicMock()
+        update.effective_user.id = 123456789
+        update.message.text = "help me remember things"
+        update.message.reply_text = AsyncMock()
+
+        context = MagicMock()
+        context.user_data = {}
+
+        bot = MemoryPalaceBot()
+        result = await bot.receive_lesson_text(update, context)
+
+        assert result == State.AWAITING_LESSON
+        mock_detect_intent.assert_called_once()
+        mock_prepare_link_preview.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.prepare_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.asyncio.to_thread")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_youtube_preview_failure_returns_to_awaiting_lesson(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_to_thread,
+        mock_prepare_link_preview,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_to_thread.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+        mock_prepare_link_preview.side_effect = RuntimeError("No transcript available")
+
+        update = MagicMock()
+        update.effective_user.id = 123456789
+        update.message.text = "https://youtu.be/abc123"
+        update.message.reply_text = AsyncMock()
+
+        context = MagicMock()
+        context.user_data = {}
+
+        bot = MemoryPalaceBot()
+        result = await bot.receive_lesson_text(update, context)
+
+        assert result == State.AWAITING_LESSON
+        last_message = update.message.reply_text.call_args_list[-1][0][0]
+        assert "No transcript available" in last_message
+        assert "pending_link_preview" not in context.user_data
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.prepare_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.asyncio.to_thread")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_article_preview_no_takeaways_returns_to_awaiting_lesson(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_to_thread,
+        mock_prepare_link_preview,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_to_thread.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+        mock_prepare_link_preview.side_effect = RuntimeError("No takeaways extracted.")
+
+        update = MagicMock()
+        update.effective_user.id = 123456789
+        update.message.text = "https://example.com/article"
+        update.message.reply_text = AsyncMock()
+
+        context = MagicMock()
+        context.user_data = {}
+
+        bot = MemoryPalaceBot()
+        result = await bot.receive_lesson_text(update, context)
+
+        assert result == State.AWAITING_LESSON
+        last_message = update.message.reply_text.call_args_list[-1][0][0]
+        assert "No takeaways extracted." in last_message
+        assert "pending_link_preview" not in context.user_data
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.save_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.asyncio.to_thread")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_link_save_calls_service_without_archive(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_to_thread,
+        mock_save_link_preview,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_to_thread.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+
+        preview = MagicMock()
+        preview.content = MagicMock(source_type="video", source_ref="https://youtu.be/abc123")
+        mock_save_link_preview.return_value = MagicMock(
+            edith_count=2,
+            local_memory_status="Saved to Memory Palace",
+            archive_status="Archive skipped",
+        )
+
+        query = AsyncMock()
+        query.data = "link_save"
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+
+        update = MagicMock()
+        update.callback_query = query
+
+        context = MagicMock()
+        context.user_data = {
+            "pending_link_preview": {
+                "preview": preview,
+                "source_url": "https://youtu.be/abc123",
+                "source_type": "video",
+                "title": "Test Video",
+                "takeaways": ["Insight one", "Insight two"],
+                "word_count": 1200,
+            }
+        }
+
+        bot = MemoryPalaceBot()
+        result = await bot.handle_link_preview_response(update, context)
+
+        assert result == State.AWAITING_LESSON
+        mock_save_link_preview.assert_called_once_with(
+            preview,
+            save_archive=False,
+            edith_delay_seconds=0.0,
+        )
+        assert "pending_link_preview" not in context.user_data
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.save_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.asyncio.to_thread")
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_link_save_archive_calls_service_with_archive(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_to_thread,
+        mock_save_link_preview,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+        mock_to_thread.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+
+        preview = MagicMock()
+        preview.content = MagicMock(source_type="article", source_ref="https://example.com/article")
+        mock_save_link_preview.return_value = MagicMock(
+            edith_count=3,
+            local_memory_status="Saved to Memory Palace",
+            archive_status="Archived: Test Article",
+        )
+
+        query = AsyncMock()
+        query.data = "link_save_archive"
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+
+        update = MagicMock()
+        update.callback_query = query
+
+        context = MagicMock()
+        context.user_data = {
+            "pending_link_preview": {
+                "preview": preview,
+                "source_url": "https://example.com/article",
+                "source_type": "article",
+                "title": "Test Article",
+                "takeaways": ["Insight one", "Insight two", "Insight three"],
+                "word_count": 1800,
+            }
+        }
+
+        bot = MemoryPalaceBot()
+        result = await bot.handle_link_preview_response(update, context)
+
+        assert result == State.AWAITING_LESSON
+        mock_save_link_preview.assert_called_once_with(
+            preview,
+            save_archive=True,
+            edith_delay_seconds=0.0,
+        )
+        assert "pending_link_preview" not in context.user_data
+
+    @pytest.mark.asyncio
+    @patch("helper_functions.memory_palace_bot.save_link_preview", create=True)
+    @patch("helper_functions.memory_palace_bot.AnswerEngine")
+    @patch("helper_functions.memory_palace_bot.KnowledgeArchiveDB")
+    @patch("helper_functions.memory_palace_bot.WebKnowledgeDB")
+    @patch("helper_functions.memory_palace_bot.MemoryPalaceDB")
+    async def test_link_skip_clears_state_without_writes(
+        self,
+        mock_db_class,
+        mock_web_kb,
+        mock_archive_db,
+        mock_answer_engine,
+        mock_save_link_preview,
+        mock_config,
+    ):
+        mock_db_class.return_value = MagicMock()
+        mock_web_kb.return_value = MagicMock()
+        mock_archive_db.return_value = MagicMock()
+        mock_answer_engine.return_value = MagicMock()
+
+        query = AsyncMock()
+        query.data = "link_skip"
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+
+        update = MagicMock()
+        update.callback_query = query
+
+        context = MagicMock()
+        context.user_data = {
+            "pending_link_preview": {
+                "preview": MagicMock(),
+                "source_url": "https://example.com/article",
+                "source_type": "article",
+                "title": "Test Article",
+                "takeaways": ["Insight one"],
+                "word_count": 500,
+            }
+        }
+
+        bot = MemoryPalaceBot()
+        result = await bot.handle_link_preview_response(update, context)
+
+        assert result == State.AWAITING_LESSON
+        mock_save_link_preview.assert_not_called()
+        assert "pending_link_preview" not in context.user_data

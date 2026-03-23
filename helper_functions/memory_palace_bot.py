@@ -28,6 +28,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum, StrEnum, auto
@@ -74,8 +75,16 @@ from helper_functions.memory_palace_answer import (
     format_answer_for_telegram,
 )
 from helper_functions.knowledge_archive_db import KnowledgeArchiveDB
+from helper_functions.link_ingestion import (
+    InputType,
+    LinkPreview,
+    detect_input_type,
+    prepare_link_preview,
+    save_link_preview,
+)
 
 logger = logging.getLogger(__name__)
+SUPPORTED_URL_PATTERN = re.compile(r"^https?://\S+$")
 
 
 class UserIntent(StrEnum):
@@ -193,6 +202,7 @@ class State(IntEnum):
     """Conversation states for the bot."""
 
     AWAITING_LESSON = auto()
+    CONFIRMING_LINK_PREVIEW = auto()
     CONFIRMING_DISTILLED = auto()
     CONFIRMING_CATEGORY = auto()
     EDITING_LESSON = auto()
@@ -375,6 +385,72 @@ class MemoryPalaceBot:
         ]
         return InlineKeyboardMarkup(keyboard)
 
+    def _get_link_preview_keyboard(self, include_archive: bool) -> InlineKeyboardMarkup:
+        """Get keyboard for URL preview confirmation."""
+        keyboard = [[InlineKeyboardButton("💾 Save to Memory Palace", callback_data="link_save")]]
+        if include_archive:
+            keyboard.append(
+                [InlineKeyboardButton("📚 Save + Archive", callback_data="link_save_archive")]
+            )
+        keyboard.append([InlineKeyboardButton("⏭️ Skip", callback_data="link_skip")])
+        return InlineKeyboardMarkup(keyboard)
+
+    def _extract_supported_url(self, text: str) -> Optional[str]:
+        """Return a pasted URL if the message is a standalone supported link."""
+        stripped = (text or "").strip()
+        if not SUPPORTED_URL_PATTERN.fullmatch(stripped):
+            return None
+
+        cleaned = stripped.rstrip(").,!?")
+        try:
+            input_type = detect_input_type(cleaned)
+        except ValueError:
+            return None
+
+        if input_type in (InputType.YOUTUBE, InputType.URL):
+            return cleaned
+        return None
+
+    def _store_link_preview(self, context: ContextTypes.DEFAULT_TYPE, preview: LinkPreview) -> None:
+        """Store preview state for save/skip callbacks."""
+        context.user_data["pending_link_preview"] = {
+            "preview": preview,
+            "source_url": preview.content.source_ref,
+            "source_type": preview.content.source_type,
+            "title": preview.content.title,
+            "takeaways": list(preview.takeaways),
+            "word_count": preview.content.word_count,
+            "already_archived": preview.already_archived,
+        }
+
+    def _clear_link_preview(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Clear pending link preview state."""
+        context.user_data.pop("pending_link_preview", None)
+
+    def _format_link_preview_message(self, preview: LinkPreview) -> str:
+        """Format extracted link insights for Telegram preview."""
+        source_display = "YouTube" if preview.content.source_type == "video" else "Article"
+        lines = [
+            f"🔗 {preview.content.title}",
+            "",
+            f"Type: {source_display}",
+            f"Words: {preview.content.word_count}",
+        ]
+
+        if preview.already_archived:
+            lines.extend(["Archive: already in Knowledge Archive", ""])
+        else:
+            lines.append("")
+
+        lines.append("Key takeaways:")
+        lines.append("")
+        for i, takeaway in enumerate(preview.takeaways, 1):
+            lines.append(f"{i}. {takeaway}")
+            lines.append("")
+
+        lines.append("Save these to your Memory Palace?")
+        return "\n".join(lines)
+
     @authorized_only
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -392,7 +468,7 @@ class MemoryPalaceBot:
             f"/random - Get a random lesson\n"
             f"/stats - View statistics\n"
             f"/cancel - Cancel current operation\n\n"
-            f"Or just send me some text to distill into a lesson!"
+            f"Paste a YouTube or article link to preview insights, or send text to distill into a lesson."
         )
         return State.AWAITING_LESSON
 
@@ -586,6 +662,10 @@ class MemoryPalaceBot:
         # Add user message to session context
         self._add_to_context(user_id, "user", text)
 
+        supported_url = self._extract_supported_url(text)
+        if supported_url:
+            return await self._handle_link_message(update, context, supported_url)
+
         # Detect user intent
         logger.info(f"Detecting intent for: {text[:50]}...")
         intent_result = detect_intent(text)
@@ -615,6 +695,38 @@ class MemoryPalaceBot:
 
         # Default: ADD_LESSON - distill and save
         return await self._handle_add_lesson(update, context, text)
+
+    async def _handle_link_message(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        url: str,
+    ) -> int:
+        """Extract a pasted URL and ask whether to save the insights."""
+        await update.message.reply_text("Analyzing link... This may take a moment.")
+
+        try:
+            preview = await asyncio.to_thread(
+                prepare_link_preview,
+                url,
+                num_takeaways=5,
+                tier="fast",
+            )
+        except Exception as e:
+            logger.error("Link preview failed for %s: %s", url, e)
+            await update.message.reply_text(f"Failed to analyze link: {e}")
+            self._clear_link_preview(context)
+            return State.AWAITING_LESSON
+
+        self._store_link_preview(context, preview)
+        include_archive = (
+            preview.content.source_type == "article" and not preview.already_archived
+        )
+        await update.message.reply_text(
+            self._format_link_preview_message(preview),
+            reply_markup=self._get_link_preview_keyboard(include_archive=include_archive),
+        )
+        return State.CONFIRMING_LINK_PREVIEW
 
     async def _handle_get_random(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -763,6 +875,8 @@ class MemoryPalaceBot:
         await update.message.reply_text(
             "🏛️ EDITH - Your Knowledge Assistant\n\n"
             "I understand natural language! Try:\n\n"
+            "🔗 To ingest a link:\n"
+            '   "https://youtu.be/..." or "https://example.com/article"\n\n'
             "❓ To ask a question:\n"
             '   "What is game theory?"\n'
             '   "How does compound interest work?"\n\n'
@@ -878,6 +992,64 @@ class MemoryPalaceBot:
             reply_markup=self._get_forget_keyboard()
         )
         return State.CONFIRMING_FORGET
+
+    async def handle_link_preview_response(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        """Handle save or skip actions for a pasted-link preview."""
+        query = update.callback_query
+        await query.answer()
+
+        pending = context.user_data.get("pending_link_preview")
+        if not pending:
+            await query.edit_message_text(
+                "I've lost track of that link preview. Please paste the link again."
+            )
+            return State.AWAITING_LESSON
+
+        if query.data == "link_skip":
+            title = pending.get("title", "that link")
+            self._clear_link_preview(context)
+            await query.edit_message_text(f"Skipped saving insights from {title}.")
+            return State.AWAITING_LESSON
+
+        preview = pending.get("preview")
+        if preview is None:
+            self._clear_link_preview(context)
+            await query.edit_message_text(
+                "I've lost the extracted preview state. Please paste the link again."
+            )
+            return State.AWAITING_LESSON
+
+        save_archive = query.data == "link_save_archive"
+        try:
+            result = await asyncio.to_thread(
+                save_link_preview,
+                preview,
+                save_archive=save_archive,
+                edith_delay_seconds=0.0,
+            )
+        except Exception as e:
+            logger.error("Failed saving link preview for %s: %s", pending.get("source_url"), e)
+            self._clear_link_preview(context)
+            await query.edit_message_text(f"Failed to save extracted insights: {e}")
+            return State.AWAITING_LESSON
+
+        archive_status = result.archive_status
+        if pending.get("already_archived") and not save_archive:
+            archive_status = "Already in Knowledge Archive (skipped)"
+
+        title = pending.get("title", "Untitled")
+        self._clear_link_preview(context)
+        await query.edit_message_text(
+            f"✅ Saved insights from {title}\n\n"
+            f"Lessons saved: {result.edith_count}\n"
+            f"Local Memory: {result.local_memory_status}\n"
+            f"Archive: {archive_status}"
+        )
+        return State.AWAITING_LESSON
 
     async def handle_research_confirmation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1479,6 +1651,12 @@ class MemoryPalaceBot:
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
                         self.receive_lesson_text
+                    ),
+                ],
+                State.CONFIRMING_LINK_PREVIEW: [
+                    CallbackQueryHandler(
+                        self.handle_link_preview_response,
+                        pattern="^(link_save|link_save_archive|link_skip)$"
                     ),
                 ],
                 State.CONFIRMING_DUPLICATE: [

@@ -2,12 +2,17 @@
 Comprehensive Test Suite for Firecrawl Researcher
 Tests connectivity, individual endpoints, and full research workflow.
 """
+import os
 import requests
 import json
 import time
 import sys
+import pytest
 from helper_functions.firecrawl_researcher import conduct_research_firecrawl
 from config import config
+
+if __name__ != "__main__" and os.getenv("RUN_FIRECRAWL_ENDPOINT_TESTS") != "1":
+    pytest.skip("Manual Firecrawl endpoint diagnostics are disabled by default.", allow_module_level=True)
 
 # Colors for terminal output
 GREEN = "\033[92m"

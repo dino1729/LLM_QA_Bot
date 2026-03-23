@@ -1,8 +1,8 @@
 """
-Knowledge Archive Scraper - Content extraction via Firecrawl with Archive.org fallback.
+Knowledge Archive Scraper - Direct URL extraction with Archive.org fallback.
 
 This module provides:
-- Primary scraping via self-hosted Firecrawl server
+- Primary extraction via direct HTTP/news article parsing
 - Automatic fallback to Archive.org Wayback Machine for paywalled/failed content
 - Metadata extraction (title, content, word count)
 - Domain extraction utility
@@ -17,11 +17,11 @@ from urllib.parse import urlparse
 import requests
 
 from config import config
+from helper_functions.perplexity_search import extract_web_content
 
 logger = logging.getLogger(__name__)
 
 # Configuration
-firecrawl_server_url = getattr(config, "firecrawl_server_url", "http://localhost:3002")
 firecrawl_timeout = getattr(config, "knowledge_archive_firecrawl_timeout", 30)
 archive_org_timeout = getattr(config, "knowledge_archive_archive_org_timeout", 15)
 min_word_count = getattr(config, "knowledge_archive_min_word_count", 75)
@@ -41,7 +41,7 @@ class ScrapedContent:
 
 def scrape_article(url: str, timeout: int = None) -> Optional[ScrapedContent]:
     """
-    Scrape article content using Firecrawl with Archive.org fallback.
+    Scrape article content using direct extraction with Archive.org fallback.
 
     Args:
         url: Article URL to scrape
@@ -52,8 +52,8 @@ def scrape_article(url: str, timeout: int = None) -> Optional[ScrapedContent]:
     """
     timeout = timeout or firecrawl_timeout
 
-    # Try primary URL via Firecrawl
-    logger.info(f"Scraping {url} via Firecrawl")
+    # Try primary URL via direct extraction
+    logger.info(f"Scraping {url} via direct extraction")
     content, title = _scrape_with_firecrawl(url, timeout)
 
     if content and len(content.split()) >= min_word_count:
@@ -75,54 +75,18 @@ def scrape_article(url: str, timeout: int = None) -> Optional[ScrapedContent]:
 
 def _scrape_with_firecrawl(url: str, timeout: int) -> tuple[Optional[str], Optional[str]]:
     """
-    Scrape URL using Firecrawl server.
+    Compatibility wrapper: extract URL content directly without Firecrawl.
 
     Returns:
         Tuple of (content, title) or (None, None) if failed
     """
     try:
-        scrape_url = f"{firecrawl_server_url}/scrape"
-
-        payload = {
-            "url": url,
-            "formats": ["markdown", "html"],
-            "onlyMainContent": True,
-            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3"],
-            "excludeTags": ["nav", "footer", "header", "aside", "script", "style"],
-            "waitFor": 1000
-        }
-
-        response = requests.post(scrape_url, json=payload, timeout=timeout)
-
-        if response.status_code == 200:
-            result = response.json()
-
-            content = None
-            title = None
-
-            # Extract content
-            if "data" in result:
-                if "markdown" in result["data"]:
-                    content = result["data"]["markdown"]
-                elif "html" in result["data"]:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(result["data"]["html"], 'html.parser')
-                    content = soup.get_text()
-
-                # Extract title from metadata if available
-                if "metadata" in result["data"]:
-                    title = result["data"]["metadata"].get("title")
-
-            return content, title
-        else:
-            logger.warning(f"Firecrawl scrape failed for {url}: status {response.status_code}")
-            return None, None
-
+        return extract_web_content(url, timeout=timeout)
     except requests.exceptions.Timeout:
-        logger.warning(f"Firecrawl scrape timed out for {url}")
+        logger.warning(f"Direct scrape timed out for {url}")
         return None, None
     except Exception as e:
-        logger.warning(f"Error scraping {url} with Firecrawl: {e}")
+        logger.warning(f"Error scraping {url} directly: {e}")
         return None, None
 
 
@@ -162,7 +126,7 @@ def _scrape_archive_org(url: str, timeout: int) -> tuple[Optional[str], Optional
         snapshot_url = snapshot["url"]
         logger.info(f"Found Archive.org snapshot: {snapshot_url}")
 
-        # Scrape the archived version via Firecrawl
+        # Scrape the archived version via direct extraction
         return _scrape_with_firecrawl(snapshot_url, timeout)
 
     except requests.exceptions.Timeout:
