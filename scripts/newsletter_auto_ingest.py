@@ -40,7 +40,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import config
-from scripts.ingest_to_memory import (  # noqa: E402
+from helper_functions.link_ingestion import (  # noqa: E402
     extract_article,
     extract_takeaways,
     upload_to_edith,

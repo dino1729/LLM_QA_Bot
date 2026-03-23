@@ -4,8 +4,12 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+pytest.importorskip("vibevoice")
 
 import soundfile as sf
 from helper_functions.tts_vibevoice import VibeVoiceTTS

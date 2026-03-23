@@ -314,7 +314,7 @@ class TestSynthesizeNewsReport:
         mock_strategic_client.chat_completion.return_value = "Final polished news report"
         
         # Return different clients for different tiers
-        def get_client_side_effect(provider, model_tier):
+        def get_client_side_effect(provider, model_tier, model_name=None):
             if model_tier == "fast":
                 return mock_fast_client
             elif model_tier == "smart":

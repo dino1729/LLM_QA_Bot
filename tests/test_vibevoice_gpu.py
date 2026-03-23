@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Test script to verify VibeVoice TTS is using GPU acceleration."""
 
+import pytest
 import torch
+
+pytest.importorskip("vibevoice")
 from helper_functions.tts_vibevoice import VibeVoiceTTS
 
 print("=" * 80)

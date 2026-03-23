@@ -442,8 +442,14 @@ def format_answer_for_telegram(result: AnswerResult) -> str:
                 msg += f"  - {topic}\n"
         return msg
 
-    # Build natural response - answer first, subtle attribution at end
-    lines = [result.answer_text]
+    # Build natural response - reasoning prefix first when available, then answer.
+    lines = []
+    if result.reasoning_prefix:
+        lines.append(result.reasoning_prefix)
+    if result.answer_text:
+        if lines:
+            lines.append("")
+        lines.append(result.answer_text)
 
     # Add subtle source attribution
     if result.source_type == SourceType.USER_WISDOM and result.wisdom_matches:

@@ -374,24 +374,65 @@ LLM_PROVIDER = "litellm"
 model_names = ["LITELLM_SMART", "LITELLM_STRATEGIC"] if LLM_PROVIDER == "litellm" else ["OLLAMA_SMART", "OLLAMA_STRATEGIC"]
 
 
-def generate_quote(random_personality, model_tier: str):
+def generate_quote(random_personality, model_tier: str = "smart", model_name: str = None):
     """Wrapper for quote generation using the unified LLM client."""
     import helper_functions.quote_utils as qu
     original = qu.get_client
     qu.get_client = get_client
     try:
-        return qu.generate_quote(random_personality, LLM_PROVIDER, model_tier=model_tier)
+        return qu.generate_quote(random_personality, LLM_PROVIDER, model_tier=model_tier, model_name=model_name)
     finally:
         qu.get_client = original
 
 
-def generate_lesson_response(user_message, model_tier: str):
+def generate_lesson_response(user_message, model_tier: str = "smart", model_name: str = None):
     """Wrapper for lesson generation using the unified LLM client."""
     import helper_functions.lesson_utils as lu
     original = lu.get_client
     lu.get_client = get_client
     try:
-        return lu.generate_lesson_response(user_message, LLM_PROVIDER, model_tier=model_tier)
+        result = lu.generate_lesson_response(user_message, LLM_PROVIDER, model_tier=model_tier, model_name=model_name)
+        fallback = lu._get_fallback_lesson(lu._extract_topic_from_prompt(user_message))
+        if result != fallback:
+            return result
+
+        raw_response = get_client(
+            provider=LLM_PROVIDER,
+            model_tier=model_tier,
+            model_name=model_name,
+        ).chat_completion(
+            messages=[{"role": "user", "content": user_message}],
+            max_tokens=4000,
+            temperature=0.65,
+        )
+
+        cleaned_lines = []
+        started = False
+        reasoning_prefixes = (
+            "the user wants",
+            "user wants",
+            "let me",
+            "here is",
+            "here's",
+            "i'll provide",
+            "i will provide",
+            "my response",
+        )
+        for line in (raw_response or "").splitlines():
+            stripped = line.strip()
+            lower = stripped.lower()
+            if not started:
+                if not stripped:
+                    continue
+                if any(lower.startswith(prefix) for prefix in reasoning_prefixes):
+                    continue
+                started = True
+            cleaned_lines.append(line)
+
+        cleaned = "\n".join(cleaned_lines).strip()
+        if cleaned and len(cleaned) > 200:
+            return cleaned
+        return result
     finally:
         lu.get_client = original
 
@@ -473,6 +514,31 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+
+    # Tests often pass a MagicMock args object with only a subset of flags set.
+    # Normalize boolean CLI flags so unset attributes behave like False.
+    boolean_flags = [
+        "test",
+        "use_cache",
+        "full_cache",
+        "refresh_cache",
+        "skip_email",
+        "skip_audio",
+        "skip_news_audio",
+        "progress_only",
+        "cache_info",
+        "html_only",
+        "review",
+        "local_tts",
+        "chatterbox_tts",
+        "riva_tts",
+        "podcast",
+        "list_voices",
+        "list_chatterbox_voices",
+        "no_memory_palace",
+    ]
+    for flag_name in boolean_flags:
+        setattr(args, flag_name, getattr(args, flag_name, False) is True)
 
     if args.test:
         args.use_cache = True
@@ -576,8 +642,8 @@ def main():
     if not quote_text or not quote_author:
         random_personality = get_random_personality()
         quote_author = random_personality
-        print(f"📝 Generating quote using LLM tier: {config.newsletter_progress_llm_tier}")
-        quote_text = generate_quote(random_personality, model_tier=config.newsletter_progress_llm_tier)
+        print(f"📝 Generating quote using model: {config.newsletter_model_quote or config.newsletter_progress_llm_tier}")
+        quote_text = generate_quote(random_personality, model_tier=config.newsletter_progress_llm_tier, model_name=config.newsletter_model_quote)
     else:
         random_personality = quote_author
 
@@ -593,7 +659,7 @@ def main():
         # Otherwise, generate a new lesson from existing JSON files
         if mp_lesson and config.memory_palace_blend_with_generated:
             # Use Memory Palace lesson as primary, still generate for variety
-            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
+            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier, model_name=config.newsletter_model_lesson)
             lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
             # Add Memory Palace insight as bonus key insight
             lesson_dict["mp_insight"] = mp_lesson["key_insight"]
@@ -607,7 +673,7 @@ def main():
             }
         else:
             # Fallback to generated lesson
-            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier)
+            topic, lesson_raw = get_random_lesson(LLM_PROVIDER, model_tier=config.newsletter_progress_llm_tier, model_name=config.newsletter_model_lesson)
             lesson_dict = parse_lesson_to_dict(lesson_raw, topic)
 
     # [NEWS GENERATION] Skip entirely if --progress-only mode
@@ -637,19 +703,20 @@ def main():
 
         # [CACHING] Newsletter Sections Generation
         if not newsletter_sections:
-            print(f"📝 Generating newsletter sections using LLM tier: {config.newsletter_news_llm_tier}")
-            newsletter_sections = generate_newsletter_sections(news_update_tech, news_update_financial, news_update_india, LLM_PROVIDER, config.newsletter_news_llm_tier)
+            print(f"📝 Generating newsletter sections using model: {config.newsletter_model_newsletter_sections or config.newsletter_news_llm_tier}")
+            newsletter_sections = generate_newsletter_sections(news_update_tech, news_update_financial, news_update_india, LLM_PROVIDER, config.newsletter_news_llm_tier, model_name=config.newsletter_model_newsletter_sections)
 
         # [CACHING] Voicebot script (Single Voice)
         if not voicebot_script:
             voicebot_prompt = f"Transform news into an anchor-style script:\n{news_update_tech}\n{news_update_financial}\n{news_update_india}"
             # Use CLI arg first, then config, for persona (voice cloning uses same persona for text generation)
             news_persona = (args.news_voice or config.newsletter_news_voice) if use_chatterbox else None
-            print(f"📝 Generating news voicebot script using LLM tier: {config.newsletter_news_llm_tier}, persona: {news_persona}")
+            print(f"📝 Generating news voicebot script using model: {config.newsletter_model_news_voicebot or config.newsletter_news_llm_tier}, persona: {news_persona}")
             voicebot_script = generate_gpt_response_voicebot(
                 voicebot_prompt, LLM_PROVIDER, config.newsletter_news_llm_tier,
                 voice_persona=news_persona,
-                use_chatterbox=use_chatterbox
+                use_chatterbox=use_chatterbox,
+                model_name=config.newsletter_model_news_voicebot
             )
 
         # [CACHING] Podcast Dialogue Generation (Two Personas)
@@ -747,11 +814,12 @@ YOU MUST include and discuss:
 
 Make it conversational, motivating, and tie everything together naturally. When discussing weather, give practical advice based on the forecast (e.g., dress warmly, bring an umbrella, etc.)."""
         
-        print(f"📝 Generating year progress script using LLM tier: {config.newsletter_progress_llm_tier}, persona: {progress_persona}")
+        print(f"📝 Generating year progress script using model: {config.newsletter_model_progress_voicebot or config.newsletter_progress_llm_tier}, persona: {progress_persona}")
         year_progress_gpt_response = generate_gpt_response(
             progress_prompt, LLM_PROVIDER, config.newsletter_progress_llm_tier,
             voice_persona=progress_persona,
-            use_chatterbox=use_chatterbox
+            use_chatterbox=use_chatterbox,
+            model_name=config.newsletter_model_progress_voicebot
         )
 
     # Build and Save the Daily Bundle (The primary cache source)

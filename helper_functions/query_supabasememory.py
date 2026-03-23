@@ -1,4 +1,7 @@
-import supabase
+try:
+    import supabase
+except ImportError:
+    supabase = None
 from config import config
 from openai import AzureOpenAI as OpenAIAzure
 import argparse
@@ -86,6 +89,8 @@ async def query_memorypalace_stream(
 ) -> AsyncIterator[str]:
 
     try:
+        if supabase is None:
+            raise ImportError("supabase package not installed")
         # Enhance user query for better semantic search
         improved_userquery = enhance_query_with_llm(userquery)
         if debug:

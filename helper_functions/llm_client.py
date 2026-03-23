@@ -124,6 +124,12 @@ class UnifiedLLMClient:
         if not content and hasattr(message, 'reasoning_content') and message.reasoning_content:
             content = message.reasoning_content
 
+        # Strip <think>...</think> reasoning blocks (nemotron, deepseek, etc.)
+        if content and "</think>" in content:
+            content = content.split("</think>", 1)[-1].lstrip()
+        elif content and "<think>" in content and "</think>" not in content:
+            logger.warning("Truncated <think> block detected (no closing tag), response may be incomplete")
+
         return content if content else ""
 
     def stream_chat_completion(self, messages, temperature=0.7, max_tokens=1024, **kwargs):

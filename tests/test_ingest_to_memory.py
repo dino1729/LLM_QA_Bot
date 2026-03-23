@@ -1,5 +1,5 @@
 """
-Tests for the unified content ingestion script.
+Tests for the shared link ingestion helpers.
 
 Tests cover:
 - Input type detection (YouTube, URL, file)
@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
-from scripts.ingest_to_memory import (
+from helper_functions.link_ingestion import (
     InputType,
     ExtractedContent,
     detect_input_type,
@@ -163,7 +163,7 @@ class TestExtractYoutube:
         mock_yt_module = Mock()
         mock_yt_module.YouTubeTranscriptApi.return_value = mock_api
 
-        with patch("scripts.ingest_to_memory._get_video_title", return_value="Test Video Title"), \
+        with patch("helper_functions.link_ingestion._get_video_title", return_value="Test Video Title"), \
              patch.dict("sys.modules", {"youtube_transcript_api": mock_yt_module}):
             result = extract_youtube("https://youtu.be/abc123")
 
@@ -180,7 +180,7 @@ class TestExtractYoutube:
         mock_yt_module = Mock()
         mock_yt_module.YouTubeTranscriptApi.return_value = mock_api
 
-        with patch("scripts.ingest_to_memory._get_video_title", return_value="Test Video"), \
+        with patch("helper_functions.link_ingestion._get_video_title", return_value="Test Video"), \
              patch.dict("sys.modules", {"youtube_transcript_api": mock_yt_module}):
             with pytest.raises(Exception, match="No transcript available"):
                 extract_youtube("https://youtu.be/abc123")
@@ -302,7 +302,7 @@ class TestExtractFile:
 class TestExtractTakeaways:
     """Tests for extract_takeaways() including preamble filtering."""
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_parses_numbered_list(self, mock_get_client, sample_content):
         mock_client = Mock()
         mock_client.chat_completion.return_value = (
@@ -319,7 +319,7 @@ class TestExtractTakeaways:
         assert "Surround yourself" in result[1]
         assert "Eliminate debt" in result[2]
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_parses_markdown_wrapped_numbered_headings(self, mock_get_client, sample_content):
         """Handles responses where numbering is wrapped in markdown bold."""
         mock_client = Mock()
@@ -338,7 +338,7 @@ class TestExtractTakeaways:
         assert "First insight title" in result[0]
         assert "second insight body" in result[1].lower()
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_parses_parenthesized_numbering(self, mock_get_client, sample_content):
         """Handles alternate list formats like `1)`."""
         mock_client = Mock()
@@ -354,7 +354,7 @@ class TestExtractTakeaways:
         assert "First point" in result[0]
         assert "Second point" in result[1]
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_strips_markdown_bold(self, mock_get_client, sample_content):
         mock_client = Mock()
         mock_client.chat_completion.return_value = (
@@ -368,7 +368,7 @@ class TestExtractTakeaways:
         assert "**" not in result[0]
         assert "Bold title." in result[0]
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_filters_preamble_lines(self, mock_get_client, sample_content):
         mock_client = Mock()
         mock_client.chat_completion.return_value = (
@@ -384,7 +384,7 @@ class TestExtractTakeaways:
         # Preamble "Here are the key takeaways..." should be filtered out
         assert not any("here are" in t.lower() for t in result)
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_filters_based_on_preamble(self, mock_get_client, sample_content):
         mock_client = Mock()
         mock_client.chat_completion.return_value = (
@@ -398,7 +398,7 @@ class TestExtractTakeaways:
         assert len(result) == 1
         assert "Real content" in result[0]
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_multiline_takeaways(self, mock_get_client, sample_content):
         """Takeaways split across multiple lines are joined correctly."""
         mock_client = Mock()
@@ -414,7 +414,7 @@ class TestExtractTakeaways:
         assert len(result) == 2
         assert "continues on the next line" in result[0]
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_truncates_long_content(self, mock_get_client):
         """Content longer than 15000 chars is truncated."""
         long_content = ExtractedContent(
@@ -435,7 +435,7 @@ class TestExtractTakeaways:
         prompt_content = call_args[1]["messages"][0]["content"] if "messages" in call_args[1] else call_args[0][0][0]["content"]
         assert len(prompt_content) < 20000 * 5  # Rough check it was truncated
 
-    @patch("scripts.ingest_to_memory.get_client")
+    @patch("helper_functions.link_ingestion.get_client")
     def test_respects_num_limit(self, mock_get_client, sample_content):
         """Returns at most num_takeaways items even if LLM returns more."""
         mock_client = Mock()
@@ -454,7 +454,7 @@ class TestExtractTakeaways:
 class TestUploadToEdith:
     """Tests for upload_to_edith()."""
 
-    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    @patch("helper_functions.link_ingestion.MemoryPalaceDB")
     def test_skip_distill_stores_raw(self, mock_db_class, sample_content, sample_takeaways):
         mock_db = Mock()
         mock_db.add_lesson.return_value = "lesson-id-123"
@@ -472,8 +472,8 @@ class TestUploadToEdith:
         assert lesson.metadata.distilled_by_model == "raw"
         assert sample_content.source_type in lesson.metadata.tags
 
-    @patch("scripts.ingest_to_memory.distill_lesson")
-    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    @patch("helper_functions.link_ingestion.distill_lesson")
+    @patch("helper_functions.link_ingestion.MemoryPalaceDB")
     def test_with_distillation(self, mock_db_class, mock_distill, sample_content, sample_takeaways):
         mock_db = Mock()
         mock_db.add_lesson.return_value = "lesson-id-456"
@@ -492,7 +492,7 @@ class TestUploadToEdith:
         assert mock_distill.call_count == 3
         assert mock_db.get_few_shot_examples.call_count == 3
 
-    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    @patch("helper_functions.link_ingestion.MemoryPalaceDB")
     def test_handles_individual_failures(self, mock_db_class, sample_content, sample_takeaways):
         """Failures on individual lessons don't stop the batch."""
         mock_db = Mock()
@@ -507,7 +507,7 @@ class TestUploadToEdith:
 
         assert count == 2  # 2 of 3 succeeded
 
-    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    @patch("helper_functions.link_ingestion.MemoryPalaceDB")
     def test_skip_distill_skips_source_referential_takeaway(self, mock_db_class, sample_content):
         """Skip-distill mode rejects obvious source-referential preamble entries."""
         mock_db = Mock()
@@ -525,8 +525,8 @@ class TestUploadToEdith:
         stored = mock_db.add_lesson.call_args[0][0]
         assert "speaker" not in stored.distilled_text.lower()
 
-    @patch("scripts.ingest_to_memory.distill_lesson")
-    @patch("scripts.ingest_to_memory.MemoryPalaceDB")
+    @patch("helper_functions.link_ingestion.distill_lesson")
+    @patch("helper_functions.link_ingestion.MemoryPalaceDB")
     def test_distillation_skips_non_objective_output(self, mock_db_class, mock_distill, sample_content):
         """Distilled entries that still contain source framing are skipped."""
         mock_db = Mock()
@@ -562,7 +562,7 @@ class TestUploadToEdith:
 class TestUploadToLocalMemory:
     """Tests for upload_to_local_memory()."""
 
-    @patch("scripts.ingest_to_memory.save_memory")
+    @patch("helper_functions.link_ingestion.save_memory")
     def test_combines_takeaways(self, mock_save, sample_content, sample_takeaways):
         mock_save.return_value = "Saved to Memory Palace"
 
@@ -584,7 +584,7 @@ class TestUploadToLocalMemory:
 class TestUploadToKnowledgeArchive:
     """Tests for upload_to_knowledge_archive()."""
 
-    @patch("helper_functions.knowledge_archive_db.KnowledgeArchiveDB")
+    @patch("helper_functions.link_ingestion.KnowledgeArchiveDB")
     @patch("helper_functions.knowledge_archive_processor.process_article")
     def test_successful_archive(self, mock_process, mock_db_class, sample_content):
         mock_db = Mock()
@@ -601,7 +601,7 @@ class TestUploadToKnowledgeArchive:
         mock_db.url_exists.assert_called_once_with(sample_content.source_ref)
         mock_db.add_entry.assert_called_once_with(mock_entry)
 
-    @patch("helper_functions.knowledge_archive_db.KnowledgeArchiveDB")
+    @patch("helper_functions.link_ingestion.KnowledgeArchiveDB")
     def test_skips_duplicate(self, mock_db_class, sample_content):
         mock_db = Mock()
         mock_db.url_exists.return_value = True

@@ -30,9 +30,9 @@ def load_persona_content(voice_persona: str, personas_dir: str = "personas") -> 
     return None
 
 
-def generate_gpt_response(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False) -> str:
+def generate_gpt_response(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False, model_name: str = None) -> str:
     """Generate a speech-friendly response from EDITH (or persona when using Chatterbox)."""
-    client = get_client(provider=llm_provider, model_tier=model_tier)
+    client = get_client(provider=llm_provider, model_tier=model_tier, model_name=model_name)
 
     # When Chatterbox is enabled with a persona, try to load detailed persona file
     if use_chatterbox and voice_persona:
@@ -135,13 +135,13 @@ Do NOT include meta-commentary like "The user wants..." - just speak directly to
     return cleaned
 
 
-def generate_gpt_response_newsletter(user_message: str, llm_provider: str, model_tier: str) -> str:
+def generate_gpt_response_newsletter(user_message: str, llm_provider: str, model_tier: str, model_name: str = None) -> str:
     """
     Generate newsletter-formatted news content with error handling.
     Returns formatted text content or empty string if generation fails.
     """
     try:
-        client = get_client(provider=llm_provider, model_tier=model_tier)
+        client = get_client(provider=llm_provider, model_tier=model_tier, model_name=model_name)
 
         syspromptmessage = """You are EDITH, or "Even Dead, I'm The Hero," a world-class AI assistant designed by Tony Stark. For the newsletter format, follow these rules strictly:
 
@@ -185,7 +185,7 @@ def generate_gpt_response_newsletter(user_message: str, llm_provider: str, model
 
 
 def generate_newsletter_sections(
-    news_tech: str, news_financial: str, news_india: str, llm_provider: str, model_tier: str
+    news_tech: str, news_financial: str, news_india: str, llm_provider: str, model_tier: str, model_name: str = None
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Generate newsletter sections as structured data.
@@ -228,7 +228,7 @@ def generate_newsletter_sections(
     (5 points from India news using format above)
     '''
 
-    newsletter_text = generate_gpt_response_newsletter(newsletter_prompt, llm_provider, model_tier)
+    newsletter_text = generate_gpt_response_newsletter(newsletter_prompt, llm_provider, model_tier, model_name=model_name)
 
     if not newsletter_text:
         logger.warning("Newsletter generation failed, using fallback sections")
@@ -250,13 +250,13 @@ def generate_newsletter_sections(
     return sections
 
 
-def generate_gpt_response_voicebot(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False) -> str:
+def generate_gpt_response_voicebot(user_message: str, llm_provider: str, model_tier: str, voice_persona: str = None, use_chatterbox: bool = False, model_name: str = None) -> str:
     """
     Generate voice-friendly news content with error handling.
     Returns formatted content or fallback summary if generation fails.
     """
     try:
-        client = get_client(provider=llm_provider, model_tier=model_tier)
+        client = get_client(provider=llm_provider, model_tier=model_tier, model_name=model_name)
 
         # When Chatterbox is enabled with a persona, try to load detailed persona file
         if use_chatterbox and voice_persona:

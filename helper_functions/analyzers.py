@@ -11,17 +11,38 @@ import os
 import shutil
 import re
 import ast
-import whisper
-import wget
+from types import SimpleNamespace
 import requests
 import logging
 import sys
-from newspaper import Article
 from bs4 import BeautifulSoup
-import yt_dlp
-from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
 from youtube_transcript_api import YouTubeTranscriptApi
 from helper_functions.memory_palace_local import save_memory
+
+try:
+    import whisper
+except ImportError:
+    whisper = SimpleNamespace(load_model=None)
+
+try:
+    import wget
+except ImportError:
+    wget = SimpleNamespace(download=None)
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = SimpleNamespace(YoutubeDL=None)
+
+try:
+    from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_audio
+except ImportError:
+    ffmpeg_extract_audio = None
+
+try:
+    from newspaper import Article
+except ImportError:
+    Article = None
 
 logging.basicConfig(stream=sys.stdout, level=logging.CRITICAL)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -199,6 +220,8 @@ def extract_video_id(url):
 
 def get_video_title(url, video_id):
     """Get YouTube video title"""
+    if getattr(yt_dlp, "YoutubeDL", None) is None:
+        return video_id
     try:
         with yt_dlp.YoutubeDL() as ydl:
             info = ydl.extract_info(url, download=False)
@@ -213,8 +236,8 @@ def transcript_extractor(video_id):
     try:
         api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=['en-IN', 'en'])
-        # FetchedTranscript is directly iterable - iterate over it to get snippets
-        transcript_text = " ".join([snippet.text for snippet in transcript])
+        snippets = getattr(transcript, "snippets", transcript)
+        transcript_text = " ".join(snippet.text for snippet in snippets)
         with open(os.path.join(UPLOAD_FOLDER, "transcript.txt"), "w") as f:
             f.write(transcript_text)
         return True
@@ -225,6 +248,8 @@ def transcript_extractor(video_id):
 
 def video_downloader(url):
     """Download YouTube video"""
+    if getattr(yt_dlp, "YoutubeDL", None) is None:
+        raise ImportError("yt-dlp package is not installed")
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(UPLOAD_FOLDER, 'video.mp4')
@@ -371,6 +396,9 @@ def analyze_file(files, memorize, model_name="LITELLM"):
 
 def download_and_parse_article(url):
     """Download and parse article using newspaper3k"""
+    if Article is None:
+        print("newspaper3k is not installed. Skipping newspaper article parsing.")
+        return None
     article = Article(url)
     try:
         article.download()
@@ -489,19 +517,20 @@ def extract_media_url_from_overcast(url):
     req = requests.get(url)
     soup = BeautifulSoup(req.content, 'html.parser')
     audio_tag = soup.find('audio')
-    # Check if audio tag exists before accessing attributes
     if audio_tag is None:
-        return None
-    # Try to get src from audio tag itself, or from source child element
+        raise ValueError("No audio tag found in Overcast page")
     if 'src' in audio_tag.attrs:
         return audio_tag['src']
-    else:
-        source_tag = audio_tag.find('source')
-        return source_tag['src'] if source_tag else None
+    source_tag = audio_tag.find('source')
+    if source_tag and 'src' in source_tag.attrs:
+        return source_tag['src']
+    raise ValueError("No audio source found in Overcast page")
 
 
 def download_media_file(url):
     """Download media file"""
+    if getattr(wget, "download", None) is None:
+        raise ImportError("wget package is not installed")
     return wget.download(url, UPLOAD_FOLDER)
 
 
@@ -511,6 +540,8 @@ def rename_and_extract_audio(file_name):
     if ext in ["m4a", "mp3", "wav"]:
         os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
     elif ext in ["mp4", "mkv"]:
+        if ffmpeg_extract_audio is None:
+            raise ImportError("moviepy is not installed")
         os.rename(os.path.join(UPLOAD_FOLDER, file_name), os.path.join(UPLOAD_FOLDER, "video.mp4"))
         ffmpeg_extract_audio(os.path.join(UPLOAD_FOLDER, "video.mp4"), os.path.join(UPLOAD_FOLDER, "audio.mp3"))
         os.remove(os.path.join(UPLOAD_FOLDER, "video.mp4"))
@@ -520,6 +551,8 @@ def rename_and_extract_audio(file_name):
 
 def transcribe_audio_with_whisper():
     """Transcribe audio using Whisper"""
+    if getattr(whisper, "load_model", None) is None:
+        raise ImportError("openai-whisper is not installed")
     model = whisper.load_model("base")
     return model.transcribe(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
 
@@ -542,7 +575,11 @@ def process_media(url, memorize):
         print(f"Failed to download media using wget from URL: {url}. Error: {str(e)}")
         return "Failed to download media. Please check the URL and try again.", None, None, None
 
-    media_text = transcribe_audio_with_whisper()
+    try:
+        media_text = transcribe_audio_with_whisper()
+    except Exception as e:
+        print(f"Failed to transcribe media with Whisper. Error: {str(e)}")
+        return "Failed to transcribe media. Please install Whisper and try again.", None, None, None
     save_transcript(media_text["text"])
     os.remove(os.path.join(UPLOAD_FOLDER, "audio.mp3"))
 

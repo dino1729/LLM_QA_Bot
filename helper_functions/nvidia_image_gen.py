@@ -167,6 +167,7 @@ def run_generate_nvidia(prompt: str | None = None, size: str = "1024x1024") -> s
         # Debug: print response details if there's an error
         if response.status_code != 200:
             print(f"[NVIDIA] API Error {response.status_code}: {response.text}")
+            raise Exception(f"NVIDIA API Error {response.status_code}: {response.text}")
         
         response.raise_for_status()
         
@@ -254,6 +255,7 @@ def run_edit_nvidia(image_path: str, prompt: str | None = None, size: str = "102
         # Debug: print response details if there's an error
         if response.status_code != 200:
             print(f"[NVIDIA] API Error {response.status_code}: {response.text}")
+            raise Exception(f"NVIDIA API Error {response.status_code}: {response.text}")
         
         response.raise_for_status()
         
@@ -295,4 +297,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Test failed: {e}")
             sys.exit(1)
-

@@ -7,12 +7,23 @@ import logging
 import time
 import signal
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any
-import sounddevice as sd
 import soundfile as sf
 import numpy as np
 from config import config
 from helper_functions.chat_generation_with_internet import internet_connected_chatbot
+
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except ImportError:
+    SOUNDDEVICE_AVAILABLE = False
+
+    def _sounddevice_unavailable(*args, **kwargs):
+        raise ImportError("sounddevice package not installed")
+
+    sd = SimpleNamespace(play=_sounddevice_unavailable, wait=_sounddevice_unavailable)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -334,10 +345,13 @@ def text_to_speech(text, output_path, language, model_name=None, speed=1.0):
                 
                 print(f"✓ Speech synthesized and saved to {output_path}")
                 
-                # Play the audio
-                data, samplerate = sf.read(output_path)
-                sd.play(data, samplerate)
-                sd.wait()
+                # Play the audio when the local playback dependency is installed.
+                if SOUNDDEVICE_AVAILABLE:
+                    data, samplerate = sf.read(output_path)
+                    sd.play(data, samplerate)
+                    sd.wait()
+                else:
+                    logger.warning("sounddevice not installed - skipping local audio playback")
                 
                 return True
                 

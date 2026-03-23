@@ -34,6 +34,8 @@ def _mask(secret: str, show: int = 4) -> str:
     return f"{secret[:show]}{'*'*(len(secret)-show*2)}{secret[-show:]}"
 
 def debug_print(label, value, pretty=False):
+    if not DEBUG_LOG:
+        return
     if pretty and isinstance(value, dict):
         print(f"[DEBUG] {label}:"); print(json.dumps(value, indent=2))
     else:
@@ -50,6 +52,16 @@ def _ensure_png(path: str) -> str:
     tmp_path = tempfile.mktemp(suffix=".png")
     Image.open(path).save(tmp_path, format="PNG")
     return tmp_path
+
+
+def _get_openai_base_url() -> str | None:
+    """Resolve the OpenAI-compatible base URL from either supported env name."""
+    return os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+
+
+def _get_azure_endpoint() -> str | None:
+    """Resolve the Azure/OpenAI image endpoint from either supported env name."""
+    return os.getenv("AZURE_OPENAI_ENDPOINT") or _get_openai_base_url()
 
 # -------------- Prompt Enhancement --------------
 def prompt_enhancer(original_prompt: str, client) -> str:
@@ -237,9 +249,8 @@ os.makedirs(DATA_DIR, exist_ok=True) # Ensure the data directory exists
 # ------------------ GENERATE FLOW ------------------
 # Add size parameter with default
 def run_generate(prompt: str | None = None, size: str = "1024x1024") -> str:
-    from openai import OpenAI
     api_key  = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_API_BASE")
+    base_url = _get_openai_base_url()
     client   = OpenAI(api_key=api_key, base_url=base_url)
 
     if prompt is None:
@@ -283,7 +294,7 @@ def run_edit(image_path: str, prompt: str | None = None, size: str = "1024x1024"
     from openai import AzureOpenAI
 
     azure_api_key   = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    azure_endpoint  = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("OPENAI_API_BASE")
+    azure_endpoint  = _get_azure_endpoint()
     api_version     = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
     azure_deployment= os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
@@ -316,11 +327,11 @@ def run_edit(image_path: str, prompt: str | None = None, size: str = "1024x1024"
         curl_cmd = [
             "curl","-X","POST",api_url,
             "-H",f"api-key: {azure_api_key}",
-            "-F",f"image=@{image_path}",
+            f"-Fimage=@{image_path}",
             # Use the provided prompt directly
-            "-F",f"prompt={prompt}",
+            f"-Fprompt={prompt}",
             # Add the size parameter to the curl command
-            "-F",f"size={size}"
+            f"-Fsize={size}"
         ]
         # print("Editing image via Azure OpenAI... (this may take a while)")
         t0=time.time()
@@ -410,9 +421,8 @@ def prompt_enhancer_unified(original_prompt: str, provider: str = "openai") -> s
         from helper_functions.nvidia_image_gen import prompt_enhancer_nvidia
         return prompt_enhancer_nvidia(original_prompt)
     else:
-        from openai import OpenAI
         api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_API_BASE")
+        base_url = _get_openai_base_url()
         client = OpenAI(api_key=api_key, base_url=base_url)
         return prompt_enhancer(original_prompt, client)
 
@@ -431,9 +441,8 @@ def generate_surprise_prompt_unified(provider: str = "openai") -> str:
         from helper_functions.nvidia_image_gen import generate_surprise_prompt_nvidia
         return generate_surprise_prompt_nvidia()
     else:
-        from openai import OpenAI
         api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_API_BASE")
+        base_url = _get_openai_base_url()
         client = OpenAI(api_key=api_key, base_url=base_url)
         return generate_surprise_prompt(client)
 

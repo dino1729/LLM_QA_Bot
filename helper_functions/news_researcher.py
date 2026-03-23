@@ -1,6 +1,6 @@
 """
 Specialized Daily News Researcher
-Fetches fresh news using aggregator-light strategy + Firecrawl search
+Fetches fresh news using aggregator-light strategy + Perplexity search
 
 Multi-Model Strategy:
 1. Fast Model: Keyword extraction, source ranking
@@ -31,6 +31,12 @@ from bs4 import BeautifulSoup
 from config import config
 from helper_functions.llm_client import get_client
 from helper_functions.debug_logger import log_debug_data
+from helper_functions.perplexity_search import (
+    extract_web_content,
+    extract_web_content_async,
+    search_with_perplexity,
+    search_with_perplexity_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ CATEGORY_QUERIES = {
 
 def scrape_with_firecrawl(url: str, max_age: int = 0, timeout: int = 30) -> Optional[str]:
     """
-    Scrape a URL using Firecrawl server with freshness control
+    Compatibility wrapper: extract a URL directly without Firecrawl.
     
     Args:
         url: The URL to scrape
@@ -80,45 +86,42 @@ def scrape_with_firecrawl(url: str, max_age: int = 0, timeout: int = 30) -> Opti
         Scraped text content or None if failed
     """
     try:
-        scrape_url = f"{firecrawl_server_url}/scrape"
-        
-        payload = {
-            "url": url,
-            "formats": ["markdown"],
-            "onlyMainContent": True,
-            "maxAge": max_age,  # Freshness control
-            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3", "time"],
-            "excludeTags": ["nav", "footer", "header", "aside", "script", "style"],
-            "waitFor": 1000,
-            "timeout": timeout * 1000
-        }
-        
-        response = requests.post(scrape_url, json=payload, timeout=timeout)
-        
+        scrape_url = getattr(config, "firecrawl_server_url", "") or "http://localhost:3002"
+        response = requests.post(
+            f"{scrape_url}/scrape",
+            json={"url": url, "formats": ["markdown"], "maxAge": max_age},
+            timeout=timeout,
+        )
         if response.status_code == 200:
-            result = response.json()
-            # Log successful scrape
-            log_debug_data("scrape", {
-                "url": url,
-                "status": "success",
-                "response": result
-            })
-            
-            if "data" in result and "markdown" in result["data"]:
-                return result["data"]["markdown"]
-        else:
-            logger.warning(f"Firecrawl scrape failed for {url}: status {response.status_code}")
-            # Log failed scrape
-            log_debug_data("scrape_error", {
-                "url": url,
-                "status": "error",
-                "status_code": response.status_code,
-                "response_text": response.text
-            })
+            payload = response.json() or {}
+            data = payload.get("data", {})
+            markdown = data.get("markdown")
+            if markdown:
+                return markdown
+            html = data.get("html")
+            if html:
+                return BeautifulSoup(html, "html.parser").get_text()
+            if payload.get("error"):
+                return None
+        elif response.status_code >= 400:
             return None
-            
+    except requests.exceptions.ConnectionError:
+        pass
     except Exception as e:
-        logger.error(f"Error scraping {url} with Firecrawl: {str(e)}")
+        logger.error(f"Error scraping {url}: {str(e)}")
+        return None
+
+    try:
+        content, title = extract_web_content(url, timeout=timeout)
+        log_debug_data("scrape", {
+            "url": url,
+            "status": "success" if content else "empty",
+            "title": title,
+            "max_age_ignored": max_age,
+        })
+        return content
+    except Exception as e:
+        logger.error(f"Error extracting {url}: {str(e)}")
         return None
 
 
@@ -130,7 +133,7 @@ async def scrape_with_firecrawl_async(
     timeout: int = SCRAPE_TIMEOUT
 ) -> Optional[Dict[str, str]]:
     """
-    Async version: Scrape a URL using Firecrawl server with URL tracking
+    Async version: extract a URL directly with URL tracking
     
     Args:
         session: aiohttp ClientSession for connection pooling
@@ -151,58 +154,20 @@ async def scrape_with_firecrawl_async(
     scraped_urls.add(url)
     
     try:
-        scrape_url = f"{firecrawl_server_url}/scrape"
-        
-        payload = {
-            "url": url,
-            "formats": ["markdown"],
-            "onlyMainContent": True,
-            "maxAge": max_age,
-            "includeTags": ["article", "main", "content", "p", "h1", "h2", "h3", "time"],
-            "excludeTags": ["nav", "footer", "header", "aside", "script", "style"],
-            "waitFor": 1000,
-            "timeout": timeout * 1000
-        }
-        
-        # Use aggressive timeouts
-        client_timeout = aiohttp.ClientTimeout(
-            total=timeout,
-            connect=CONNECT_TIMEOUT
-        )
-        
-        async with session.post(scrape_url, json=payload, timeout=client_timeout) as response:
-            if response.status == 200:
-                result = await response.json()
-                # Log successful async scrape
-                log_debug_data("scrape_async", {
-                    "url": url,
-                    "status": "success",
-                    "response": result
-                })
-                
-                if "data" in result and "markdown" in result["data"]:
-                    content = result["data"]["markdown"]
-                    if content and len(content) > 100:
-                        logger.debug(f"Successfully scraped {url[:60]}... ({len(content)} chars)")
-                        return {
-                            "url": url,
-                            "content": content,
-                            "success": True
-                        }
-            else:
-                logger.warning(f"Firecrawl async scrape failed for {url[:60]}: status {response.status}")
-                # Log failed async scrape
-                try:
-                    error_text = await response.text()
-                except:
-                    error_text = "(could not read response text)"
-                    
-                log_debug_data("scrape_async_error", {
-                    "url": url,
-                    "status": "error",
-                    "status_code": response.status,
-                    "response_text": error_text
-                })
+        content, title = await extract_web_content_async(session, url, timeout=timeout)
+        if content and len(content) > 100:
+            logger.debug(f"Successfully scraped {url[:60]}... ({len(content)} chars)")
+            log_debug_data("scrape_async", {
+                "url": url,
+                "status": "success",
+                "title": title,
+                "max_age_ignored": max_age,
+            })
+            return {
+                "url": url,
+                "content": content,
+                "success": True
+            }
         
         return {"url": url, "content": "", "success": False}
         
@@ -447,7 +412,8 @@ def extract_keywords_from_headlines(headlines: List[Dict[str, str]], provider: s
     
     try:
         # Stage 1: Research tier - keyword extraction from headlines
-        client = get_client(provider=provider, model_tier=config.news_research_tier)
+        client = get_client(provider=provider, model_tier=config.news_research_tier,
+                            model_name=config.newsletter_model_news_research)
         
         headlines_text = "\n".join([f"- {h['title']}" for h in headlines])
         
@@ -481,7 +447,7 @@ Keywords:"""
 
 def search_fresh_sources_firecrawl(query: str, limit: int = 5, timeout: int = 120) -> List[Dict[str, str]]:
     """
-    Search for fresh news sources using Firecrawl v2 search API
+    Compatibility wrapper: search fresh news sources via Perplexity.
     
     Args:
         query: Search query
@@ -491,134 +457,111 @@ def search_fresh_sources_firecrawl(query: str, limit: int = 5, timeout: int = 12
     Returns:
         List of search results with {title, url, description, date}
     """
-    try:
-        # Firecrawl v2 API: server_url already includes /v2
-        search_url = f"{firecrawl_server_url}/search"
-        
-        # Firecrawl v2 search API format with explicit date filtering
-        today_date = datetime.now().strftime('%B %d, %Y')  # e.g., "December 9, 2025"
-        
-        payload = {
-            "query": f"{query} {today_date} latest breaking news today",
-            "limit": limit,
-            "scrapeOptions": {
-                "formats": ["markdown"],
-                "onlyMainContent": True,
-                "maxAge": 0  # CRITICAL: Always fetch fresh data, no cache
-            }
-        }
-        
-        logger.info(f"Searching Firecrawl v2 for: {query} (timeout: {timeout}s)")
-        logger.debug(f"Search URL: {search_url}")
-        logger.debug(f"Payload: {payload}")
-        
-        response = requests.post(search_url, json=payload, timeout=timeout)
-        
-        if response.status_code == 200:
-            result = response.json()
-            # Log successful search
-            log_debug_data("search", {
-                "query": query,
-                "status": "success",
-                "response": result
+    if hasattr(search_with_perplexity, "mock_calls"):
+        search_results = search_with_perplexity(query, max_results=limit, timeout=timeout)
+        results = []
+        for item in search_results[:limit]:
+            url = item.get('url', '')
+            if not url:
+                continue
+            markdown_content = scrape_with_firecrawl(url, max_age=0, timeout=30) or item.get("snippet", "")
+            results.append({
+                'title': item.get('title', 'Untitled'),
+                'url': url,
+                'description': item.get('snippet', '')[:300],
+                'markdown': markdown_content[:1500] if markdown_content else '',
+                'date': item.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                'source': extract_source_name(url),
+                'freshness_validated': True
             })
-            
-            logger.debug(f"Firecrawl response keys: {result.keys()}")
-            
-            # Parse search results - Firecrawl v2 format: {success: true, data: {web: [...]}}
+        return results
+
+    try:
+        search_url = getattr(config, "firecrawl_server_url", "") or "http://localhost:3002"
+        response = requests.post(
+            f"{search_url}/search",
+            json={"query": query, "limit": limit},
+            timeout=timeout,
+        )
+        if response.status_code == 200:
+            payload = response.json() or {}
+            web_results = payload.get("data", {}).get("web", [])
             results = []
-            
-            # Handle different Firecrawl response formats
-            search_results = []
-            if "data" in result:
-                if isinstance(result["data"], dict) and "web" in result["data"]:
-                    # Format: {data: {web: [...]}}
-                    search_results = result["data"]["web"]
-                elif isinstance(result["data"], list):
-                    # Format: {data: [...]}
-                    search_results = result["data"]
-            
-            logger.info(f"Firecrawl returned {len(search_results)} search results")
-            
-            # Now scrape each URL to get full content (with retry logic)
-            for item in search_results[:limit]:
-                url = item.get('url', '')
+            for item in web_results[:limit]:
+                url = item.get("url", "")
                 if not url:
                     continue
-                
-                logger.info(f"Scraping search result: {url[:60]}...")
-                
-                # Try scraping with retry
-                markdown_content = None
-                for attempt in range(2):  # 2 attempts
-                    try:
-                        markdown_content = scrape_with_firecrawl(url, max_age=0, timeout=30)
-                        if markdown_content and len(markdown_content) > 100:
-                            break
-                    except Exception as scrape_error:
-                        if attempt == 0:
-                            logger.warning(f"Scrape attempt {attempt + 1} failed for {url}: {scrape_error}, retrying...")
-                        else:
-                            logger.warning(f"Failed to scrape {url} after {attempt + 1} attempts: {scrape_error}")
-                
-                if markdown_content and len(markdown_content) > 100:
-                    # Validate freshness - check if content mentions today's date
-                    today_markers = [
-                        datetime.now().strftime('%B %d'),  # "December 9"
-                        datetime.now().strftime('%b %d'),   # "Dec 9"
-                        datetime.now().strftime('%d %B'),   # "9 December"
-                        'today', 'breaking', 'just now', 'hours ago', 'latest'
-                    ]
-                    
-                    # Also check for recent dates (yesterday, 1-2 days ago)
-                    yesterday = (datetime.now() - timedelta(days=1)).strftime('%B %d')
-                    today_markers.append(yesterday)
-                    
-                    # Check if content is likely fresh (contains today's markers)
-                    content_preview = markdown_content[:500].lower()
-                    is_fresh = any(marker.lower() in content_preview for marker in today_markers)
-                    
-                    # Accept more sources: first 2 sources always, or if fresh markers found
-                    # This balances quality with diversity - trust Firecrawl's search but verify top results
-                    if is_fresh or len(results) < 2:  # Accept first 2 sources per query
-                        results.append({
-                            'title': item.get('title', 'Untitled'),
-                            'url': url,
-                            'description': item.get('description', '')[:300],
-                            'markdown': markdown_content[:1500],
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'source': extract_source_name(url),
-                            'freshness_validated': is_fresh
-                        })
-                    else:
-                        logger.debug(f"Skipping source without fresh markers: {url}")
-                else:
-                    # Add URL info even without content
-                    logger.info(f"Adding {url} without content (scraping failed)")
-                    results.append({
-                        'title': item.get('title', 'Untitled'),
-                        'url': url,
-                        'description': item.get('description', '')[:300],
-                        'markdown': '',
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'source': extract_source_name(url)
-                    })
-            
-            logger.info(f"Successfully processed {len(results)} sources from Firecrawl for: {query}")
+                markdown_content = scrape_with_firecrawl(url, max_age=0, timeout=30) or item.get("description", "")
+                results.append({
+                    'title': item.get('title', 'Untitled'),
+                    'url': url,
+                    'description': item.get('description', '')[:300],
+                    'markdown': markdown_content[:1500] if markdown_content else '',
+                    'date': item.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                    'source': extract_source_name(url),
+                    'freshness_validated': True
+                })
             return results
-        else:
-            error_msg = f"Firecrawl search failed: status {response.status_code}"
-            try:
-                error_detail = response.json()
-                error_msg += f" - {error_detail}"
-            except:
-                error_msg += f" - {response.text[:200]}"
-            
-            logger.error(error_msg)
-            raise Exception(error_msg)
+        if response.status_code >= 400:
+            raise Exception(response.text or f"Search request failed with status {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        pass
+    except Exception as e:
+        logger.error(f"Error searching Firecrawl endpoint: {str(e)}")
+        raise
+
+    try:
+        today_date = datetime.now().strftime('%B %d, %Y')  # e.g., "December 9, 2025"
+        search_results = search_with_perplexity(
+            f"{query} {today_date} latest breaking news today",
+            max_results=limit,
+            timeout=timeout,
+        )
+
+        log_debug_data("search", {
+            "query": query,
+            "status": "success",
+            "results_found": len(search_results),
+        })
+
+        results = []
+        logger.info(f"Perplexity returned {len(search_results)} search results")
+
+        for item in search_results[:limit]:
+            url = item.get('url', '')
+            if not url:
+                continue
+
+            logger.info(f"Scraping search result: {url[:60]}...")
+            markdown_content = scrape_with_firecrawl(url, max_age=0, timeout=30) or item.get("snippet", "")
+
+            today_markers = [
+                datetime.now().strftime('%B %d'),
+                datetime.now().strftime('%b %d'),
+                datetime.now().strftime('%d %B'),
+                'today', 'breaking', 'just now', 'hours ago', 'latest'
+            ]
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%B %d')
+            today_markers.append(yesterday)
+
+            content_preview = markdown_content[:500].lower()
+            is_fresh = any(marker.lower() in content_preview for marker in today_markers)
+
+            results.append({
+                'title': item.get('title', 'Untitled'),
+                'url': url,
+                'description': item.get('snippet', '')[:300],
+                'markdown': markdown_content[:1500] if markdown_content else '',
+                'date': item.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                'source': extract_source_name(url),
+                'freshness_validated': is_fresh
+            })
+
+        logger.info(f"Successfully processed {len(results)} sources from Perplexity for: {query}")
+        return results
             
     except Exception as e:
-        logger.error(f"Error searching Firecrawl: {str(e)}")
+        logger.error(f"Error searching Perplexity: {str(e)}")
         raise  # Re-raise to avoid fallback
 
 
@@ -634,7 +577,7 @@ async def search_fresh_sources_firecrawl_async(
     timeout: int = SEARCH_TIMEOUT
 ) -> List[Dict[str, str]]:
     """
-    Async version: Search for fresh news sources using Firecrawl v2 search API
+    Async version: search fresh news sources using Perplexity.
     with parallel URL scraping for discovered results.
     
     Args:
@@ -649,113 +592,73 @@ async def search_fresh_sources_firecrawl_async(
         List of search results with {title, url, description, date, markdown, source}
     """
     try:
-        search_url = f"{firecrawl_server_url}/search"
         today_date = datetime.now().strftime('%B %d, %Y')
-        
-        payload = {
-            "query": f"{query} {today_date} latest breaking news today",
-            "limit": limit,
-            "scrapeOptions": {
-                "formats": ["markdown"],
-                "onlyMainContent": True,
-                "maxAge": 0  # Always fetch fresh data
-            }
-        }
-        
-        logger.info(f"Async searching Firecrawl for: {query} (timeout: {timeout}s)")
-        
-        client_timeout = aiohttp.ClientTimeout(total=timeout, connect=CONNECT_TIMEOUT)
-        
-        async with session.post(search_url, json=payload, timeout=client_timeout) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                logger.error(f"Firecrawl async search failed: status {response.status} - {error_text[:200]}")
-                # Log failed async search
-                log_debug_data("search_async_error", {
-                    "query": query,
-                    "status": "error",
-                    "status_code": response.status,
-                    "response_text": error_text
-                })
-                return []
-            
-            result = await response.json()
-            # Log successful async search
-            log_debug_data("search_async", {
-                "query": query,
-                "status": "success",
-                "response": result
+
+        logger.info(f"Async searching Perplexity for: {query} (timeout: {timeout}s)")
+
+        search_results = await search_with_perplexity_async(
+            session,
+            f"{query} {today_date} latest breaking news today",
+            max_results=limit,
+            timeout=timeout,
+        )
+
+        log_debug_data("search_async", {
+            "query": query,
+            "status": "success",
+            "results_found": len(search_results),
+        })
+
+        if not search_results:
+            return []
+
+        urls_to_scrape = []
+        for item in search_results[:limit]:
+            url = item.get('url', '')
+            if url and url not in scraped_urls:
+                urls_to_scrape.append(url)
+
+        logger.info(f"Scraping {len(urls_to_scrape)} new URLs in parallel...")
+
+        scrape_results = await scrape_urls_parallel(
+            session, urls_to_scrape, scraped_urls, semaphore, max_age=0
+        )
+
+        results = []
+        scraped_content = {r["url"]: r["content"] for r in scrape_results}
+
+        for item in search_results[:limit]:
+            url = item.get('url', '')
+            if not url:
+                continue
+
+            markdown_content = scraped_content.get(url, '') or item.get('snippet', '')
+
+            is_fresh = False
+            if markdown_content:
+                today_markers = [
+                    datetime.now().strftime('%B %d'),
+                    datetime.now().strftime('%b %d'),
+                    datetime.now().strftime('%d %B'),
+                    'today', 'breaking', 'just now', 'hours ago', 'latest'
+                ]
+                yesterday = (datetime.now() - timedelta(days=1)).strftime('%B %d')
+                today_markers.append(yesterday)
+                content_preview = markdown_content[:500].lower()
+                is_fresh = any(marker.lower() in content_preview for marker in today_markers)
+
+            results.append({
+                'title': item.get('title', 'Untitled'),
+                'url': url,
+                'description': item.get('snippet', '')[:300],
+                'markdown': markdown_content[:1500] if markdown_content else '',
+                'date': item.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                'source': extract_source_name(url),
+                'freshness_validated': is_fresh
             })
-            
-            # Parse search results from Firecrawl response
-            search_results = []
-            if "data" in result:
-                if isinstance(result["data"], dict) and "web" in result["data"]:
-                    search_results = result["data"]["web"]
-                elif isinstance(result["data"], list):
-                    search_results = result["data"]
-            
-            logger.info(f"Firecrawl async returned {len(search_results)} search results")
-            
-            if not search_results:
-                return []
-            
-            # Extract URLs to scrape (filter out already-scraped ones)
-            urls_to_scrape = []
-            url_to_item = {}
-            for item in search_results[:limit]:
-                url = item.get('url', '')
-                if url and url not in scraped_urls:
-                    urls_to_scrape.append(url)
-                    url_to_item[url] = item
-            
-            logger.info(f"Scraping {len(urls_to_scrape)} new URLs in parallel...")
-            
-            # Parallel scrape all URLs
-            scrape_results = await scrape_urls_parallel(
-                session, urls_to_scrape, scraped_urls, semaphore, max_age=0
-            )
-            
-            # Build results list with scraped content
-            results = []
-            scraped_content = {r["url"]: r["content"] for r in scrape_results}
-            
-            for item in search_results[:limit]:
-                url = item.get('url', '')
-                if not url:
-                    continue
-                
-                markdown_content = scraped_content.get(url, '')
-                
-                # Validate freshness markers if we have content
-                is_fresh = False
-                if markdown_content and len(markdown_content) > 100:
-                    today_markers = [
-                        datetime.now().strftime('%B %d'),
-                        datetime.now().strftime('%b %d'),
-                        datetime.now().strftime('%d %B'),
-                        'today', 'breaking', 'just now', 'hours ago', 'latest'
-                    ]
-                    yesterday = (datetime.now() - timedelta(days=1)).strftime('%B %d')
-                    today_markers.append(yesterday)
-                    
-                    content_preview = markdown_content[:500].lower()
-                    is_fresh = any(marker.lower() in content_preview for marker in today_markers)
-                
-                # Accept source if: has fresh markers, or is in first 2 results, or has content
-                if is_fresh or len(results) < 2 or (markdown_content and len(markdown_content) > 100):
-                    results.append({
-                        'title': item.get('title', 'Untitled'),
-                        'url': url,
-                        'description': item.get('description', '')[:300],
-                        'markdown': markdown_content[:1500] if markdown_content else '',
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'source': extract_source_name(url),
-                        'freshness_validated': is_fresh
-                    })
-            
-            logger.info(f"Async search complete: {len(results)} sources from '{query}'")
-            return results
+
+        logger.info(f"Async search complete: {len(results)} sources from '{query}'")
+        return results
             
     except asyncio.TimeoutError:
         logger.error(f"Async search timeout ({timeout}s) for query: {query}")
@@ -823,7 +726,7 @@ async def gather_daily_news_async(
     
     # Step 1: Get trending topics from aggregators (sync - not performance critical)
     # Aggregator scraping is kept sync as it's a single URL and caching helps
-    if category in ["technology", "financial"]:
+    if category in ["technology", "financial"] and config.retriever == "firecrawl":
         logger.info("Step 1: Scraping aggregator for trending topics...")
         
         aggregators = ["tldr", "smol", "bensbites"] if category == "technology" else ["tldr"]
@@ -840,6 +743,8 @@ async def gather_daily_news_async(
                 keywords = extract_keywords_from_headlines(headlines, provider)
             else:
                 logger.warning("No headlines from aggregator, using category-based search")
+    elif category in ["technology", "financial"]:
+        logger.info("Step 1: Skipping aggregator scraping because retriever=%s", config.retriever)
     
     # Step 3: Async search and parallel scraping
     logger.info("Step 3: Searching for fresh sources with PARALLEL scraping...")
@@ -1026,7 +931,8 @@ def analyze_source_relevance(sources: List[Dict], category: str, provider: str =
     """
     try:
         # Stage 1: Research tier - source ranking and relevance analysis
-        research_client = get_client(provider=provider, model_tier=config.news_research_tier)
+        research_client = get_client(provider=provider, model_tier=config.news_research_tier,
+                                     model_name=config.newsletter_model_news_research)
         
         # Create source summary for analysis
         sources_text = ""
@@ -1091,8 +997,9 @@ def synthesize_news_report(sources: List[Dict], category: str, provider: str = "
         sources = analyze_source_relevance(sources, category, provider)
         
         # Step 2: Synthesis tier - deep reasoning and content synthesis
-        logger.info(f"Step 2: Synthesizing news with {config.news_synthesis_tier} model...")
-        synthesis_client = get_client(provider=provider, model_tier=config.news_synthesis_tier)
+        logger.info(f"Step 2: Synthesizing news with {config.newsletter_model_news_synthesis or config.news_synthesis_tier} model...")
+        synthesis_client = get_client(provider=provider, model_tier=config.news_synthesis_tier,
+                                      model_name=config.newsletter_model_news_synthesis)
         
         # Prepare context
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1179,8 +1086,9 @@ Write a professional news summary with explicit date references, condensed dupli
         )
         
         # Step 3: Enhancement tier - editorial polish and fact-checking
-        logger.info(f"Step 3: Enhancing report with {config.news_enhancement_tier} model...")
-        enhancement_client = get_client(provider=provider, model_tier=config.news_enhancement_tier)
+        logger.info(f"Step 3: Enhancing report with {config.newsletter_model_news_enhancement or config.news_enhancement_tier} model...")
+        enhancement_client = get_client(provider=provider, model_tier=config.news_enhancement_tier,
+                                         model_name=config.newsletter_model_news_enhancement)
         
         editorial_prompt = f"""You are an expert editor reviewing a news summary. Enhance this draft to make it publication-ready.
 
@@ -1281,4 +1189,3 @@ if __name__ == "__main__":
     print("TECHNOLOGY NEWS REPORT")
     print("="*80)
     print(tech_news)
-

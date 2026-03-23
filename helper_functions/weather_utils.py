@@ -8,6 +8,7 @@ from pyowm import OWM
 from config import config
 
 logger = logging.getLogger(__name__)
+DEFAULT_CITY_ID = 5743413
 
 
 def get_weather():
@@ -15,7 +16,8 @@ def get_weather():
     try:
         owm = OWM(config.pyowm_api_key)
         mgr = owm.weather_manager()
-        weather = mgr.weather_at_id(config.pyowm_city_id).weather
+        city_id = config.pyowm_city_id or DEFAULT_CITY_ID
+        weather = mgr.weather_at_id(city_id).weather
         temp = weather.temperature("celsius")["temp"]
         status = weather.detailed_status
         return temp, status
@@ -132,9 +134,10 @@ def get_weather_forecast() -> Dict[str, Any]:
     try:
         owm = OWM(config.pyowm_api_key)
         mgr = owm.weather_manager()
+        city_id = config.pyowm_city_id or DEFAULT_CITY_ID
         
         # Use free 5-day/3-hour forecast API (no subscription required)
-        forecast = mgr.forecast_at_id(config.pyowm_city_id, '3h')
+        forecast = mgr.forecast_at_id(city_id, '3h')
         forecasts = forecast.forecast.weathers
         
         today = datetime.now().date()
