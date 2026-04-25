@@ -156,6 +156,8 @@ pytest.ini
 .gitattributes
 
 memory_palace/
+vault/
+.rsync-backups/
 
 content.txt
 test_urls.txt

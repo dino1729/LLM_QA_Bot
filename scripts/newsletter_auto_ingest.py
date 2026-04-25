@@ -358,6 +358,88 @@ def determine_takeaway_count(word_count: int) -> int:
     return 3 if word_count < 2000 else 8
 
 
+def _try_wiki_update(content, operation_type: str) -> None:
+    """Attempt wiki update. Never raises - failures are logged silently."""
+    try:
+        from wiki.telegram_commands import trigger_wiki_ingest
+        trigger_wiki_ingest(content, operation_type)
+    except ImportError:
+        pass
+    except Exception:
+        logger.debug("Wiki hook failed (non-fatal)", exc_info=True)
+
+
+def _try_wiki_maintenance() -> None:
+    """
+    Run weekly wiki maintenance after newsletter ingest completes.
+
+    Runs: lint (with auto-fix), backup, timeline update, connections update.
+    Gated by wiki_enabled + lint.run_with_newsletter_cron config.
+    Never raises - failures are logged silently.
+    """
+    try:
+        from config import wiki_config as wc
+        if not getattr(wc, "wiki_enabled", False):
+            return
+        if not getattr(wc, "wiki_lint_run_with_newsletter_cron", True):
+            return
+
+        from pathlib import Path
+        from wiki import get_wiki_builder
+
+        builder = get_wiki_builder()
+        if builder is None:
+            return
+
+        vault_root = Path(getattr(wc, "wiki_vault_path", "./vault"))
+        logger.info("Running weekly wiki maintenance...")
+
+        # 1. Lint with auto-fix
+        from wiki.entities import EntityRegistry
+        from wiki.lint import WikiLinter
+
+        registry = EntityRegistry(vault_root / "raw" / "refs" / "legacy-schema" / "entity_registry.json")
+        registry.load()
+        linter = WikiLinter(vault_root, registry)
+        report = linter.run(auto_fix=True)
+        logger.info(
+            "Wiki lint: %d issues found, %d auto-fixed, %d need review",
+            report.issue_count, report.auto_fixed, len(report.needs_review),
+        )
+
+        # 2. Update connections graph
+        builder.indexer.update_connections()
+
+        # 3. Update timeline
+        builder.indexer.update_timeline()
+
+        # 4. Backup
+        if getattr(wc, "wiki_backup_enabled", True):
+            from wiki.backup import WikiBackup
+
+            backup_dir = Path(getattr(wc, "wiki_backup_dir", "./memory_palace/backups/wiki"))
+            keep_n = getattr(wc, "wiki_backup_keep_last_n", 30)
+            backup = WikiBackup(vault_root, backup_dir, keep_n)
+            tarball_path = backup.create_tarball()
+            logger.info("Wiki backup created: %s", tarball_path)
+
+        # 5. Send lint notification if issues found
+        if report.needs_review and getattr(wc, "wiki_telegram_notify_on_lint_issues", True):
+            from wiki.lint import format_lint_telegram
+            msg = format_lint_telegram(report)
+            try:
+                send_telegram_message(f"Weekly Wiki Maintenance\n\n{msg}")
+            except Exception:
+                logger.debug("Failed to send lint notification", exc_info=True)
+
+        logger.info("Weekly wiki maintenance complete")
+
+    except ImportError:
+        logger.debug("Wiki module not available for maintenance")
+    except Exception:
+        logger.exception("Wiki maintenance failed (non-fatal)")
+
+
 def ingest_newsletter_url(url: str, model_tier: str, dry_run: bool = False) -> Dict:
     if dry_run:
         return {
@@ -378,6 +460,9 @@ def ingest_newsletter_url(url: str, model_tier: str, dry_run: bool = False) -> D
     edith_saved = upload_to_edith(takeaways, content, skip_distill=False)
     local_status = upload_to_local_memory(content, takeaways)
     upload_to_knowledge_archive(content)
+
+    # Wiki hook: update wiki pages (non-blocking, failure-safe)
+    _try_wiki_update(content, "ingest_newsletter")
 
     return {
         "url": url,
@@ -781,6 +866,10 @@ def run_pipeline(
 
     summary_path = write_run_logs(log_dir, summary)
     logger.info("Run summary saved to %s", summary_path)
+
+    # Wiki maintenance: lint, backup, timeline, connections (after all ingests)
+    if not dry_run:
+        _try_wiki_maintenance()
 
     alerts_enabled = bool(getattr(config, "newsletter_ingestion_telegram_alerts", True))
     if alerts_enabled:
