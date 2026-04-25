@@ -954,6 +954,35 @@ class MemoryPalaceBot:
             context.user_data["awaiting_socratic"] = True
 
         await update.message.reply_text(response)
+
+        # Wiki auto-file: persist high-confidence multi-source answers
+        if result.confidence_tier == ConfidenceTier.VERY_CONFIDENT:
+            sources = []
+            for m in result.wisdom_matches:
+                sources.append(m.lesson.distilled_text[:60])
+            for m in result.archive_matches:
+                sources.append(getattr(m.entry.metadata, "title", "archive")[:60])
+            for m in result.knowledge_matches:
+                sources.append(getattr(m.entry.metadata, "original_query", "web")[:60])
+
+            if len(sources) >= 3:
+                try:
+                    from wiki.telegram_commands import trigger_wiki_auto_file
+                    chat_id = update.effective_chat.id if update.effective_chat else None
+                    bot_send = context.bot.send_message if context.bot else None
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            trigger_wiki_auto_file,
+                            question,
+                            result.answer_text,
+                            sources,
+                            bot_send,
+                            chat_id,
+                        )
+                    )
+                except ImportError:
+                    pass
+
         return State.AWAITING_LESSON
 
     async def _handle_forget(
@@ -1049,6 +1078,21 @@ class MemoryPalaceBot:
             f"Local Memory: {result.local_memory_status}\n"
             f"Archive: {archive_status}"
         )
+
+        # Wiki hook: update wiki pages in background (non-blocking)
+        if preview is not None:
+            try:
+                from wiki.telegram_commands import trigger_wiki_ingest
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        trigger_wiki_ingest,
+                        preview.content,
+                        "ingest_link",
+                    )
+                )
+            except ImportError:
+                pass
+
         return State.AWAITING_LESSON
 
     async def handle_research_confirmation(
@@ -1412,6 +1456,16 @@ class MemoryPalaceBot:
                 f"ID: {lesson_id[:8]}...\n\n"
                 f"Send /add to add another lesson."
             )
+
+            # Wiki hook: update wiki pages in background (non-blocking)
+            try:
+                from wiki.telegram_commands import trigger_wiki_ingest
+                asyncio.create_task(
+                    asyncio.to_thread(trigger_wiki_ingest, lesson, "ingest_lesson")
+                )
+            except ImportError:
+                pass
+
         except Exception as e:
             logger.error(f"Failed to save lesson: {e}")
             await query.edit_message_text(
@@ -1722,6 +1776,16 @@ class MemoryPalaceBot:
         application.add_handler(CommandHandler("random", self.random_command))
         application.add_handler(CommandHandler("stats", self.stats_command))
         application.add_handler(CommandHandler("archive", self.archive_command))
+
+        # Wiki commands (registered only if wiki module is available)
+        try:
+            from wiki.telegram_commands import wiki_command, lint_command, wikistats_command
+            application.add_handler(CommandHandler("wiki", wiki_command))
+            application.add_handler(CommandHandler("lint", lint_command))
+            application.add_handler(CommandHandler("wikistats", wikistats_command))
+            logger.info("Wiki commands registered: /wiki, /lint, /wikistats")
+        except ImportError:
+            logger.debug("Wiki module not available, skipping wiki commands")
 
         return application
 

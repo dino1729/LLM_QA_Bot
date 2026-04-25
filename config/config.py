@@ -45,7 +45,11 @@ litellm_base_url = (
 )
 if not litellm_base_url or str(litellm_base_url).startswith("${"):
     litellm_base_url = "http://localhost:4000"
-litellm_api_key = config_yaml.get("litellm_api_key")
+litellm_api_key = (
+    os.getenv("LITELLM_API_KEY")
+    or config_env.get("LITELLM_API_KEY")
+    or config_yaml.get("litellm_api_key")
+)
 litellm_fast_llm = config_yaml.get("litellm_fast_llm")
 litellm_smart_llm = config_yaml.get("litellm_smart_llm")
 litellm_strategic_llm = config_yaml.get("litellm_strategic_llm")
@@ -86,7 +90,11 @@ firecrawl_default_provider = config_yaml.get("firecrawl_default_provider")
 firecrawl_default_model_name = config_yaml.get("firecrawl_default_model_name")
 
 # NVIDIA NIM Configuration (for Image Studio)
-nvidia_api_key = config_yaml.get("nvidia_api_key")
+nvidia_api_key = (
+    os.getenv("NVIDIA_NIM_KEY")
+    or config_env.get("NVIDIA_NIM_KEY")
+    or config_yaml.get("nvidia_api_key")
+)
 nvidia_base_url = config_yaml.get("nvidia_base_url")
 nvidia_image_gen_url = config_yaml.get("nvidia_image_gen_url")
 nvidia_vision_model = config_yaml.get("nvidia_vision_model")
