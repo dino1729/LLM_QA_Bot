@@ -369,13 +369,58 @@ def _try_wiki_update(content, operation_type: str) -> None:
         logger.debug("Wiki hook failed (non-fatal)", exc_info=True)
 
 
-def _try_wiki_maintenance() -> None:
+def _wiki_maintenance_state_path(state_file: Path) -> Path:
+    """Dedicated state file for wiki maintenance cadence tracking.
+
+    Kept SEPARATE from the newsletter ingestion state file so that
+    ingestion's whole-dict writes (which use a snapshot taken at the
+    start of an ingest run, before maintenance has stamped) cannot
+    silently clobber the cadence stamp. Co-located in the same
+    directory for operational convenience.
+    """
+    return state_file.parent / "wiki_maintenance_state.json"
+
+
+def _load_wiki_maintenance_state(state_file: Path) -> Dict:
+    """Read the dedicated wiki maintenance state file.
+
+    Returns {} if the file is absent or unreadable; callers treat
+    that as 'no prior maintenance run recorded'.
+    """
+    path = _wiki_maintenance_state_path(state_file)
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _stamp_wiki_maintenance_complete(state_file: Path) -> None:
+    """Mark wiki maintenance as freshly completed for cadence tracking.
+
+    Writes to the DEDICATED wiki maintenance state file (not the shared
+    newsletter ingestion state file). Uses read-modify-write so any
+    concurrent write to the wiki state file is preserved — defensive,
+    since under normal operation only wiki maintenance writes here.
+    """
+    stamp = _utc_now_iso()
+    fresh = _load_wiki_maintenance_state(state_file)
+    fresh["last_wiki_maintenance_at"] = stamp
+    save_state_atomic(_wiki_maintenance_state_path(state_file), fresh)
+
+
+def _try_wiki_maintenance(state_file: Path) -> None:
     """
     Run weekly wiki maintenance after newsletter ingest completes.
 
     Runs: lint (with auto-fix), backup, timeline update, connections update.
-    Gated by wiki_enabled + lint.run_with_newsletter_cron config.
-    Never raises - failures are logged silently.
+    Gated by wiki_enabled + lint.run_with_newsletter_cron config, a 7-day
+    cadence guard, and a process-level fcntl lock. The cadence stamp lives
+    in a dedicated state file (see _wiki_maintenance_state_path) so that
+    newsletter-ingestion writes to the shared ingestion state cannot
+    clobber it. Cadence is enforced in-code so the function stays "weekly"
+    regardless of how often this script is invoked (manual --once runs,
+    systemd timer catch-up via Persistent=true, etc.). Never raises -
+    failures are logged silently.
     """
     try:
         from config import wiki_config as wc
@@ -384,55 +429,95 @@ def _try_wiki_maintenance() -> None:
         if not getattr(wc, "wiki_lint_run_with_newsletter_cron", True):
             return
 
-        from pathlib import Path
-        from wiki import get_wiki_builder
-
-        builder = get_wiki_builder()
-        if builder is None:
-            return
-
-        vault_root = Path(getattr(wc, "wiki_vault_path", "./vault"))
-        logger.info("Running weekly wiki maintenance...")
-
-        # 1. Lint with auto-fix
-        from wiki.entities import EntityRegistry
-        from wiki.lint import WikiLinter
-
-        registry = EntityRegistry(vault_root / "raw" / "refs" / "legacy-schema" / "entity_registry.json")
-        registry.load()
-        linter = WikiLinter(vault_root, registry)
-        report = linter.run(auto_fix=True)
-        logger.info(
-            "Wiki lint: %d issues found, %d auto-fixed, %d need review",
-            report.issue_count, report.auto_fixed, len(report.needs_review),
-        )
-
-        # 2. Update connections graph
-        builder.indexer.update_connections()
-
-        # 3. Update timeline
-        builder.indexer.update_timeline()
-
-        # 4. Backup
-        if getattr(wc, "wiki_backup_enabled", True):
-            from wiki.backup import WikiBackup
-
-            backup_dir = Path(getattr(wc, "wiki_backup_dir", "./memory_palace/backups/wiki"))
-            keep_n = getattr(wc, "wiki_backup_keep_last_n", 30)
-            backup = WikiBackup(vault_root, backup_dir, keep_n)
-            tarball_path = backup.create_tarball()
-            logger.info("Wiki backup created: %s", tarball_path)
-
-        # 5. Send lint notification if issues found
-        if report.needs_review and getattr(wc, "wiki_telegram_notify_on_lint_issues", True):
-            from wiki.lint import format_lint_telegram
-            msg = format_lint_telegram(report)
+        # Mutual exclusion: prevent overlapping invocations from both
+        # passing the cadence check and running maintenance twice. The
+        # cadence guard alone is a TOCTOU race — two processes can both
+        # see a stale stamp before either writes a fresh one. The lock
+        # makes "cadence-check + work + stamp" atomic across processes.
+        # fcntl.flock is auto-released when the file descriptor closes
+        # (including on crash), so we don't risk a deadlocked lock file.
+        import fcntl
+        lock_path = state_file.parent / "wiki_maintenance.lock"
+        with open(lock_path, "w") as lock_fp:
             try:
-                send_telegram_message(f"Weekly Wiki Maintenance\n\n{msg}")
-            except Exception:
-                logger.debug("Failed to send lint notification", exc_info=True)
+                fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                logger.info(
+                    "Wiki maintenance skipped: another process holds the lock at %s",
+                    lock_path,
+                )
+                return
 
-        logger.info("Weekly wiki maintenance complete")
+            # Cadence check INSIDE the lock so we observe any fresh stamp
+            # written by a prior lock holder. Reads from the dedicated
+            # wiki maintenance state file (not the shared ingestion state).
+            last_str = _load_wiki_maintenance_state(state_file).get(
+                "last_wiki_maintenance_at"
+            )
+            if last_str:
+                try:
+                    last_dt = datetime.fromisoformat(last_str)
+                    if (datetime.now(timezone.utc) - last_dt).days < 7:
+                        logger.info(
+                            "Wiki maintenance skipped: last ran %s (< 7 days ago)",
+                            last_str,
+                        )
+                        return
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Could not parse last_wiki_maintenance_at=%r, running anyway",
+                        last_str,
+                    )
+
+            from wiki import get_wiki_builder
+
+            builder = get_wiki_builder()
+            if builder is None:
+                return
+
+            vault_root = Path(getattr(wc, "wiki_vault_path", "./vault"))
+            logger.info("Running weekly wiki maintenance...")
+
+            # 1. Lint with auto-fix
+            from wiki.entities import EntityRegistry
+            from wiki.lint import WikiLinter
+
+            registry = EntityRegistry(vault_root / "raw" / "refs" / "legacy-schema" / "entity_registry.json")
+            registry.load()
+            linter = WikiLinter(vault_root, registry)
+            report = linter.run(auto_fix=True)
+            logger.info(
+                "Wiki lint: %d issues found, %d auto-fixed, %d need review",
+                report.issue_count, report.auto_fixed, len(report.needs_review),
+            )
+
+            # 2. Update connections graph
+            builder.indexer.update_connections()
+
+            # 3. Update timeline
+            builder.indexer.update_timeline()
+
+            # 4. Backup
+            if getattr(wc, "wiki_backup_enabled", True):
+                from wiki.backup import WikiBackup
+
+                backup_dir = Path(getattr(wc, "wiki_backup_dir", "./memory_palace/backups/wiki"))
+                keep_n = getattr(wc, "wiki_backup_keep_last_n", 30)
+                backup = WikiBackup(vault_root, backup_dir, keep_n)
+                tarball_path = backup.create_tarball()
+                logger.info("Wiki backup created: %s", tarball_path)
+
+            # 5. Send lint notification if issues found
+            if report.needs_review and getattr(wc, "wiki_telegram_notify_on_lint_issues", True):
+                from wiki.lint import format_lint_telegram
+                msg = format_lint_telegram(report)
+                try:
+                    send_telegram_message(f"Weekly Wiki Maintenance\n\n{msg}")
+                except Exception:
+                    logger.debug("Failed to send lint notification", exc_info=True)
+
+            _stamp_wiki_maintenance_complete(state_file)
+            logger.info("Weekly wiki maintenance complete")
 
     except ImportError:
         logger.debug("Wiki module not available for maintenance")
@@ -867,9 +952,9 @@ def run_pipeline(
     summary_path = write_run_logs(log_dir, summary)
     logger.info("Run summary saved to %s", summary_path)
 
-    # Wiki maintenance: lint, backup, timeline, connections (after all ingests)
+    # Wiki maintenance: lint, backup, timeline, connections (gated to 7-day cadence)
     if not dry_run:
-        _try_wiki_maintenance()
+        _try_wiki_maintenance(state_file)
 
     alerts_enabled = bool(getattr(config, "newsletter_ingestion_telegram_alerts", True))
     if alerts_enabled:
