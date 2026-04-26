@@ -16,7 +16,7 @@ This directory contains comprehensive unit tests for the LLM QA Bot project, tar
 | `test_analyzers.py` | 92% | 60+ | Content analysis (files, videos, articles, media) |
 | `test_audio_processors.py` | 67% | 27 | NVIDIA Riva audio transcription & TTS |
 | `test_chat_generation.py` | 86% | 25+ | Multi-provider LLM chat completion |
-| `test_chat_generation_with_internet.py` | 74% | 45+ | Internet-connected chatbot with Firecrawl |
+| `test_chat_generation_with_internet.py` | 74% | 45+ | Internet-connected chatbot with LiteLLM Perplexity search |
 
 ## 🚀 Quick Start
 
@@ -245,4 +245,3 @@ For issues or questions about tests:
 **Last Updated**: 2025-11-20  
 **Test Framework**: pytest 9.0.1  
 **Python Version**: 3.11.14
-

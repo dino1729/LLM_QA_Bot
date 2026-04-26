@@ -43,7 +43,13 @@ def generate_trip_plan(city, days, model_name=None):
             max_tokens=2048
         )
 
-        return f"Here is your trip plan for {city} for {days} day(s): {response}"
+        if not response or not str(response).strip():
+            return (
+                "Error generating trip plan: The selected model returned an empty response. "
+                "Please try a different model or reduce the itinerary length."
+            )
+
+        return f"Here is your trip plan for {city} for {days} day(s): {str(response).strip()}"
 
     except ValueError:
         return "Please enter a number for days."

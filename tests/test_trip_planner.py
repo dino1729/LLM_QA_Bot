@@ -135,6 +135,17 @@ class TestGenerateTripPlan:
         assert "API Error" in result
 
     @patch('helper_functions.trip_planner.generate_chat')
+    def test_generate_trip_plan_empty_model_response(self, mock_generate_chat):
+        """Empty model responses should not render as literal None."""
+        mock_generate_chat.return_value = None
+
+        result = trip_planner.generate_trip_plan("Kyoto", "3", "LITELLM:test-model")
+
+        assert "Error generating trip plan" in result
+        assert "empty response" in result
+        assert "None" not in result
+
+    @patch('helper_functions.trip_planner.generate_chat')
     def test_generate_trip_plan_empty_city(self, mock_generate_chat):
         """Test with empty city name"""
         mock_generate_chat.return_value = "Trip plan"

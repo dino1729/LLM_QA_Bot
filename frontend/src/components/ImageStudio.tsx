@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { api } from '../api';
+import { api, isAbortError } from '../api';
+
+interface ApiErrorShape {
+  response?: {
+    data?: {
+      error?: string;
+      message?: string;
+    };
+  };
+  message?: string;
+}
 
 export function ImageStudio() {
   const [mode, setMode] = useState('generate'); // generate | edit
@@ -21,7 +31,7 @@ export function ImageStudio() {
     if (typeof e === 'string') return e;
     if (e instanceof Error) return e.message;
     if (e && typeof e === 'object') {
-      const errorObj = e as any;
+      const errorObj = e as ApiErrorShape;
       // Try multiple paths to extract error info
       return errorObj.response?.data?.error || 
              errorObj.response?.data?.message ||
@@ -57,7 +67,7 @@ export function ImageStudio() {
       setImgUrl(`/api/files/${res.image_path}`);
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       console.error('Error generating image:', e);
@@ -75,7 +85,7 @@ export function ImageStudio() {
       setEnhancedPrompt(res.enhanced_prompt);
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       console.error('Error enhancing prompt:', e);
@@ -94,7 +104,7 @@ export function ImageStudio() {
       setEnhancedPrompt('');
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       console.error('Error getting surprise prompt:', e);
@@ -114,7 +124,7 @@ export function ImageStudio() {
         setEditFileUrl(res.file_path);
       } catch (e) {
         // Ignore abort errors (request cancelled)
-        if (e instanceof Error && (e as any).aborted) {
+        if (isAbortError(e)) {
           return;
         }
         // Surface error to user and reset state to prevent inconsistency
@@ -136,7 +146,7 @@ export function ImageStudio() {
           setImgUrl(`/api/files/${res.image_path}`);
       } catch(e) {
           // Ignore abort errors (request cancelled)
-          if (e instanceof Error && (e as any).aborted) {
+          if (isAbortError(e)) {
             return;
           }
           console.error('Error editing image:', e);

@@ -9,7 +9,7 @@ The Memory Palace is a curated knowledge management system that stores distilled
 - **EDITH Persona** - Telegram bot with autonomous learning capabilities
 - **Dual-Store Architecture** - User Wisdom (permanent) + Web Knowledge (7-day TTL)
 - **Question Answering** - Answer questions from stored knowledge with confidence tiers
-- **Autonomous Web Research** - Firecrawl integration for learning unknown topics
+- **Autonomous Web Research** - Perplexity integration for learning unknown topics
 - **Conflict Resolution** - Detect and resolve contradictions between stored wisdom and new research
 - LLM-powered distillation of verbose content into single-line insights
 - Recency tracking to prevent repeated lessons in newsletters
@@ -51,7 +51,7 @@ The Memory Palace is a curated knowledge management system that stores distilled
 │                                    │                                         │
 │                                    ▼                                         │
 │  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────────┐ │
-│  │   Telegram Bot   │    │   Firecrawl       │    │   Session Context    │ │
+│  │   Telegram Bot   │    │   Perplexity       │    │   Session Context    │ │
 │  │   (EDITH)        │◀───│   Researcher      │    │   (5-10 turns)       │ │
 │  │   - Q&A          │    │   - Web scraping  │    │   - In-memory        │ │
 │  │   - Lessons      │    │   - Progress CB   │    │   - Per-user         │ │
@@ -79,7 +79,7 @@ LLM_QA_Bot/
 │   ├── memory_palace_answer.py     # Answer engine with confidence tiers [NEW]
 │   ├── memory_palace_bot.py        # Telegram bot (EDITH)
 │   ├── memory_palace_migration.py  # One-time migration script
-│   ├── firecrawl_researcher.py     # Web research integration
+│   ├── web_researcher.py            # Web research integration
 │   └── html_templates.py           # Newsletter HTML (includes MP section)
 ├── memory_palace/
 │   ├── lessons_index/              # User wisdom LlamaIndex folder
@@ -447,7 +447,7 @@ class UserIntent(StrEnum):
 │         │           ▼       │        │        │                             │
 │         │     ┌───────────┐ │        │        │                             │
 │         │     │RESEARCHING│ │        │        │                             │
-│         │     │(Firecrawl)│ │        │        │                             │
+│         │     │(Perplexity)│ │        │        │                             │
 │         │     └─────┬─────┘ │        │        │                             │
 │         │           │       │        │        │                             │
 │         │           ▼       │        │        │                             │
@@ -956,7 +956,7 @@ print(f'Insight: {lesson[\"key_insight\"]}')
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-01-07 | 2.0.0 | EDITH Autonomous Learning - Dual-store architecture, question answering with confidence tiers, Firecrawl web research, conflict resolution, soft delete, session context, EDITH persona |
+| 2026-01-07 | 2.0.0 | EDITH Autonomous Learning - Dual-store architecture, question answering with confidence tiers, Perplexity web research, conflict resolution, soft delete, session context, EDITH persona |
 | 2026-01-04 | 1.0.0 | Initial implementation with all 5 phases complete |
 
 ---

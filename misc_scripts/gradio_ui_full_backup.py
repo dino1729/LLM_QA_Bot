@@ -1,6 +1,6 @@
 """
 LLM QA Bot - Full Featured Gradio UI
-Supports LiteLLM, Ollama, Gemini, and Groq with Firecrawl integration
+Supports LiteLLM, Ollama, Gemini, and Groq with web research integration
 """
 
 import os
@@ -408,7 +408,7 @@ with gr.Blocks(theme='davehornik/Tealy', fill_height=True) as llmapp:
         <center>
         <br>
         Dive into the world of AI with LLM Bot, your go-to assistant for exploring, learning, and storing knowledge. <br>
-        Powered by LiteLLM, Ollama, Gemini, Cohere, and Groq with Firecrawl web scraping. <br>
+        Powered by LiteLLM, Ollama, Gemini, Cohere, and Groq with web research. <br>
         </center>
         """
     )
@@ -486,8 +486,8 @@ with gr.Blocks(theme='davehornik/Tealy', fill_height=True) as llmapp:
                 examples = gr.Dataset(label="Questions", samples=example_queries, components=[query_component], type="index")
 
     with gr.Tab(label="AI Assistant"):
-        gr.Markdown("### Internet-Connected AI with Firecrawl and GPT Researcher")
-        gr.Markdown("_Uses Firecrawl for web scraping and GPT Researcher for deep research._")
+        gr.Markdown("### Internet-Connected AI with Web Research")
+        gr.Markdown("_Uses LiteLLM Perplexity search and direct page extraction for research._")
         
         with gr.Row():
             ai_provider_selector = gr.Radio(

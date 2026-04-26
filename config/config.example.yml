@@ -75,14 +75,12 @@ news_curation:
   synthesis_tier: ""     # Stage 2: Deep reasoning, content synthesis, story connections
   enhancement_tier: ""  # Stage 3: Editorial polish, fact-checking, coherence improvement
 
-# Retriever and Firecrawl
-retriever: ""
-firecrawl_server_url: ""
+# Web Research
 perplexity_search_url: ""   # LiteLLM Perplexity search endpoint, e.g. http://host:4000/v1/perplexity-search
-firecrawl_default_provider: ""
-firecrawl_default_model_name: ""
+web_research_default_provider: ""
+web_research_default_model_name: ""
 
-# Tavily (optional - for GPT Researcher web search)
+# Tavily (optional - currently unused)
 tavily_api_key: ""
 
 # NVIDIA NIM (for Image Studio)
@@ -183,7 +181,7 @@ cors:
 defaults:
   analyze_model_name: ""
   chat_model_name: ""
-  internet_chat_model_name: ""
+  internet_chat_model_name: "LITELLM_FAST"
   trip_model_name: ""
   cravings_model_name: ""
   memory_model_name: ""

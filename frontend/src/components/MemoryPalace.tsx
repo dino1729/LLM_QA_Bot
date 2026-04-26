@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { api } from '../api';
+import { api, isAbortError, type MemoryMetadata } from '../api';
 
 interface RetrievedMemory {
   content: string;
   score: number;
-  metadata: any;
+  metadata: MemoryMetadata;
 }
 
 export function MemoryPalace() {
@@ -19,6 +19,8 @@ export function MemoryPalace() {
   const [loading, setLoading] = useState(false);
   const [retrievedMemories, setRetrievedMemories] = useState<RetrievedMemory[]>([]);
   const [resetting, setResetting] = useState(false);
+  const activeChatCancelRef = useRef<(() => void) | null>(null);
+  const chatRequestIdRef = useRef(0);
 
   // Fetch models
   useEffect(() => {
@@ -39,7 +41,7 @@ export function MemoryPalace() {
           }
         }
       } catch (error) {
-        if (error instanceof Error && (error as any).aborted) return;
+        if (isAbortError(error)) return;
         if (!cancelled) {
           console.error('Error fetching models:', error);
           setAvailableModels([]);
@@ -58,6 +60,12 @@ export function MemoryPalace() {
     };
   }, [provider]);
 
+  useEffect(() => {
+    return () => {
+      activeChatCancelRef.current?.();
+    };
+  }, []);
+
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
     setModel('');
@@ -67,17 +75,25 @@ export function MemoryPalace() {
     if (!message.trim() || !model) return;
     
     const userMessage = message;
+    const requestId = chatRequestIdRef.current + 1;
+    chatRequestIdRef.current = requestId;
     setHistory(prev => [...prev, [userMessage, 'Searching memories...']]);
     setMessage('');
     setLoading(true);
     setRetrievedMemories([]);
+    let currentAnswer = '';
+    const cancelFns: Array<() => void> = [];
+    const cancelActive = () => cancelFns.forEach(cancel => cancel());
+    activeChatCancelRef.current = cancelActive;
     
     try {
       const modelName = `${provider.toUpperCase()}:${model}`;
       
       // 1. Search memories first
       const searchCall = api.memoryPalace.search(userMessage, modelName);
+      cancelFns.push(searchCall.cancel);
       const searchRes = await searchCall.promise;
+      if (chatRequestIdRef.current !== requestId) return;
       setRetrievedMemories(searchRes.results);
       
       // 2. Stream answer
@@ -87,8 +103,8 @@ export function MemoryPalace() {
         return updated;
       });
       
-      let currentAnswer = '';
-      const { promise } = api.memoryPalace.askStream(userMessage, history, modelName, (chunk) => {
+      const streamCall = api.memoryPalace.askStream(userMessage, history, modelName, (chunk) => {
+        if (chatRequestIdRef.current !== requestId) return;
         currentAnswer += chunk;
         setHistory(prev => {
           const updated = [...prev];
@@ -96,19 +112,46 @@ export function MemoryPalace() {
           return updated;
         });
       });
+      cancelFns.push(streamCall.cancel);
       
-      await promise;
+      await streamCall.promise;
       
     } catch (e) {
-      if (e instanceof Error && (e as any).aborted) return;
+      if (isAbortError(e)) {
+        if (chatRequestIdRef.current !== requestId) return;
+        setHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = [userMessage, currentAnswer || 'Stopped.'];
+          return updated;
+        });
+        return;
+      }
+      if (chatRequestIdRef.current !== requestId) return;
       setHistory(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = [userMessage, 'Error: ' + e];
         return updated;
       });
     } finally {
-      setLoading(false);
+      if (chatRequestIdRef.current === requestId) {
+        activeChatCancelRef.current = null;
+        setLoading(false);
+      }
     }
+  };
+
+  const handleStop = () => {
+    activeChatCancelRef.current?.();
+  };
+
+  const handleRefreshChat = () => {
+    chatRequestIdRef.current += 1;
+    activeChatCancelRef.current?.();
+    activeChatCancelRef.current = null;
+    setHistory([]);
+    setMessage('');
+    setRetrievedMemories([]);
+    setLoading(false);
   };
 
   const handleReset = async () => {
@@ -132,7 +175,7 @@ export function MemoryPalace() {
       <div className="card">
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 className="card-title" style={{ margin: 0 }}>🧠 Memory Palace</h2>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <select 
               value={provider} 
               onChange={e => handleProviderChange(e.target.value)} 
@@ -149,6 +192,15 @@ export function MemoryPalace() {
             >
               {loadingModels ? <option>Loading...</option> : availableModels.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
+            <button
+              className="btn btn-secondary"
+              onClick={handleRefreshChat}
+              disabled={history.length === 0 && !message && retrievedMemories.length === 0 && !loading}
+              style={{ fontSize: '12px', padding: '8px 12px' }}
+              type="button"
+            >
+              Refresh Chat
+            </button>
             <button 
               className="btn btn-secondary"
               onClick={handleReset}
@@ -197,7 +249,7 @@ export function MemoryPalace() {
               )}
             </div>
             
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div className="chat-controls">
               <input 
                 type="text" 
                 value={message}
@@ -207,6 +259,16 @@ export function MemoryPalace() {
                 disabled={loading}
                 style={{ flex: 1 }}
               />
+              {loading && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleStop}
+                  type="button"
+                  style={{ minWidth: '86px' }}
+                >
+                  Stop
+                </button>
+              )}
               <button 
                 className="btn btn-primary"
                 onClick={handleSend}
@@ -262,4 +324,3 @@ export function MemoryPalace() {
     </div>
   );
 }
-

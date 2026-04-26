@@ -22,7 +22,7 @@ from helper_functions.perplexity_search import extract_web_content
 logger = logging.getLogger(__name__)
 
 # Configuration
-firecrawl_timeout = getattr(config, "knowledge_archive_firecrawl_timeout", 30)
+scrape_timeout = getattr(config, "knowledge_archive_scrape_timeout", 30)
 archive_org_timeout = getattr(config, "knowledge_archive_archive_org_timeout", 15)
 min_word_count = getattr(config, "knowledge_archive_min_word_count", 75)
 
@@ -50,11 +50,11 @@ def scrape_article(url: str, timeout: int = None) -> Optional[ScrapedContent]:
     Returns:
         ScrapedContent or None if all methods failed
     """
-    timeout = timeout or firecrawl_timeout
+    timeout = timeout or scrape_timeout
 
     # Try primary URL via direct extraction
     logger.info(f"Scraping {url} via direct extraction")
-    content, title = _scrape_with_firecrawl(url, timeout)
+    content, title = _scrape_direct(url, timeout)
 
     if content and len(content.split()) >= min_word_count:
         return _build_scraped_content(url, content, title, used_archive_org=False)
@@ -73,9 +73,9 @@ def scrape_article(url: str, timeout: int = None) -> Optional[ScrapedContent]:
     return None
 
 
-def _scrape_with_firecrawl(url: str, timeout: int) -> tuple[Optional[str], Optional[str]]:
+def _scrape_direct(url: str, timeout: int) -> tuple[Optional[str], Optional[str]]:
     """
-    Compatibility wrapper: extract URL content directly without Firecrawl.
+    Extract URL content directly.
 
     Returns:
         Tuple of (content, title) or (None, None) if failed
@@ -127,7 +127,7 @@ def _scrape_archive_org(url: str, timeout: int) -> tuple[Optional[str], Optional
         logger.info(f"Found Archive.org snapshot: {snapshot_url}")
 
         # Scrape the archived version via direct extraction
-        return _scrape_with_firecrawl(snapshot_url, timeout)
+        return _scrape_direct(snapshot_url, timeout)
 
     except requests.exceptions.Timeout:
         logger.warning(f"Archive.org fallback timed out for {url}")

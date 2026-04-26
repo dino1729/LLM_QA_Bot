@@ -1,5 +1,21 @@
-import { useState, useEffect } from 'react';
-import { api } from '../api';
+import { useState, useEffect, useRef } from 'react';
+import { api, isAbortError, type InternetSource } from '../api';
+
+function formatProgress(statuses: string[], sources: InternetSource[]) {
+  const lines = ['Quick search in progress'];
+  statuses.forEach(status => lines.push(`- ${status}`));
+
+  if (sources.length > 0) {
+    lines.push('', 'Sources found:');
+    sources.forEach((source, index) => {
+      lines.push(`${index + 1}. ${source.title || source.url || 'Untitled source'}`);
+      if (source.url) lines.push(`   ${source.url}`);
+      if (source.snippet) lines.push(`   ${source.snippet.slice(0, 180)}`);
+    });
+  }
+
+  return lines.join('\n');
+}
 
 export function AIAssistant() {
   const [provider, setProvider] = useState('litellm');
@@ -12,6 +28,8 @@ export function AIAssistant() {
   const [history, setHistory] = useState<string[][]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const activeChatCancelRef = useRef<(() => void) | null>(null);
+  const chatRequestIdRef = useRef(0);
 
   // Fetch models when provider changes
   useEffect(() => {
@@ -34,7 +52,7 @@ export function AIAssistant() {
         }
       } catch (error) {
         // Ignore abort errors (component unmounted or request cancelled)
-        if (error instanceof Error && (error as any).aborted) {
+        if (isAbortError(error)) {
           return;
         }
         if (!cancelled) {
@@ -59,6 +77,12 @@ export function AIAssistant() {
     };
   }, [provider]);
 
+  useEffect(() => {
+    return () => {
+      activeChatCancelRef.current?.();
+    };
+  }, []);
+
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
     setModel(''); // Reset model when provider changes
@@ -67,27 +91,79 @@ export function AIAssistant() {
   const handleSend = async () => {
     if (!message.trim() || !model) return;
     const userMessage = message; // Capture message before clearing
-    setHistory(prev => [...prev, [userMessage, '...']]);
+    const requestId = chatRequestIdRef.current + 1;
+    chatRequestIdRef.current = requestId;
+    setHistory(prev => [...prev, [userMessage, 'Quick search in progress']]);
     setMessage('');
     setLoading(true);
+    const progressStatuses: string[] = [];
+    let progressSources: InternetSource[] = [];
     
     try {
       // Format model name as PROVIDER:model_name for backend
       const modelName = `${provider.toUpperCase()}:${model}`;
-      const { promise } = api.chat.internet(userMessage, history, modelName, maxTokens, temperature);
-      const res = await promise;
-      // Replace placeholder with actual response using functional update
-      setHistory(prev => [...prev.slice(0, -1), [userMessage, res.response]]);
+      const updateAssistantMessage = (content: string) => {
+        setHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = [userMessage, content];
+          return updated;
+        });
+      };
+      const chatCall = api.chat.internetStream(
+        userMessage,
+        history,
+        modelName,
+        maxTokens,
+        temperature,
+        event => {
+          if (chatRequestIdRef.current !== requestId) return;
+          if (event.type === 'status') {
+            progressStatuses.push(event.message);
+            updateAssistantMessage(formatProgress(progressStatuses, progressSources));
+          } else if (event.type === 'sources') {
+            progressSources = event.sources || [];
+            updateAssistantMessage(formatProgress(progressStatuses, progressSources));
+          } else if (event.type === 'final') {
+            updateAssistantMessage(event.response);
+          } else if (event.type === 'error') {
+            updateAssistantMessage(`Error: ${event.message}`);
+          }
+        }
+      );
+      activeChatCancelRef.current = chatCall.cancel;
+      await chatCall.promise;
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
+        if (chatRequestIdRef.current !== requestId) return;
+        const statusMessage = e.timeout
+          ? 'Timed out while researching. Please try again with a narrower question.'
+          : 'Stopped.';
+        setHistory(prev => [...prev.slice(0, -1), [userMessage, statusMessage]]);
         return;
       }
+      if (chatRequestIdRef.current !== requestId) return;
       // Replace placeholder with error message using functional update
       setHistory(prev => [...prev.slice(0, -1), [userMessage, 'Error: ' + e]]);
     } finally {
-      setLoading(false);
+      if (chatRequestIdRef.current === requestId) {
+        activeChatCancelRef.current = null;
+        setLoading(false);
+      }
     }
+  };
+
+  const handleStop = () => {
+    activeChatCancelRef.current?.();
+  };
+
+  const handleRefreshChat = () => {
+    chatRequestIdRef.current += 1;
+    activeChatCancelRef.current?.();
+    activeChatCancelRef.current = null;
+    setHistory([]);
+    setMessage('');
+    setLoading(false);
   };
 
   const exampleQueries = [
@@ -255,19 +331,39 @@ export function AIAssistant() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div className="chat-controls">
           <input 
             type="text" 
             placeholder="Ask anything (e.g. 'Latest AI news')..." 
             value={message}
             onChange={e => setMessage(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && !loading && handleSend()}
             style={{ flex: 1 }}
+            disabled={loading}
           />
+          {loading && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleStop}
+              type="button"
+              style={{ minWidth: '86px' }}
+            >
+              Stop
+            </button>
+          )}
+          <button
+            className="btn btn-secondary"
+            onClick={handleRefreshChat}
+            type="button"
+            disabled={history.length === 0 && !message && !loading}
+            style={{ minWidth: '96px' }}
+          >
+            Refresh
+          </button>
           <button 
             className="btn btn-primary" 
             onClick={handleSend} 
-            disabled={loading}
+            disabled={loading || !message.trim()}
             style={{ minWidth: '100px' }}
           >
             {loading ? <div className="loader"></div> : 'Send'}

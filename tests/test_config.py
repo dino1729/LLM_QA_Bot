@@ -265,14 +265,13 @@ cors:
         has_templates = any(hasattr(config, attr) for attr in template_attrs)
         assert has_templates, "Config should have at least some prompt templates"
 
-    def test_config_firecrawl_settings(self):
-        """Test Firecrawl settings if present"""
+    def test_config_web_research_settings(self):
+        """Test web research settings if present"""
         from config import config
 
-        # Firecrawl server URL might be configured
-        if hasattr(config, 'firecrawl_server_url'):
-            if config.firecrawl_server_url:
-                assert isinstance(config.firecrawl_server_url, str)
+        if hasattr(config, 'perplexity_search_url'):
+            if config.perplexity_search_url:
+                assert isinstance(config.perplexity_search_url, str)
 
     def test_config_azure_settings(self):
         """Test Azure settings if present"""

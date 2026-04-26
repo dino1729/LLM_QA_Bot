@@ -38,6 +38,44 @@ class TestGenerateChat:
         # Verify the actual model name was passed (without LITELLM: prefix)
         call_args = mock_client.chat.completions.create.call_args
         assert call_args[1]["model"] == "test-litellm-model"
+
+    @patch('helper_functions.chat_generation.OpenAI')
+    def test_generate_chat_dynamic_litellm_reasoning_content(self, mock_openai_class):
+        """Dynamic LiteLLM routes should handle providers that omit message.content."""
+        mock_client = Mock()
+        mock_message = Mock(content=None, reasoning_content="Reasoning text response")
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai_class.return_value = mock_client
+
+        result = chat_generation.generate_chat(
+            "LITELLM:test-litellm-model",
+            [{"role": "user", "content": "Hello"}],
+            0.7,
+            1000
+        )
+
+        assert result == "Reasoning text response"
+
+    @patch('helper_functions.chat_generation.OpenAI')
+    def test_generate_chat_dynamic_litellm_empty_content(self, mock_openai_class):
+        """Dynamic LiteLLM routes should return an empty string, not None."""
+        mock_client = Mock()
+        mock_message = Mock(content=None, reasoning_content=None)
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai_class.return_value = mock_client
+
+        result = chat_generation.generate_chat(
+            "LITELLM:test-litellm-model",
+            [{"role": "user", "content": "Hello"}],
+            0.7,
+            1000
+        )
+
+        assert result == ""
     
     @patch('helper_functions.chat_generation.OpenAI')
     def test_generate_chat_dynamic_ollama(self, mock_openai_class):

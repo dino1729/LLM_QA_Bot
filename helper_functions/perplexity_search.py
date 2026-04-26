@@ -1,9 +1,8 @@
 """
 Perplexity-backed search and direct web content extraction helpers.
 
-This module replaces Firecrawl-based discovery in active runtime paths:
-- Search/discovery uses LiteLLM's /v1/perplexity-search endpoint
-- Full-page extraction uses direct HTTP fetches with newspaper3k/BeautifulSoup
+Search/discovery uses LiteLLM's /v1/perplexity-search endpoint.
+Full-page extraction uses direct HTTP fetches with newspaper3k/BeautifulSoup.
 """
 
 from __future__ import annotations

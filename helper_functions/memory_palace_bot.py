@@ -1123,12 +1123,12 @@ class MemoryPalaceBot:
 
         # Do the research (this will be async in Phase 4)
         try:
-            from helper_functions.firecrawl_researcher import conduct_research_firecrawl
+            from helper_functions.web_researcher import conduct_web_research
 
             # Update progress
             await query.edit_message_text("🔍 Researching: Scraping sources...")
 
-            report = conduct_research_firecrawl(
+            report = conduct_web_research(
                 query=question,
                 provider=config.memory_palace_provider,
                 max_sources=8,

@@ -49,7 +49,7 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 
 ### Multi-provider Chat and Live Search
 - Swap between Azure OpenAI, Gemini (migrated to modern `google-genai` SDK), Cohere, Groq (Llama/Mixtral), LiteLLM, or local Ollama tiers for chat completions.
-- Trigger Firecrawl/Tavily-powered browsing to ground the conversation with fresh web data or Bing news headlines.
+- Trigger Perplexity/Tavily-powered browsing to ground the conversation with fresh web data or Bing news headlines.
 
 ### Daily Reporter & Podcast Engine
 - **Automated Briefings**: Generates daily Year Progress and News reports with motivational quotes and historical lessons.
@@ -76,7 +76,7 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 - **Memory Palace**: `helper_functions/query_supabasememory.py` streams Supabase RPC results via Azure embeddings.
 - **LLM routing**: `helper_functions/llm_client.py` selects LiteLLM, Ollama, Gemini, Cohere, Groq, or native OpenAI clients.
 - **Aux tools**: Trip planner, food planner, query agents, and image utilities live under `helper_functions/`.
-- **Testing**: Over 150 pytest cases (see `tests/`) cover analyzers, chat generation, Firecrawl, planners, and Supabase flows.
+- **Testing**: Over 150 pytest cases (see `tests/`) cover analyzers, chat generation, Perplexity, planners, and Supabase flows.
 
 ## Project Layout
 - `gradio_ui_full.py`: Main multi-provider Gradio UI entry point.
@@ -90,7 +90,7 @@ LLM_QA_Bot centralizes knowledge ingestion and retrieval. Upload a document, pas
 ## Prerequisites
 - Python 3.10+ (virtual environments recommended).
 - `ffmpeg` installed and on your PATH (required for moviepy/Whisper).
-- Access tokens for the providers you plan to enable (OpenAI/Azure, Gemini, Cohere, Groq, LiteLLM proxy, Ollama, Tavily, Firecrawl, Supabase, OpenWeather, etc.).
+- Access tokens for the providers you plan to enable (OpenAI/Azure, Gemini, Cohere, Groq, LiteLLM proxy, Ollama, Tavily, Perplexity, Supabase, OpenWeather, etc.).
 - Optional: NVIDIA NIM credentials for the image studio tab, and a running Supabase project with the `mp_search` RPC if you intend to use the Memory Palace sync.
 
 ## Setup
@@ -125,7 +125,7 @@ All runtime settings live in `config/config.yml`. The most important sections ar
 | LiteLLM / Ollama | `litellm_*`, `ollama_*` | Route chat, document Q&A, and embeddings through a gateway. |
 | Chatterbox TTS | `chatterbox_tts_model_type`, `newsletter_progress_voice`, `newsletter_progress_voice_randomize`, `newsletter_news_voice` | GPU-accelerated on-device TTS with voice cloning and optional voice randomization. |
 | Podcast Engine | `podcast_enabled`, `podcast_voice_a_*`, `podcast_voice_b_*`, `podcast_target_duration_seconds` | Configure dual-persona dialogue, including independent LLM/provider selection for each character. |
-| Retriever / Firecrawl / Tavily | `retriever`, `firecrawl_server_url`, `tavily_api_key` | Power web research and ingestion. |
+| Web research | `perplexity_search_url`, `web_research_default_provider`, `web_research_default_model_name` | Power web research through LiteLLM Perplexity search and direct extraction. |
 | Image generation | `nvidia_*`, `openai_image_model`, `openai_image_enhancement_model` | Configure the Image Studio tab. |
 | Weather / Email | `openweather_api_key`, `pyowm_api_key`, `yahoo_id`, `yahoo_app_password` | Used by the planner and notification helpers. |
 | Memory Palace | `supabase_service_role_key`, `public_supabase_url`, or `supabase_url`/`supabase_key` via `.env` | Required to push or query saved memories. |
@@ -135,8 +135,8 @@ All runtime settings live in `config/config.yml`. The most important sections ar
 `config/prompts.yml` stores the templates for summary, example generation, and QA. Adjust these to enforce tone, length, or metadata policies. When using OpenAI for image operations, also set the `OPENAI_API_KEY` and optionally `OPENAI_API_BASE` environment variables so the SDK in `gptimage_tool` can authenticate.
 
 ## Configuration Tips & Secrets
-- Minimal keys for local/offline runs: set `paths` plus one chat model (e.g., LiteLLM or Ollama). Skip Firecrawl/Tavily/Supabase keys if you do not need web or Memory Palace features.
-- Web-connected research: add `tavily_api_key` or `firecrawl_server_url` and ensure `retriever` is set appropriately in `config.yml`.
+- Minimal keys for local/offline runs: set `paths` plus one chat model (e.g., LiteLLM or Ollama). Skip Perplexity/Tavily/Supabase keys if you do not need web or Memory Palace features.
+- Web-connected research: configure LiteLLM and optionally set `perplexity_search_url`; otherwise the app uses `<litellm_base_url>/v1/perplexity-search`.
 - Memory Palace: supply `supabase_service_role_key` and `public_supabase_url`, and confirm the `mp_search` RPC exists in your Supabase project.
 - Secrets storage: use `config/.env` or a local `.env` file and keep keys out of Git. Environment variables override `config.yml` where applicable.
 
@@ -192,7 +192,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 
 ### Chat, research, and plan
 1. Switch to the Chat tab to pick Azure, Gemini, Cohere, Groq, LiteLLM, or Ollama models.
-2. Enable Firecrawl/Tavily to blend real-time search with the LLM response for breaking news or research tasks.
+2. Enable Perplexity/Tavily to blend real-time search with the LLM response for breaking news or research tasks.
 3. Hop into the Trip Planner, Food Planner, or Weather tabs for specialized agents that share the same context window.
 
 ### Generate a Daily Podcast
@@ -208,7 +208,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 ## Testing
 - Activate your virtual environment and run `pytest tests -v` for the full suite.
 - See `tests/README.md` for focused commands, coverage reporting, and pytest tips (e.g., `pytest tests --cov=helper_functions --cov-report=term-missing`).
-- Tests rely on the fixtures in `tests/conftest.py` to mock Supabase, OpenAI, Firecrawl, NVIDIA services, and temporary folders, so they are safe to run without hitting external APIs.
+- Tests rely on the fixtures in `tests/conftest.py` to mock Supabase, OpenAI, Perplexity, NVIDIA services, and temporary folders, so they are safe to run without hitting external APIs.
 
 ## Troubleshooting
 - **ffmpeg not found**: install it via your package manager (`brew install ffmpeg`, `sudo apt install ffmpeg`, etc.) so Whisper/moviepy can handle audio extraction.
@@ -220,7 +220,7 @@ Mount a volume for the `paths` directories if you want to persist indexes or upl
 
 ## Related Projects
 - Memory Palace UI: https://github.com/dino1729/mymemorypalace
-- Firecrawl Researcher samples: see `test_firecrawl_researcher.py` for mocked usage patterns.
+- Web researcher samples: see `test_web_researcher.py` for mocked usage patterns.
 
 ## License
 LLM_QA_Bot is released under the [MIT License](./LICENSE).
