@@ -38,16 +38,16 @@ class TestPerplexitySearch:
 
 
 class TestResearchWrappers:
-    @patch("helper_functions.firecrawl_researcher.get_client")
-    @patch("helper_functions.firecrawl_researcher.scrape_with_firecrawl")
-    @patch("helper_functions.firecrawl_researcher.search_with_perplexity")
-    def test_conduct_research_firecrawl_uses_perplexity_results(
+    @patch("helper_functions.web_researcher.get_client")
+    @patch("helper_functions.web_researcher.extract_page_content")
+    @patch("helper_functions.web_researcher.search_with_perplexity")
+    def test_conduct_web_research_uses_perplexity_results(
         self,
         mock_search,
-        mock_scrape,
+        mock_extract,
         mock_get_client,
     ):
-        from helper_functions.firecrawl_researcher import conduct_research_firecrawl
+        from helper_functions.web_researcher import conduct_web_research
 
         mock_search.return_value = [
             {
@@ -56,7 +56,7 @@ class TestResearchWrappers:
                 "snippet": "Short summary of the article.",
             }
         ]
-        mock_scrape.return_value = (
+        mock_extract.return_value = (
             "This is a long extracted article body with enough detail to pass the "
             "minimum threshold for the research synthesis stage."
         )
@@ -64,20 +64,20 @@ class TestResearchWrappers:
         mock_client.chat_completion.return_value = "Research Report"
         mock_get_client.return_value = mock_client
 
-        result = conduct_research_firecrawl("latest AI news")
+        result = conduct_web_research("latest AI news")
 
         assert "Research Report" in result
         assert "https://example.com/ai" in result
         mock_search.assert_called_once()
 
-    @patch("helper_functions.news_researcher.scrape_with_firecrawl")
+    @patch("helper_functions.news_researcher.extract_page_content")
     @patch("helper_functions.news_researcher.search_with_perplexity")
-    def test_search_fresh_sources_firecrawl_uses_perplexity(
+    def test_search_fresh_sources_uses_perplexity(
         self,
         mock_search,
-        mock_scrape,
+        mock_extract,
     ):
-        from helper_functions.news_researcher import search_fresh_sources_firecrawl
+        from helper_functions.news_researcher import search_fresh_sources
 
         mock_search.return_value = [
             {
@@ -87,9 +87,9 @@ class TestResearchWrappers:
                 "date": "2026-03-17",
             }
         ]
-        mock_scrape.return_value = "Detailed article body for the AI news item."
+        mock_extract.return_value = "Detailed article body for the AI news item."
 
-        results = search_fresh_sources_firecrawl("latest AI news", limit=1)
+        results = search_fresh_sources("latest AI news", limit=1)
 
         assert len(results) == 1
         assert results[0]["title"] == "AI News"

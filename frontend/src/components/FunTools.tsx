@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../api';
+import { api, isAbortError } from '../api';
 
 export function FunTools() {
   const [subTab, setSubTab] = useState('city');
@@ -42,7 +42,7 @@ export function FunTools() {
         }
       } catch (error) {
         // Ignore abort errors (component unmounted or request cancelled)
-        if (error instanceof Error && (error as any).aborted) {
+        if (isAbortError(error)) {
           return;
         }
         if (!cancelled) {
@@ -98,7 +98,7 @@ export function FunTools() {
       setCityError(null); // Clear error on success
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       // Set user-friendly error message
@@ -123,7 +123,7 @@ export function FunTools() {
       setCravingError(null); // Clear error on success
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       // Set user-friendly error message

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { api } from '../api';
+import { api, isAbortError, type AnalyzeResponse, type CancellableApiCall } from '../api';
 
 export function DocumentQA() {
   const [subTab, setSubTab] = useState('video');
@@ -9,7 +9,7 @@ export function DocumentQA() {
   const [model, setModel] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
   
   // Inputs
   const [url, setUrl] = useState('');
@@ -22,6 +22,8 @@ export function DocumentQA() {
   const [answering, setAnswering] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const activeAskCancelRef = useRef<(() => void) | null>(null);
+  const askRequestIdRef = useRef(0);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -49,7 +51,7 @@ export function DocumentQA() {
         }
       } catch (error) {
         // Ignore abort errors (component unmounted or request cancelled)
-        if (error instanceof Error && (error as any).aborted) {
+        if (isAbortError(error)) {
           return;
         }
         if (!cancelled) {
@@ -74,6 +76,12 @@ export function DocumentQA() {
     };
   }, [provider]);
 
+  useEffect(() => {
+    return () => {
+      activeAskCancelRef.current?.();
+    };
+  }, []);
+
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
     setModel(''); // Reset model when provider changes
@@ -94,7 +102,7 @@ export function DocumentQA() {
     try {
       // Format model name as PROVIDER:model_name for backend
       const modelName = `${provider.toUpperCase()}:${model}`;
-      let apiCall;
+      let apiCall: CancellableApiCall<AnalyzeResponse> | null = null;
       if (subTab === 'video') {
         apiCall = api.analyze.youtube(url, memorize, modelName);
       } else if (subTab === 'article') {
@@ -115,7 +123,7 @@ export function DocumentQA() {
       setResult(res);
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
         return;
       }
       console.error(e);
@@ -127,41 +135,68 @@ export function DocumentQA() {
 
   const handleAsk = async () => {
     if (!message.trim() || !model) return;
-    const newHistory = [...chatHistory, [message, '']];
+    const userMessage = message;
+    const requestId = askRequestIdRef.current + 1;
+    askRequestIdRef.current = requestId;
+    const newHistory = [...chatHistory, [userMessage, '']];
     setChatHistory(newHistory);
     setMessage('');
     setAnswering(true);
+    let currentAnswer = '';
     
     try {
       // Format model name as PROVIDER:model_name for backend
       const modelName = `${provider.toUpperCase()}:${model}`;
       
-      let currentAnswer = '';
-      
       // Pass newHistory (with current message) instead of stale chatHistory
-      const { promise } = api.docqa.askStream(message, newHistory, modelName, (chunk) => {
+      const askCall = api.docqa.askStream(userMessage, newHistory, modelName, (chunk) => {
+        if (askRequestIdRef.current !== requestId) return;
         currentAnswer += chunk;
         setChatHistory(prev => {
           const updated = [...prev];
-          updated[updated.length - 1] = [message, currentAnswer];
+          updated[updated.length - 1] = [userMessage, currentAnswer];
           return updated;
         });
       });
+      activeAskCancelRef.current = askCall.cancel;
       
-      await promise;
+      await askCall.promise;
     } catch (e) {
       // Ignore abort errors (request cancelled)
-      if (e instanceof Error && (e as any).aborted) {
+      if (isAbortError(e)) {
+        if (askRequestIdRef.current !== requestId) return;
+        setChatHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = [userMessage, currentAnswer || 'Stopped.'];
+          return updated;
+        });
         return;
       }
+      if (askRequestIdRef.current !== requestId) return;
       setChatHistory(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = [message, 'Error: ' + e];
+        updated[updated.length - 1] = [userMessage, 'Error: ' + e];
         return updated;
       });
     } finally {
-      setAnswering(false);
+      if (askRequestIdRef.current === requestId) {
+        activeAskCancelRef.current = null;
+        setAnswering(false);
+      }
     }
+  };
+
+  const handleStopAsk = () => {
+    activeAskCancelRef.current?.();
+  };
+
+  const handleRefreshChat = () => {
+    askRequestIdRef.current += 1;
+    activeAskCancelRef.current?.();
+    activeAskCancelRef.current = null;
+    setChatHistory([]);
+    setMessage('');
+    setAnswering(false);
   };
 
   return (
@@ -373,30 +408,40 @@ export function DocumentQA() {
       <div className="card">
         <div className="card-header">
           <h2 className="card-title">Ask Questions</h2>
-          <button 
-            className="btn btn-secondary" 
-            disabled={resetting}
-            onClick={async () => {
-              setResetting(true);
-              try {
-                await api.docqa.reset().promise;
-                setChatHistory([]);
-                showNotification('Database reset successfully!');
-              } catch (e) {
-                if (e instanceof Error && (e as any).aborted) return;
-                showNotification('Error resetting database: ' + (e instanceof Error ? e.message : String(e)), 'error');
-              } finally {
-                setResetting(false);
-              }
-            }}
-          >
-            {resetting ? (
-              <>
-                <div className="loader" style={{ width: '14px', height: '14px' }}></div>
-                <span style={{ marginLeft: '6px' }}>Resetting...</span>
-              </>
-            ) : 'Reset DB'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={handleRefreshChat}
+              disabled={chatHistory.length === 0 && !message && !answering}
+            >
+              Refresh Chat
+            </button>
+            <button
+              className="btn btn-secondary"
+              disabled={resetting}
+              onClick={async () => {
+                setResetting(true);
+                try {
+                  await api.docqa.reset().promise;
+                  handleRefreshChat();
+                  showNotification('Database reset successfully!');
+                } catch (e) {
+                  if (isAbortError(e)) return;
+                  showNotification('Error resetting database: ' + (e instanceof Error ? e.message : String(e)), 'error');
+                } finally {
+                  setResetting(false);
+                }
+              }}
+            >
+              {resetting ? (
+                <>
+                  <div className="loader" style={{ width: '14px', height: '14px' }}></div>
+                  <span style={{ marginLeft: '6px' }}>Resetting...</span>
+                </>
+              ) : 'Reset DB'}
+            </button>
+          </div>
         </div>
         
         <div className="chat-window" style={{ 
@@ -451,19 +496,30 @@ export function DocumentQA() {
           )}
         </div>
         
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div className="chat-controls">
           <input 
             type="text" 
             placeholder="Ask a question..." 
             value={message}
             onChange={e => setMessage(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAsk()}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && !answering && handleAsk()}
             style={{ flex: 1 }}
+            disabled={answering}
           />
+          {answering && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleStopAsk}
+              type="button"
+              style={{ minWidth: '86px' }}
+            >
+              Stop
+            </button>
+          )}
           <button 
             className="btn btn-primary" 
             onClick={handleAsk} 
-            disabled={answering || !result}
+            disabled={answering || !result || !message.trim()}
             style={{ minWidth: '100px' }}
           >
             {answering ? <div className="loader"></div> : 'Send'}

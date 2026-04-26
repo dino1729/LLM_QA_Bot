@@ -4,6 +4,24 @@ const API_BASE = '/api';
  * Default timeout for API calls in milliseconds (30 seconds)
  */
 const DEFAULT_TIMEOUT = 30000;
+const INTERNET_CHAT_TIMEOUT = 180000;
+
+export interface ApiError extends Error {
+  status?: number;
+  statusText?: string;
+  aborted?: boolean;
+  timeout?: boolean;
+}
+
+export interface MemoryMetadata {
+  source_type?: string;
+  source_ref?: string;
+  [key: string]: unknown;
+}
+
+export function isAbortError(error: unknown): error is ApiError {
+  return error instanceof Error && Boolean((error as ApiError).aborted);
+}
 
 /**
  * Result type for cancellable API calls - includes both the promise and a cancel function
@@ -34,6 +52,7 @@ function apiCall<T>(
 ): CancellableApiCall<T> {
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
   
   // Merge the provided signal with our controller signal
   // If a signal is provided, abort our controller when that signal aborts
@@ -49,6 +68,7 @@ function apiCall<T>(
   
   // Set up timeout that will abort the request
   timeoutId = setTimeout(() => {
+    timedOut = true;
     controller.abort();
   }, timeoutMs);
   
@@ -98,14 +118,14 @@ function apiCall<T>(
               // If text parsing also fails, use the default message
             }
           }
-        } catch (parseError) {
+        } catch {
           // If JSON parsing fails, fall back to safe default message
           errorMessage = `API call failed: ${response.status} ${response.statusText}`;
         }
         
-        const error = new Error(errorMessage);
-        (error as any).status = response.status;
-        (error as any).statusText = response.statusText;
+        const error = new Error(errorMessage) as ApiError;
+        error.status = response.status;
+        error.statusText = response.statusText;
         throw error;
       }
       
@@ -129,9 +149,9 @@ function apiCall<T>(
     } catch (error) {
       // Handle abort errors specifically
       if (error instanceof Error && error.name === 'AbortError') {
-        const abortError = new Error('Request was cancelled or timed out');
-        (abortError as any).aborted = true;
-        (abortError as any).timeout = timeoutId === null; // If timeoutId is null, it was cleared, so it was a manual cancel
+        const abortError = new Error('Request was cancelled or timed out') as ApiError;
+        abortError.aborted = true;
+        abortError.timeout = timedOut;
         throw abortError;
       }
       throw error;
@@ -193,6 +213,20 @@ export interface ChatResponse {
   response: string;
 }
 
+export interface InternetSource {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  date?: string;
+  source?: string;
+}
+
+export type InternetChatEvent =
+  | { type: 'status'; message: string }
+  | { type: 'sources'; sources: InternetSource[] }
+  | { type: 'final'; response: string }
+  | { type: 'error'; message: string };
+
 export interface TripResponse {
   plan: string;
 }
@@ -231,12 +265,84 @@ export interface MemorySearchResponse {
   results: {
     content: string;
     score: number;
-    metadata: any;
+    metadata: MemoryMetadata;
   }[];
 }
 
 export interface MemoryResetResponse {
   status: string;
+}
+
+export interface WikiLink {
+  target: string;
+  label: string;
+  resolved: boolean;
+  id: string;
+  title: string;
+  url: string;
+}
+
+export interface WikiPageSummary {
+  id: string;
+  section: string;
+  slug: string;
+  url: string;
+  title: string;
+  type: string;
+  summary: string;
+  category: string;
+  tags: string[];
+  sources: string[];
+  source_count: number;
+  confidence: string;
+  last_updated: string;
+  path: string;
+  quality_flags: string[];
+  outgoing_count: number;
+  backlink_count: number;
+}
+
+export interface WikiPageDetail extends WikiPageSummary {
+  body_markdown: string;
+  render_markdown: string;
+  headings: string[];
+  outgoing_links: WikiLink[];
+  backlinks: WikiPageSummary[];
+}
+
+export interface WikiSummaryResponse {
+  vault_path: string;
+  vault_exists: boolean;
+  wiki_root_exists: boolean;
+  total_pages: number;
+  sections: Record<string, number>;
+  total_source_count: number;
+  total_backlinks: number;
+  weak_page_count: number;
+  categories: Record<string, number>;
+  tags: Record<string, number>;
+  quality_counts: Record<string, number>;
+  message: string;
+}
+
+export interface WikiListResponse {
+  vault_path: string;
+  vault_exists: boolean;
+  query: string;
+  total: number;
+  pages: WikiPageSummary[];
+  groups: {
+    name: string;
+    count: number;
+    page_ids: string[];
+  }[];
+  filters: {
+    sections: string[];
+    categories: Record<string, number>;
+    tags: Record<string, number>;
+    quality_flags: Record<string, number>;
+  };
+  message: string;
 }
 
 export const api = {
@@ -312,8 +418,8 @@ export const api = {
           }
         } catch (e) {
           if (e instanceof Error && e.name === 'AbortError') {
-            const abortError = new Error('Request cancelled');
-            (abortError as any).aborted = true;
+            const abortError = new Error('Request cancelled') as ApiError;
+            abortError.aborted = true;
             throw abortError;
           }
           throw e;
@@ -337,7 +443,69 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, history, model_name: model, max_tokens, temperature })
-      }),
+      }, INTERNET_CHAT_TIMEOUT),
+
+    internetStream: (
+      message: string,
+      history: string[][],
+      model: string,
+      max_tokens: number,
+      temperature: number,
+      onEvent: (event: InternetChatEvent) => void
+    ): CancellableApiCall<void> => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      const promise = (async () => {
+        try {
+          const response = await fetch(`${API_BASE}/chat/internet_stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, history, model_name: model, max_tokens, temperature }),
+            signal
+          });
+
+          if (!response.ok) throw new Error(`API error: ${response.status}`);
+          if (!response.body) throw new Error('No response body');
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              onEvent(JSON.parse(trimmed) as InternetChatEvent);
+            }
+          }
+
+          const trailing = buffer.trim();
+          if (trailing) {
+            onEvent(JSON.parse(trailing) as InternetChatEvent);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.name === 'AbortError') {
+            const abortError = new Error('Request cancelled') as ApiError;
+            abortError.aborted = true;
+            throw abortError;
+          }
+          throw e;
+        }
+      })();
+
+      return {
+        promise,
+        cancel: () => controller.abort(),
+        controller
+      };
+    },
   },
   
   fun: {
@@ -437,8 +605,8 @@ export const api = {
           }
         } catch (e) {
           if (e instanceof Error && e.name === 'AbortError') {
-            const abortError = new Error('Request cancelled');
-            (abortError as any).aborted = true;
+            const abortError = new Error('Request cancelled') as ApiError;
+            abortError.aborted = true;
             throw abortError;
           }
           throw e;
@@ -458,6 +626,32 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: model })
       }),
+  },
+
+  wiki: {
+    summary: (): CancellableApiCall<WikiSummaryResponse> =>
+      apiCall<WikiSummaryResponse>(`${API_BASE}/wiki/summary`),
+
+    pages: (params: {
+      query?: string;
+      section?: string;
+      type?: string;
+      category?: string;
+      tag?: string;
+      quality?: string;
+      limit?: number;
+    } = {}): CancellableApiCall<WikiListResponse> => {
+      const search = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          search.set(key, String(value));
+        }
+      });
+      const suffix = search.toString() ? `?${search.toString()}` : '';
+      return apiCall<WikiListResponse>(`${API_BASE}/wiki/pages${suffix}`);
+    },
+
+    page: (section: string, slug: string): CancellableApiCall<WikiPageDetail> =>
+      apiCall<WikiPageDetail>(`${API_BASE}/wiki/pages/${encodeURIComponent(section)}/${encodeURIComponent(slug)}`),
   }
 };
-

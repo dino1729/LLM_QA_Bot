@@ -20,7 +20,7 @@ from wiki.page_writer import PageWriter, _atomic_write
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_FRONTMATTER = {"title", "type", "created", "updated", "sources", "tags"}
+REQUIRED_FRONTMATTER = {"title", "type", "category", "created", "updated", "sources", "tags"}
 
 
 @dataclass

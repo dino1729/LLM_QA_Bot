@@ -541,6 +541,26 @@ input[type=range]:focus::-webkit-slider-thumb {
     padding: var(--space-xl);
 }
 
+.chat-controls {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.chat-controls input[type="text"] {
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .chat-controls {
+        flex-wrap: wrap;
+    }
+
+    .chat-controls input[type="text"] {
+        flex-basis: 100%;
+    }
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -655,4 +675,635 @@ footer strong {
 button:focus-visible {
     outline: 2px solid var(--accent-gold);
     outline-offset: 3px;
+}
+
+/* ============================================
+   MEMORY WIKI ATLAS
+   ============================================ */
+.wiki-atlas {
+    --wiki-bg: #f7f8f5;
+    --wiki-surface: #ffffff;
+    --wiki-surface-2: #eef2ed;
+    --wiki-ink: #1c201d;
+    --wiki-muted: #66706a;
+    --wiki-border: #d6ddd6;
+    --wiki-border-strong: #aebcaf;
+    --wiki-accent: #355f49;
+    --wiki-accent-2: #8e3343;
+    --wiki-highlight: #d8e7dc;
+    min-height: 100vh;
+    width: 100vw;
+    margin: 0;
+    padding: 18px;
+    background:
+        linear-gradient(90deg, rgba(53, 95, 73, 0.06) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(53, 95, 73, 0.05) 1px, transparent 1px),
+        var(--wiki-bg);
+    background-size: 28px 28px;
+    color: var(--wiki-ink);
+    font-family: "Georgia", "Times New Roman", serif;
+    text-align: left;
+}
+
+.wiki-atlas * {
+    box-sizing: border-box;
+}
+
+.wiki-atlas button,
+.wiki-atlas input,
+.wiki-atlas select {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.wiki-atlas__masthead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 1480px;
+    margin: 0 auto 16px;
+    padding: 4px 0 14px;
+    border-bottom: 1px solid var(--wiki-border);
+}
+
+.wiki-atlas__eyebrow {
+    margin: 0 0 4px;
+    color: var(--wiki-accent);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas h1 {
+    margin: 0;
+    color: var(--wiki-ink);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1;
+    text-shadow: none;
+}
+
+.wiki-atlas__subtitle {
+    max-width: 620px;
+    margin: 8px 0 0;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.wiki-atlas__hub-link {
+    min-height: 40px;
+    padding: 10px 13px;
+    border: 1px solid var(--wiki-border-strong);
+    border-radius: 6px;
+    color: var(--wiki-ink);
+    background: rgba(255, 255, 255, 0.78);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.wiki-atlas__stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    max-width: 1480px;
+    margin: 0 auto 14px;
+}
+
+.wiki-atlas__stats > div {
+    min-height: 70px;
+    padding: 12px;
+    border: 1px solid var(--wiki-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.wiki-atlas__stats span {
+    display: block;
+    color: var(--wiki-accent);
+    font-family: ui-serif, Georgia, serif;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.wiki-atlas__stats p {
+    margin: 6px 0 0;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__alert,
+.wiki-atlas__empty {
+    max-width: 1480px;
+    margin: 0 auto 14px;
+    padding: 14px;
+    border: 1px solid #cc9ba4;
+    border-radius: 8px;
+    background: #fff8f9;
+    color: #6f1f2e;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.wiki-atlas__empty {
+    border-color: var(--wiki-border);
+    background: var(--wiki-surface);
+    color: var(--wiki-ink);
+}
+
+.wiki-atlas__empty h2 {
+    margin: 0 0 8px;
+    font-size: 22px;
+}
+
+.wiki-atlas__empty code {
+    display: inline-block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    padding: 6px 8px;
+    border: 1px solid var(--wiki-border);
+    border-radius: 5px;
+    background: var(--wiki-surface-2);
+}
+
+.wiki-atlas__workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    max-width: 1480px;
+    margin: 0 auto;
+}
+
+.wiki-atlas__sidebar,
+.wiki-atlas__reader,
+.wiki-atlas__provenance {
+    min-width: 0;
+    border: 1px solid var(--wiki-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.wiki-atlas__sidebar {
+    padding: 12px;
+}
+
+.wiki-atlas__search label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--wiki-ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__search input,
+.wiki-atlas__filters select {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--wiki-border-strong);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--wiki-ink);
+    font-size: 14px;
+    box-shadow: none;
+}
+
+.wiki-atlas__search input::placeholder {
+    color: #86908a;
+}
+
+.wiki-atlas__search input:focus,
+.wiki-atlas__filters select:focus {
+    border-color: var(--wiki-accent);
+    box-shadow: 0 0 0 3px rgba(53, 95, 73, 0.14);
+}
+
+.wiki-atlas__filters {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.wiki-atlas__list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 14px 0 10px;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.wiki-atlas__list-head button,
+.wiki-atlas__back,
+.wiki-atlas__link-stack button {
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid var(--wiki-border-strong);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--wiki-accent);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.wiki-atlas__page-list {
+    display: grid;
+    gap: 12px;
+}
+
+.wiki-atlas__group h2 {
+    margin: 0 0 7px;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__page-row {
+    display: grid;
+    width: 100%;
+    min-height: 116px;
+    margin: 0 0 8px;
+    padding: 12px;
+    border: 1px solid var(--wiki-border);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--wiki-ink);
+    text-align: left;
+    cursor: pointer;
+}
+
+.wiki-atlas__page-row.is-active {
+    border-color: var(--wiki-accent);
+    background: var(--wiki-highlight);
+}
+
+.wiki-atlas__page-row:hover {
+    border-color: var(--wiki-accent);
+}
+
+.wiki-atlas__row-title {
+    display: block;
+    color: var(--wiki-ink);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.18;
+}
+
+.wiki-atlas__row-summary {
+    display: -webkit-box;
+    margin-top: 6px;
+    overflow: hidden;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.wiki-atlas__row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.wiki-atlas__row-meta span,
+.wiki-atlas__badges span,
+.wiki-atlas__quality span {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    padding: 4px 7px;
+    border: 1px solid var(--wiki-border);
+    border-radius: 999px;
+    background: var(--wiki-surface-2);
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.wiki-atlas__badges,
+.wiki-atlas__quality {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.wiki-atlas__badges span,
+.wiki-atlas__quality span {
+    border-color: #d6a0aa;
+    background: #fff5f6;
+    color: var(--wiki-accent-2);
+}
+
+.wiki-atlas__reader {
+    min-height: 60vh;
+    padding: 16px;
+}
+
+.wiki-atlas__back {
+    margin-bottom: 12px;
+}
+
+.wiki-atlas__reader-empty {
+    display: grid;
+    min-height: 220px;
+    align-content: center;
+    justify-items: start;
+    color: var(--wiki-muted);
+}
+
+.wiki-atlas__reader-empty h2 {
+    margin: 0 0 8px;
+    color: var(--wiki-ink);
+    font-size: 24px;
+}
+
+.wiki-atlas__reader-empty p {
+    max-width: 520px;
+    margin: 0;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.wiki-atlas__reader-head {
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--wiki-border);
+}
+
+.wiki-atlas__reader-head p {
+    margin: 0 0 7px;
+    color: var(--wiki-accent);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__reader-head h2 {
+    margin: 0;
+    color: var(--wiki-ink);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 31px;
+    line-height: 1.08;
+}
+
+.wiki-atlas__reader-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.wiki-atlas__reader-meta span {
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: var(--wiki-surface-2);
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.wiki-atlas__markdown {
+    max-width: 760px;
+    color: var(--wiki-ink);
+    font-size: 17px;
+    line-height: 1.72;
+}
+
+.wiki-atlas__markdown h1 {
+    margin: 24px 0 12px;
+    font-size: 32px;
+}
+
+.wiki-atlas__markdown h2 {
+    margin: 28px 0 10px;
+    color: var(--wiki-ink);
+    font-size: 24px;
+    line-height: 1.18;
+}
+
+.wiki-atlas__markdown h3 {
+    margin: 22px 0 8px;
+    color: var(--wiki-ink);
+    font-size: 19px;
+}
+
+.wiki-atlas__markdown p,
+.wiki-atlas__markdown li {
+    overflow-wrap: anywhere;
+}
+
+.wiki-atlas__markdown a {
+    color: var(--wiki-accent);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.wiki-atlas__markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+}
+
+.wiki-atlas__markdown th,
+.wiki-atlas__markdown td {
+    padding: 8px;
+    border: 1px solid var(--wiki-border);
+}
+
+.wiki-atlas__markdown blockquote {
+    margin: 18px 0;
+    padding: 10px 14px;
+    border-left: 3px solid var(--wiki-accent);
+    background: var(--wiki-surface-2);
+    color: #3b4640;
+}
+
+.wiki-atlas__provenance {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    align-content: start;
+}
+
+.wiki-atlas__provenance section + section {
+    padding-top: 14px;
+    border-top: 1px solid var(--wiki-border);
+}
+
+.wiki-atlas__provenance h2 {
+    margin: 0 0 10px;
+    color: var(--wiki-ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__facts {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+}
+
+.wiki-atlas__facts div {
+    display: grid;
+    gap: 2px;
+}
+
+.wiki-atlas__facts dt {
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.wiki-atlas__facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--wiki-ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+.wiki-atlas__source-list {
+    display: grid;
+    gap: 7px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wiki-atlas__source-list li {
+    padding: 8px;
+    border: 1px solid var(--wiki-border);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--wiki-ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.wiki-atlas__muted {
+    margin: 0;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.wiki-atlas__link-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.wiki-atlas__link-stack button,
+.wiki-atlas__link-stack span {
+    width: 100%;
+    min-height: 36px;
+    justify-content: flex-start;
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+
+.wiki-atlas__link-stack span {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px dashed var(--wiki-border-strong);
+    border-radius: 6px;
+    color: var(--wiki-muted);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+@media (max-width: 859px) {
+    .wiki-atlas__workspace.has-detail .wiki-atlas__sidebar {
+        display: none;
+    }
+
+    .wiki-atlas__workspace:not(.has-detail) .wiki-atlas__reader,
+    .wiki-atlas__workspace:not(.has-detail) .wiki-atlas__provenance {
+        display: none;
+    }
+}
+
+@media (min-width: 620px) {
+    .wiki-atlas {
+        padding: 24px;
+    }
+
+    .wiki-atlas__stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .wiki-atlas__filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 860px) {
+    .wiki-atlas__workspace {
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .wiki-atlas__sidebar,
+    .wiki-atlas__reader,
+    .wiki-atlas__provenance {
+        max-height: calc(100vh - 190px);
+        overflow-y: auto;
+    }
+
+    .wiki-atlas__provenance {
+        grid-column: 2;
+    }
+}
+
+@media (min-width: 1180px) {
+    .wiki-atlas__workspace {
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(270px, 320px);
+    }
+
+    .wiki-atlas__provenance {
+        grid-column: auto;
+    }
 }

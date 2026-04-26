@@ -81,13 +81,11 @@ news_research_tier = news_curation_config.get("research_tier", "fast")
 news_synthesis_tier = news_curation_config.get("synthesis_tier", "smart")
 news_enhancement_tier = news_curation_config.get("enhancement_tier", "strategic")
 
-# Retriever Configuration
-retriever = config_yaml.get("retriever")
-firecrawl_server_url = config_yaml.get("firecrawl_server_url")
+# Web Research Configuration
 perplexity_search_url = config_yaml.get("perplexity_search_url")
 tavily_api_key = config_yaml.get("tavily_api_key")
-firecrawl_default_provider = config_yaml.get("firecrawl_default_provider")
-firecrawl_default_model_name = config_yaml.get("firecrawl_default_model_name")
+web_research_default_provider = config_yaml.get("web_research_default_provider", "litellm")
+web_research_default_model_name = config_yaml.get("web_research_default_model_name")
 
 # NVIDIA NIM Configuration (for Image Studio)
 nvidia_api_key = (
@@ -218,7 +216,7 @@ memory_palace_index_folder = memory_palace_config.get("index_folder", "./memory_
 knowledge_archive_config = config_yaml.get("knowledge_archive", {})
 knowledge_archive_index_folder = knowledge_archive_config.get("index_folder", "./memory_palace/archive_index")
 knowledge_archive_default_tier = knowledge_archive_config.get("default_model_tier", "smart")
-knowledge_archive_firecrawl_timeout = knowledge_archive_config.get("firecrawl_timeout", 30)
+knowledge_archive_scrape_timeout = knowledge_archive_config.get("scrape_timeout", 30)
 knowledge_archive_archive_org_timeout = knowledge_archive_config.get("archive_org_timeout", 15)
 knowledge_archive_min_word_count = knowledge_archive_config.get("min_word_count", 75)
 knowledge_archive_batch_delay = knowledge_archive_config.get("batch_delay_seconds", 1.0)

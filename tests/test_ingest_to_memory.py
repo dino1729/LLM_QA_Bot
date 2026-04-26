@@ -191,7 +191,7 @@ class TestExtractYoutube:
 class TestExtractArticle:
     """Tests for extract_article()."""
 
-    def test_firecrawl_success(self):
+    def test_article_scrape_success(self):
         from helper_functions.knowledge_archive_scraper import ScrapedContent
         mock_scraped = ScrapedContent(
             content="Article body text. " * 50,
@@ -208,8 +208,8 @@ class TestExtractArticle:
         assert result.source_type == "article"
         assert result.word_count == 150
 
-    def test_firecrawl_too_short_falls_through(self):
-        """Firecrawl result under 75 words triggers fallback."""
+    def test_article_scrape_too_short_falls_through(self):
+        """Short article result under 75 words triggers fallback."""
         from helper_functions.knowledge_archive_scraper import ScrapedContent
         mock_scraped = ScrapedContent(
             content="Too short.",

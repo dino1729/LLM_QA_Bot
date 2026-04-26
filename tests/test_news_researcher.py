@@ -8,73 +8,58 @@ from unittest.mock import Mock, MagicMock, patch, AsyncMock
 from datetime import datetime
 
 
-class TestScrapeWithFirecrawl:
-    """Tests for scrape_with_firecrawl() function"""
+class TestScrapeWithPerplexity:
+    """Tests for extract_page_content() function"""
     
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.extract_web_content')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_scrape_with_firecrawl_success(self, mock_log, mock_post):
+    def test_extract_page_content_success(self, mock_log, mock_extract):
         """Test successful scraping"""
-        from helper_functions.news_researcher import scrape_with_firecrawl
+        from helper_functions.news_researcher import extract_page_content
+
+        mock_extract.return_value = ("# Test Content\nThis is scraped content.", "Test")
         
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": {
-                "markdown": "# Test Content\nThis is scraped content."
-            }
-        }
-        mock_post.return_value = mock_response
-        
-        result = scrape_with_firecrawl("https://example.com")
+        result = extract_page_content("https://example.com")
         
         assert result is not None
         assert "Test Content" in result
-        mock_post.assert_called_once()
+        mock_extract.assert_called_once()
     
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.extract_web_content')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_scrape_with_firecrawl_failure(self, mock_log, mock_post):
+    def test_extract_page_content_failure(self, mock_log, mock_extract):
         """Test scraping failure"""
-        from helper_functions.news_researcher import scrape_with_firecrawl
+        from helper_functions.news_researcher import extract_page_content
         
-        mock_response = Mock()
-        mock_response.status_code = 500
-        mock_response.text = "Internal Server Error"
-        mock_post.return_value = mock_response
+        mock_extract.return_value = (None, None)
         
-        result = scrape_with_firecrawl("https://example.com")
+        result = extract_page_content("https://example.com")
         
         assert result is None
     
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.extract_web_content')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_scrape_with_firecrawl_timeout(self, mock_log, mock_post):
+    def test_extract_page_content_timeout(self, mock_log, mock_extract):
         """Test scraping with timeout"""
-        from helper_functions.news_researcher import scrape_with_firecrawl
+        from helper_functions.news_researcher import extract_page_content
         
-        mock_post.side_effect = Exception("Connection timeout")
+        mock_extract.side_effect = Exception("Connection timeout")
         
-        result = scrape_with_firecrawl("https://example.com", timeout=5)
+        result = extract_page_content("https://example.com", timeout=5)
         
         assert result is None
     
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.extract_web_content')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_scrape_with_firecrawl_custom_max_age(self, mock_log, mock_post):
-        """Test scraping with custom max_age"""
-        from helper_functions.news_researcher import scrape_with_firecrawl
+    def test_extract_page_content_ignores_max_age(self, mock_log, mock_extract):
+        """Test compatibility max_age argument is accepted."""
+        from helper_functions.news_researcher import extract_page_content
         
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"data": {"markdown": "Content"}}
-        mock_post.return_value = mock_response
+        mock_extract.return_value = ("Content", "Title")
         
-        scrape_with_firecrawl("https://example.com", max_age=3600000)
+        result = extract_page_content("https://example.com", max_age=3600000)
         
-        # Verify max_age was passed in payload
-        call_args = mock_post.call_args
-        assert call_args[1]['json']['maxAge'] == 3600000
+        assert result == "Content"
 
 
 class TestExtractSourceName:
@@ -194,7 +179,7 @@ class TestExtractKeywordsFromHeadlines:
 class TestScrapeAggregatorHeadlines:
     """Tests for scrape_aggregator_headlines() function"""
     
-    @patch('helper_functions.news_researcher.scrape_with_firecrawl')
+    @patch('helper_functions.news_researcher.extract_page_content')
     def test_scrape_tldr_headlines(self, mock_scrape):
         """Test scraping TLDR headlines"""
         from helper_functions.news_researcher import scrape_aggregator_headlines
@@ -211,7 +196,7 @@ class TestScrapeAggregatorHeadlines:
         # Should extract headlines
         assert isinstance(result, list)
     
-    @patch('helper_functions.news_researcher.scrape_with_firecrawl')
+    @patch('helper_functions.news_researcher.extract_page_content')
     def test_scrape_bensbites_headlines(self, mock_scrape):
         """Test scraping Ben's Bites headlines"""
         from helper_functions.news_researcher import scrape_aggregator_headlines
@@ -227,7 +212,7 @@ class TestScrapeAggregatorHeadlines:
         
         assert isinstance(result, list)
     
-    @patch('helper_functions.news_researcher.scrape_with_firecrawl')
+    @patch('helper_functions.news_researcher.extract_page_content')
     def test_scrape_smol_headlines(self, mock_scrape):
         """Test scraping smol.ai headlines"""
         from helper_functions.news_researcher import scrape_aggregator_headlines
@@ -241,7 +226,7 @@ class TestScrapeAggregatorHeadlines:
         
         assert isinstance(result, list)
     
-    @patch('helper_functions.news_researcher.scrape_with_firecrawl')
+    @patch('helper_functions.news_researcher.extract_page_content')
     def test_scrape_aggregator_failure(self, mock_scrape):
         """Test scraping aggregator with failure"""
         from helper_functions.news_researcher import scrape_aggregator_headlines
@@ -253,47 +238,37 @@ class TestScrapeAggregatorHeadlines:
         assert result == []
 
 
-class TestSearchFreshSourcesFirecrawl:
-    """Tests for search_fresh_sources_firecrawl() function"""
+class TestSearchFreshSourcesPerplexity:
+    """Tests for search_fresh_sources() function"""
     
-    @patch('helper_functions.news_researcher.scrape_with_firecrawl')
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.extract_page_content')
+    @patch('helper_functions.news_researcher.search_with_perplexity')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_search_sources_success(self, mock_log, mock_post, mock_scrape):
+    def test_search_sources_success(self, mock_log, mock_search, mock_scrape):
         """Test successful search"""
-        from helper_functions.news_researcher import search_fresh_sources_firecrawl
-        
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": {
-                "web": [
-                    {"url": "https://news.com/1", "title": "News 1", "description": "Desc 1"},
-                    {"url": "https://news.com/2", "title": "News 2", "description": "Desc 2"}
-                ]
-            }
-        }
-        mock_post.return_value = mock_response
+        from helper_functions.news_researcher import search_fresh_sources
+
+        mock_search.return_value = [
+            {"url": "https://news.com/1", "title": "News 1", "snippet": "Desc 1"},
+            {"url": "https://news.com/2", "title": "News 2", "snippet": "Desc 2"},
+        ]
         mock_scrape.return_value = "# Article Content\nThis is today's news content."
         
-        result = search_fresh_sources_firecrawl("AI news", limit=2)
+        result = search_fresh_sources("AI news", limit=2)
         
         assert isinstance(result, list)
+        assert len(result) == 2
     
-    @patch('helper_functions.news_researcher.requests.post')
+    @patch('helper_functions.news_researcher.search_with_perplexity')
     @patch('helper_functions.news_researcher.log_debug_data')
-    def test_search_sources_failure(self, mock_log, mock_post):
+    def test_search_sources_failure(self, mock_log, mock_search):
         """Test search failure"""
-        from helper_functions.news_researcher import search_fresh_sources_firecrawl
+        from helper_functions.news_researcher import search_fresh_sources
         
-        mock_response = Mock()
-        mock_response.status_code = 500
-        mock_response.json.return_value = {"error": "Server error"}
-        mock_response.text = "Internal Server Error"
-        mock_post.return_value = mock_response
+        mock_search.side_effect = Exception("Search error")
         
         with pytest.raises(Exception):
-            search_fresh_sources_firecrawl("test query")
+            search_fresh_sources("test query")
 
 
 class TestSynthesizeNewsReport:
@@ -459,14 +434,14 @@ class TestAsyncScraping:
     
     @pytest.mark.asyncio
     @patch('helper_functions.news_researcher.aiohttp.ClientSession')
-    async def test_scrape_with_firecrawl_async_skip_duplicate(self, mock_session_cls):
+    async def test_extract_page_content_async_skip_duplicate(self, mock_session_cls):
         """Test that async scrape skips already-scraped URLs"""
-        from helper_functions.news_researcher import scrape_with_firecrawl_async
+        from helper_functions.news_researcher import extract_page_content_async
         
         mock_session = AsyncMock()
         scraped_urls = {"https://example.com"}  # Already scraped
         
-        result = await scrape_with_firecrawl_async(
+        result = await extract_page_content_async(
             mock_session, "https://example.com", scraped_urls
         )
         

@@ -2,6 +2,8 @@
 Chat Generation Module
 Supports multiple LLM providers: LiteLLM, Ollama, Gemini aliases via LiteLLM, and Groq
 """
+import logging
+
 from openai import OpenAI
 from config import config
 from helper_functions.llm_client import get_client
@@ -18,6 +20,34 @@ groq_api_key = config.groq_api_key
 groq_model_name = config.groq_model_name
 groq_llama_model_name = config.groq_llama_model_name
 groq_qwen_model_name = config.groq_qwen_model_name
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_message_content(message):
+    """Extract text from OpenAI-compatible chat messages across providers."""
+    content = getattr(message, "content", None)
+
+    if isinstance(content, list):
+        text_parts = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text") or part.get("content")
+                if text:
+                    text_parts.append(str(text))
+            elif part:
+                text_parts.append(str(part))
+        content = "\n".join(text_parts)
+
+    if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
+        content = message.reasoning_content
+
+    if content and "</think>" in content:
+        content = content.split("</think>", 1)[-1].lstrip()
+    elif content and "<think>" in content and "</think>" not in content:
+        logger.warning("Truncated <think> block detected (no closing tag), response may be incomplete")
+
+    return content.strip() if isinstance(content, str) else ""
 
 
 def _generate_litellm_alias_chat(model_name, conversation, temperature, max_tokens, model_tier):
@@ -55,7 +85,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
             max_tokens=max_tokens
         )
-        return response.choices[0].message.content
+        return _extract_message_content(response.choices[0].message)
     
     elif model_name.startswith("OLLAMA:"):
         # Extract the actual model name after the prefix
@@ -71,7 +101,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             temperature=temperature,
             max_tokens=max_tokens
         )
-        return response.choices[0].message.content
+        return _extract_message_content(response.choices[0].message)
 
     # LiteLLM models (predefined tiers)
     elif model_name == "LITELLM_FAST":
@@ -130,7 +160,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             max_completion_tokens=max_tokens,
             top_p=0.9
         )
-        return response.choices[0].message.content
+        return _extract_message_content(response.choices[0].message)
 
     elif model_name == "GROQ_LLAMA":
         if Groq is None:
@@ -145,7 +175,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response.choices[0].message.content
+        return _extract_message_content(response.choices[0].message)
 
     elif model_name == "GROQ_MIXTRAL":
         if Groq is None:
@@ -160,7 +190,7 @@ def generate_chat(model_name, conversation, temperature, max_tokens):
             frequency_penalty=0.6,
             presence_penalty=0.1
         )
-        return response.choices[0].message.content
+        return _extract_message_content(response.choices[0].message)
 
     else:
         return f"Invalid model name: {model_name}. Please choose from: LITELLM_FAST, LITELLM_SMART, LITELLM_STRATEGIC, OLLAMA_FAST, OLLAMA_SMART, OLLAMA_STRATEGIC, GEMINI, GEMINI_THINKING, GROQ, GROQ_LLAMA, GROQ_MIXTRAL"

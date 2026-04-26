@@ -50,8 +50,8 @@ Each module in `helper_functions/` is self-contained with a clear responsibility
 
 - **`analyzers.py`**: Document/video/article ingestion → LlamaIndex vector stores
 - **`chat_generation.py`**: Multi-provider chat completions with streaming support
-- **`chat_generation_with_internet.py`**: Internet-connected chat using Firecrawl/Tavily for web research
-- **`firecrawl_researcher.py`**: Web scraping and research agent with tool calling
+- **`chat_generation_with_internet.py`**: Internet-connected chat using LiteLLM Perplexity search
+- **`web_researcher.py`**: Web research and direct page extraction
 - **`llm_client.py`**: Provider abstraction layer (core architecture component)
 - **`query_supabasememory.py`**: Memory Palace semantic search with streaming responses
 - **`audio_processors.py`**: NVIDIA Riva ASR/TTS integration
@@ -86,7 +86,7 @@ The Memory Palace feature stores analyzed content in Supabase for long-term sema
 ### Testing Architecture (`tests/`)
 
 - **161 total tests** with 80% coverage (targeting 90%+)
-- **Shared fixtures** in `tests/conftest.py`: temp folders, mock clients (OpenAI, Riva, Supabase, Firecrawl)
+- **Shared fixtures** in `tests/conftest.py`: temp folders, mock clients (OpenAI, Riva, Supabase, Perplexity)
 - **Offline by default**: All tests use mocks to avoid hitting external APIs
 - **Test naming**: `test_<module>.py` → `TestFunctionName` → `test_scenario_description`
 
@@ -267,7 +267,7 @@ for chunk in search_memorypalace_stream(query, client):
 
 ### Error Handling Best Practices
 
-- **Graceful degradation**: If Firecrawl/Tavily fails, return cached results or basic search
+- **Graceful degradation**: If Perplexity/Tavily fails, return cached results or basic search
 - **Mock in tests**: Use `@patch` and `Mock()` to simulate errors without network calls
 - **Log clearly**: Use `logger.info()` / `logger.error()` with context
 - **User feedback**: Return meaningful error messages to the UI (not stack traces)
@@ -324,7 +324,7 @@ Install core deps: `pip install -r requirements.txt`
 - **Always add tests** for new helper functions (target 90%+ coverage)
 - **Use fixtures** from `tests/conftest.py` for temp folders and mocks
 - **Parameterize** edge cases instead of duplicating test code
-- **Mock external APIs** (OpenAI, Supabase, Firecrawl, Riva) to keep tests offline
+- **Mock external APIs** (OpenAI, Supabase, Perplexity, Riva) to keep tests offline
 - **Run coverage** before PRs: `pytest tests/ --cov=helper_functions --cov-report=term-missing`
 
 ## Security Notes

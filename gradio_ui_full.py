@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import uuid
 import re
+import json
 from typing import List, Optional, Any
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -35,7 +36,15 @@ def _sanitize_upload_filename(raw_filename: str) -> str:
     return f"{uuid.uuid4().hex[:8]}_{safe_name}"
 
 # Import helpers
-from helper_functions.chat_generation_with_internet import internet_connected_chatbot
+from helper_functions.chat_generation_with_internet import (
+    answer_with_context,
+    build_search_query,
+    format_quick_web_context,
+    get_quick_web_sources,
+    get_weather_data,
+    internet_connected_chatbot,
+    query_requires_web_search,
+)
 from helper_functions.trip_planner import generate_trip_plan
 from helper_functions.food_planner import craving_satisfier
 from helper_functions.analyzers import analyze_article, analyze_ytvideo, analyze_media, analyze_file, clearallfiles
@@ -49,6 +58,7 @@ from helper_functions.memory_palace_local import (
     prepare_memory_stream,
     reset_memory_palace
 )
+from wiki.web_atlas import create_wiki_router
 from config import config
 
 # Load env vars
@@ -65,8 +75,10 @@ qa_template = config.ques_template  # Plain string template with {context_str} a
 
 # Lock for serializing concurrent API requests
 api_lock = asyncio.Lock()
+internet_chat_lock = asyncio.Lock()
 
 app = FastAPI(title="LLM QA Bot API")
+app.include_router(create_wiki_router())
 
 
 def configure_cors(app: FastAPI) -> None:
@@ -453,10 +465,11 @@ async def endpoint_ask_stream(req: ChatRequest):
 # Internet Chat
 @app.post("/api/chat/internet")
 async def endpoint_chat_internet(req: InternetChatRequest):
-    # Internet connected chatbot handles its own context/history
-    # Lock for serialization of concurrent requests
-    async with api_lock:
-        response = internet_connected_chatbot(
+    # Internet chat does long web/network work and should not block the shared
+    # model/index lock used by Document Q&A and Memory Palace.
+    async with internet_chat_lock:
+        response = await asyncio.to_thread(
+            internet_connected_chatbot,
             query=req.message,
             history=req.history,
             model_name=req.model_name,
@@ -464,6 +477,83 @@ async def endpoint_chat_internet(req: InternetChatRequest):
             temperature=req.temperature
         )
         return {"response": response}
+
+
+def _internet_stream_event(event: dict[str, Any]) -> str:
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
+
+@app.post("/api/chat/internet_stream")
+async def endpoint_chat_internet_stream(req: InternetChatRequest):
+    async def stream_events():
+        async with internet_chat_lock:
+            try:
+                yield _internet_stream_event({
+                    "type": "status",
+                    "message": "Reading your question",
+                })
+
+                if query_requires_web_search(req.message):
+                    query_lower = req.message.lower()
+
+                    if "weather" in query_lower:
+                        yield _internet_stream_event({
+                            "type": "status",
+                            "message": "Weather integration is disabled; preparing a direct answer",
+                        })
+                        context_text = get_weather_data(req.message)
+                    else:
+                        search_query = build_search_query(req.message)
+                        yield _internet_stream_event({
+                            "type": "status",
+                            "message": f"Searching LiteLLM Perplexity for: {search_query}",
+                        })
+                        sources = await asyncio.to_thread(get_quick_web_sources, search_query, 3)
+                        yield _internet_stream_event({
+                            "type": "sources",
+                            "sources": sources,
+                        })
+                        yield _internet_stream_event({
+                            "type": "status",
+                            "message": f"Found {len(sources)} quick sources; drafting from snippets",
+                        })
+                        context_text = format_quick_web_context(search_query, sources)
+
+                    response = await asyncio.to_thread(
+                        answer_with_context,
+                        req.message,
+                        req.history,
+                        req.model_name,
+                        req.max_tokens,
+                        req.temperature,
+                        context_text,
+                    )
+                else:
+                    yield _internet_stream_event({
+                        "type": "status",
+                        "message": "No web search needed; asking the selected model",
+                    })
+                    response = await asyncio.to_thread(
+                        internet_connected_chatbot,
+                        query=req.message,
+                        history=req.history,
+                        model_name=req.model_name,
+                        max_tokens=req.max_tokens,
+                        temperature=req.temperature,
+                    )
+
+                yield _internet_stream_event({
+                    "type": "final",
+                    "response": response,
+                })
+            except Exception as e:
+                logger.error(f"Error in internet stream: {e}")
+                yield _internet_stream_event({
+                    "type": "error",
+                    "message": str(e),
+                })
+
+    return StreamingResponse(stream_events(), media_type="application/x-ndjson")
 
 # Memory Palace Endpoints
 @app.post("/api/memory_palace/save")

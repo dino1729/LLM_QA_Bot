@@ -98,7 +98,7 @@
 
 2. **Chat Generation with Internet** (74% → 90%)
    - Add more tests for web scraping functions
-   - Test Firecrawl researcher integration
+   - Test web researcher integration
    - Test error recovery mechanisms
 
 ### Medium Priority
@@ -170,7 +170,7 @@ pytest tests/ --cov=helper_functions --cov-report=html
 - Section 9: Researcher (2 functions)
 - Section 10: LLM Client (4 classes/functions)
 - Section 11: NVIDIA Image Gen (5 functions)
-- Section 12: Firecrawl Researcher (5 functions)
+- Section 12: Web Researcher (5 functions)
 - Section 13: Query Supabase Memory (4 functions)
 - Section 14: Main UI Functions (12 functions)
 - Section 15: Config Functions (1 module)
@@ -206,4 +206,3 @@ pytest tests/ --cov=helper_functions --cov-report=html
 ✅ **Established solid foundation for continued testing**
 
 The test suite provides excellent coverage for the core functionality, with clear paths to reach the 90%+ target through fixing failing tests and adding coverage for remaining edge cases.
-

@@ -4,9 +4,14 @@ import { AIAssistant } from './components/AIAssistant';
 import { FunTools } from './components/FunTools';
 import { ImageStudio } from './components/ImageStudio';
 import { MemoryPalace } from './components/MemoryPalace';
+import { MemoryWikiAtlas } from './components/MemoryWikiAtlas';
 
 function App() {
   const [activeTab, setActiveTab] = useState('docqa');
+
+  if (window.location.pathname.startsWith('/wiki')) {
+    return <MemoryWikiAtlas />;
+  }
 
   return (
     <div className="container">
