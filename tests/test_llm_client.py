@@ -127,6 +127,179 @@ class TestUnifiedLLMClient:
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
+    def test_chat_completion_does_not_call_fallback_when_primary_succeeds(
+        self, mock_openai, mock_config
+    ):
+        """Test configured fallback models are skipped when the primary works."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "primary-model"
+        mock_config.litellm_smart_fallback_models = ["fallback-model"]
+        mock_config.litellm_fallback_models = []
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Primary response"))]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        result = client.chat_completion([{"role": "user", "content": "Hello"}])
+
+        assert result == "Primary response"
+        assert client.last_model_used == "primary-model"
+        mock_client.chat.completions.create.assert_called_once()
+        assert mock_client.chat.completions.create.call_args[1]["model"] == "primary-model"
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_chat_completion_uses_fallback_after_primary_failure(
+        self, mock_openai, mock_config
+    ):
+        """Test chat completion retries a configured fallback model after failure."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "primary-model"
+        mock_config.litellm_smart_fallback_models = ["fallback-model"]
+        mock_config.litellm_fallback_models = []
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Fallback response"))]
+        mock_client.chat.completions.create.side_effect = [
+            RuntimeError("primary unavailable"),
+            mock_response,
+        ]
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        result = client.chat_completion([{"role": "user", "content": "Hello"}])
+
+        assert result == "Fallback response"
+        assert client.last_model_used == "fallback-model"
+        called_models = [
+            call.kwargs["model"]
+            for call in mock_client.chat.completions.create.call_args_list
+        ]
+        assert called_models == ["primary-model", "fallback-model"]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_model_chain_ignores_blank_and_duplicate_fallbacks(
+        self, mock_openai, mock_config
+    ):
+        """Test model fallback chain keeps order while removing unusable entries."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "primary-model"
+        mock_config.litellm_smart_fallback_models = [
+            "",
+            "fallback-a",
+            "fallback-a",
+            None,
+            "openai:fallback-b",
+            "fallback-b",
+        ]
+        mock_config.litellm_fallback_models = ["fallback-c", "fallback-a"]
+
+        mock_openai.return_value = Mock()
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        assert client.model_chain == [
+            "primary-model",
+            "fallback-a",
+            "openai:fallback-b",
+            "fallback-c",
+        ]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_chat_completion_raises_last_error_when_all_models_fail(
+        self, mock_openai, mock_config
+    ):
+        """Test all failed models raise the final fallback error."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "primary-model"
+        mock_config.litellm_smart_fallback_models = ["fallback-model"]
+        mock_config.litellm_fallback_models = []
+
+        mock_client = Mock()
+        mock_client.chat.completions.create.side_effect = [
+            RuntimeError("primary unavailable"),
+            ValueError("fallback unavailable"),
+        ]
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        with pytest.raises(ValueError, match="fallback unavailable"):
+            client.chat_completion([{"role": "user", "content": "Hello"}])
+
+        assert client.last_model_used is None
+        called_models = [
+            call.kwargs["model"]
+            for call in mock_client.chat.completions.create.call_args_list
+        ]
+        assert called_models == ["primary-model", "fallback-model"]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
+    def test_explicit_model_name_still_uses_configured_fallbacks(
+        self, mock_openai, mock_config
+    ):
+        """Test a caller-specified model still gets fallback protection."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "tier-primary-model"
+        mock_config.litellm_smart_fallback_models = ["fallback-model"]
+        mock_config.litellm_fallback_models = []
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Fallback response"))]
+        mock_client.chat.completions.create.side_effect = [
+            RuntimeError("explicit model unavailable"),
+            mock_response,
+        ]
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(
+            provider="litellm",
+            model_tier="smart",
+            model_name="explicit-primary-model",
+        )
+
+        result = client.chat_completion([{"role": "user", "content": "Hello"}])
+
+        assert result == "Fallback response"
+        assert client.model_chain == ["explicit-primary-model", "fallback-model"]
+        called_models = [
+            call.kwargs["model"]
+            for call in mock_client.chat.completions.create.call_args_list
+        ]
+        assert called_models == ["explicit-primary-model", "fallback-model"]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
     def test_chat_completion_reasoning_model(self, mock_openai, mock_config):
         """Test chat completion with reasoning model (content in reasoning_content)"""
         from helper_functions.llm_client import UnifiedLLMClient
