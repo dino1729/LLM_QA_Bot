@@ -64,6 +64,28 @@ ollama_strategic_llm = config_yaml.get("ollama_strategic_llm")
 ollama_embedding = config_yaml.get("ollama_embedding")
 ollama_default_model = config_yaml.get("ollama_default_model")
 
+
+def _model_list(value):
+    """Normalize YAML string/list model settings into a clean list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = value
+    else:
+        return []
+
+    models = []
+    for model in candidates:
+        if not isinstance(model, str):
+            continue
+        model = model.strip()
+        if model:
+            models.append(model)
+    return models
+
+
 # LLM Tier Configuration - controls fallback behavior for tier selection
 llm_tiers_config = config_yaml.get("llm_tiers", {})
 default_llm_tier = llm_tiers_config.get("default_tier", "smart")
@@ -74,6 +96,14 @@ default_internet_chat_provider = llm_tiers_config.get("default_internet_chat_pro
 default_internet_chat_tier = llm_tiers_config.get("default_internet_chat_tier", "smart")
 default_parse_fallback_tier = llm_tiers_config.get("default_parse_fallback_tier", "fast")
 default_parse_fallback_provider = llm_tiers_config.get("default_parse_fallback_provider", "litellm")
+litellm_fast_fallback_models = _model_list(llm_tiers_config.get("litellm_fast_fallback_models"))
+litellm_smart_fallback_models = _model_list(llm_tiers_config.get("litellm_smart_fallback_models"))
+litellm_strategic_fallback_models = _model_list(llm_tiers_config.get("litellm_strategic_fallback_models"))
+litellm_fallback_models = _model_list(llm_tiers_config.get("litellm_fallback_models"))
+ollama_fast_fallback_models = _model_list(llm_tiers_config.get("ollama_fast_fallback_models"))
+ollama_smart_fallback_models = _model_list(llm_tiers_config.get("ollama_smart_fallback_models"))
+ollama_strategic_fallback_models = _model_list(llm_tiers_config.get("ollama_strategic_fallback_models"))
+ollama_fallback_models = _model_list(llm_tiers_config.get("ollama_fallback_models"))
 
 # News Curation Pipeline Configuration - controls which tier is used at each stage
 news_curation_config = config_yaml.get("news_curation", {})

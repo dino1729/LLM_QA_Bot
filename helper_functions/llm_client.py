@@ -4,7 +4,7 @@ Provides a consistent interface for interacting with different LLM providers
 """
 import logging
 from openai import OpenAI
-from typing import List, Optional
+from typing import Any, List, Optional
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,9 @@ class UnifiedLLMClient:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
+        self.model_chain = self._build_model_chain(self.model)
+        self.last_model_used = None
+
         # Create OpenAI client
         self.client = OpenAI(
             base_url=self.base_url,
@@ -84,7 +87,13 @@ class UnifiedLLMClient:
         )
 
         # Log the model being used for debugging
-        logger.info(f"LLM Client initialized: provider={provider}, tier={model_tier}, model={self.model}")
+        logger.info(
+            "LLM Client initialized: provider=%s, tier=%s, model=%s, fallback_count=%s",
+            provider,
+            model_tier,
+            self.model,
+            max(len(self.model_chain) - 1, 0),
+        )
 
     @staticmethod
     def _strip_prefix(name: str) -> str:
@@ -93,29 +102,69 @@ class UnifiedLLMClient:
             return name.split(":", 1)[1]
         return name
 
-    def chat_completion(self, messages, temperature=0.7, max_tokens=1024, **kwargs):
-        """
-        Generate a chat completion
+    @staticmethod
+    def _coerce_model_list(value: Any) -> List[str]:
+        """Return a clean model list from YAML strings/lists, ignoring mock/default noise."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            candidates = [value]
+        elif isinstance(value, (list, tuple, set)):
+            candidates = value
+        else:
+            return []
 
-        Args:
-            messages: List of message dictionaries with 'role' and 'content'
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters to pass to the API
+        models = []
+        for model in candidates:
+            if not isinstance(model, str):
+                continue
+            model = model.strip()
+            if model:
+                models.append(model)
+        return models
 
-        Returns:
-            The generated text response
-        """
-        model_name = self._strip_prefix(self.model)
+    def _configured_fallback_models(self) -> List[str]:
+        """Load ordered fallback models for the current provider/tier from config."""
+        valid_tiers = {"fast", "smart", "strategic"}
+        tier = self.model_tier
+        if tier not in valid_tiers:
+            default_tier = getattr(config, "default_llm_tier", "smart")
+            tier = default_tier if isinstance(default_tier, str) else "smart"
+        if tier not in valid_tiers:
+            tier = "smart"
 
-        response = self.client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **kwargs
-        )
+        attrs = [
+            f"{self.provider}_{tier}_fallback_models",
+            f"{self.provider}_fallback_models",
+            f"{tier}_fallback_models",
+            "fallback_models",
+        ]
 
+        fallback_models = []
+        for attr in attrs:
+            fallback_models.extend(
+                self._coerce_model_list(getattr(config, attr, None))
+            )
+        return fallback_models
+
+    def _build_model_chain(self, primary_model: Optional[str]) -> List[str]:
+        """Build an ordered, de-duplicated primary-plus-fallback chain."""
+        candidates = self._coerce_model_list([primary_model])
+        candidates.extend(self._configured_fallback_models())
+
+        chain = []
+        seen = set()
+        for model in candidates:
+            dedupe_key = self._strip_prefix(model)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            chain.append(model)
+        return chain
+
+    @staticmethod
+    def _extract_chat_content(response) -> str:
+        """Extract content from normal and reasoning-model chat responses."""
         # Handle reasoning models that return content in reasoning_content field
         message = response.choices[0].message
         content = message.content
@@ -132,6 +181,62 @@ class UnifiedLLMClient:
 
         return content if content else ""
 
+    def chat_completion(self, messages, temperature=0.7, max_tokens=1024, **kwargs):
+        """
+        Generate a chat completion
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional parameters to pass to the API
+
+        Returns:
+            The generated text response
+        """
+        if not self.model_chain:
+            raise ValueError(
+                f"No chat model configured for provider={self.provider}, tier={self.model_tier}"
+            )
+
+        last_error = None
+        self.last_model_used = None
+
+        for idx, configured_model in enumerate(self.model_chain):
+            model_name = self._strip_prefix(configured_model)
+            try:
+                response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs
+                )
+                self.last_model_used = configured_model
+                return self._extract_chat_content(response)
+            except Exception as exc:
+                last_error = exc
+                next_model = (
+                    self._strip_prefix(self.model_chain[idx + 1])
+                    if idx + 1 < len(self.model_chain)
+                    else None
+                )
+                if next_model:
+                    logger.warning(
+                        "LLM chat completion failed for model=%s; trying fallback model=%s: %s",
+                        model_name,
+                        next_model,
+                        exc,
+                    )
+                else:
+                    logger.error(
+                        "LLM chat completion failed for all configured models. Last model=%s: %s",
+                        model_name,
+                        exc,
+                    )
+
+        raise last_error
+
     def stream_chat_completion(self, messages, temperature=0.7, max_tokens=1024, **kwargs):
         """
         Stream a chat completion, yielding text chunks.
@@ -144,20 +249,54 @@ class UnifiedLLMClient:
         Yields:
             Text chunks as they arrive
         """
-        model_name = self._strip_prefix(self.model)
+        if not self.model_chain:
+            raise ValueError(
+                f"No chat model configured for provider={self.provider}, tier={self.model_tier}"
+            )
 
-        response = self.client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-            **kwargs
-        )
+        last_error = None
+        self.last_model_used = None
 
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        for idx, configured_model in enumerate(self.model_chain):
+            model_name = self._strip_prefix(configured_model)
+            try:
+                response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                    **kwargs
+                )
+            except Exception as exc:
+                last_error = exc
+                next_model = (
+                    self._strip_prefix(self.model_chain[idx + 1])
+                    if idx + 1 < len(self.model_chain)
+                    else None
+                )
+                if next_model:
+                    logger.warning(
+                        "LLM stream setup failed for model=%s; trying fallback model=%s: %s",
+                        model_name,
+                        next_model,
+                        exc,
+                    )
+                    continue
+                logger.error(
+                    "LLM stream setup failed for all configured models. Last model=%s: %s",
+                    model_name,
+                    exc,
+                )
+                break
+
+            self.last_model_used = configured_model
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            return
+
+        raise last_error
 
     def get_embedding(self, text, input_type="passage"):
         """

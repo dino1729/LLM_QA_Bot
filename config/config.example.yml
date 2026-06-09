@@ -62,6 +62,14 @@ llm_tiers:
   default_internet_chat_tier: ""      # Tier for internet-connected chat
   default_parse_fallback_tier: ""      # Tier when model name parsing fails
   default_parse_fallback_provider: ""  # Provider when model name parsing fails
+  litellm_fast_fallback_models: []     # Ordered retry models after litellm_fast_llm fails
+  litellm_smart_fallback_models: []    # Ordered retry models after litellm_smart_llm fails
+  litellm_strategic_fallback_models: [] # Ordered retry models after litellm_strategic_llm fails
+  litellm_fallback_models: []          # Shared LiteLLM retry models appended after tier-specific fallbacks
+  ollama_fast_fallback_models: []      # Ordered retry models after ollama_fast_llm fails
+  ollama_smart_fallback_models: []     # Ordered retry models after ollama_smart_llm fails
+  ollama_strategic_fallback_models: [] # Ordered retry models after ollama_strategic_llm fails
+  ollama_fallback_models: []           # Shared Ollama retry models appended after tier-specific fallbacks
 
 # News Curation Multi-Model Pipeline Configuration
 # The news researcher uses a 3-stage pipeline with different LLM tiers for optimal cost/quality balance

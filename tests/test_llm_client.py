@@ -380,6 +380,44 @@ class TestUnifiedLLMClient:
 
     @patch('helper_functions.llm_client.config')
     @patch('helper_functions.llm_client.OpenAI')
+    def test_stream_chat_completion_uses_fallback_after_setup_failure(
+        self, mock_openai, mock_config
+    ):
+        """Test streaming retries fallbacks when stream creation fails."""
+        from helper_functions.llm_client import UnifiedLLMClient
+
+        mock_config.litellm_base_url = "http://litellm:4000"
+        mock_config.litellm_api_key = "test-key"
+        mock_config.litellm_embedding = "test-embed-model"
+        mock_config.litellm_smart_llm = "primary-model"
+        mock_config.litellm_smart_fallback_models = ["fallback-model"]
+        mock_config.litellm_fallback_models = []
+
+        mock_client = Mock()
+        mock_chunks = [
+            Mock(choices=[Mock(delta=Mock(content="Fallback"))]),
+            Mock(choices=[Mock(delta=Mock(content=" stream"))]),
+        ]
+        mock_client.chat.completions.create.side_effect = [
+            RuntimeError("primary stream unavailable"),
+            iter(mock_chunks),
+        ]
+        mock_openai.return_value = mock_client
+
+        client = UnifiedLLMClient(provider="litellm", model_tier="smart")
+
+        chunks = list(client.stream_chat_completion([{"role": "user", "content": "Hi"}]))
+
+        assert chunks == ["Fallback", " stream"]
+        assert client.last_model_used == "fallback-model"
+        called_models = [
+            call.kwargs["model"]
+            for call in mock_client.chat.completions.create.call_args_list
+        ]
+        assert called_models == ["primary-model", "fallback-model"]
+
+    @patch('helper_functions.llm_client.config')
+    @patch('helper_functions.llm_client.OpenAI')
     def test_stream_chat_completion_skips_empty_chunks(self, mock_openai, mock_config):
         """Test streaming chat completion skips chunks with no content"""
         from helper_functions.llm_client import UnifiedLLMClient
