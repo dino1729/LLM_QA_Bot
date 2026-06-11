@@ -1566,8 +1566,11 @@ def render_newsletter_html_from_bundle(bundle: Dict[str, Any]) -> str:
     """
     meta = bundle["meta"]
     news = bundle["news"]
-    newsletter = news["newsletter"]
-    sections = newsletter["sections"]
+    # News generation may skip or fail, leaving newsletter/sections as None.
+    # Coalesce to an empty dict so each section renders its "no updates"
+    # placeholder instead of crashing on None.get(...).
+    newsletter = news.get("newsletter") or {}
+    sections = newsletter.get("sections") or {}
 
     date_formatted = meta["date_formatted"]
     day_of_week = meta["day_of_week"]

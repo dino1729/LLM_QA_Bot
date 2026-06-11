@@ -1,7 +1,55 @@
 """
 Tests for newsletter HTML rendering helpers.
 """
-from helper_functions.html_templates import render_lesson_html
+from helper_functions.html_templates import (
+    render_lesson_html,
+    render_newsletter_html_from_bundle,
+)
+
+
+def _bundle_with_news(newsletter):
+    """Minimal bundle for exercising render_newsletter_html_from_bundle."""
+    return {
+        "meta": {"date_formatted": "June 11, 2026", "day_of_week": "Thursday"},
+        "news": {"newsletter": newsletter},
+    }
+
+
+class TestRenderNewsletterHandlesMissingSections:
+    """The news renderer must degrade gracefully when sections are absent.
+
+    News generation sets sections to None when it is skipped or fails. The
+    renderer previously crashed with AttributeError on None.get(...).
+    """
+
+    def test_none_sections_does_not_crash(self):
+        bundle = _bundle_with_news(
+            {"sections": None, "voicebot_script": None, "podcast_transcript": []}
+        )
+        html = render_newsletter_html_from_bundle(bundle)
+        assert "Daily Briefing" in html
+        assert "No updates available" in html
+
+    def test_missing_sections_key_does_not_crash(self):
+        bundle = _bundle_with_news({"voicebot_script": None})
+        html = render_newsletter_html_from_bundle(bundle)
+        assert "Daily Briefing" in html
+
+    def test_none_newsletter_does_not_crash(self):
+        bundle = _bundle_with_news(None)
+        html = render_newsletter_html_from_bundle(bundle)
+        assert "Daily Briefing" in html
+
+    def test_populated_sections_still_render(self):
+        bundle = _bundle_with_news({
+            "sections": {
+                "tech": [{"source": "TechCo", "headline": "AI breakthrough", "commentary": "Big."}],
+                "financial": [],
+                "india": [],
+            }
+        })
+        html = render_newsletter_html_from_bundle(bundle)
+        assert "AI breakthrough" in html
 
 
 class TestRenderLessonMemoryPalace:
