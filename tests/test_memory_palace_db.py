@@ -27,6 +27,7 @@ from helper_functions.memory_palace_db import (
     MemoryPalaceDB,
     SimilarLesson,
     distill_lesson,
+    is_meaningful_lesson_text,
     is_objective_lesson_text,
     rewrite_to_objective_lesson,
     suggest_category,
@@ -211,6 +212,94 @@ class TestObjectiveLessonValidation:
         assert rewritten.startswith("Domain-specific chatbots")
 
 
+class TestMeaningfulLessonValidation:
+    """Tests for the meaningful-text guard that rejects placeholder distillations.
+
+    Background: a bulk ingest on 2026-06-09 stored 61 lessons whose distilled_text
+    was the literal placeholder '...' (the small distill model returned it verbatim).
+    These rendered as an empty Memory Palace section in the daily newsletter.
+    """
+
+    @pytest.mark.parametrize(
+        "placeholder",
+        ["...", "..", ".", "", "   ", "…", "-", "--", "\n\t", "***", "n/a", "N/A", "tbd", "TODO"],
+    )
+    def test_rejects_placeholder_and_empty_text(self, placeholder):
+        ok, reason = is_meaningful_lesson_text(placeholder)
+        assert ok is False
+        assert reason  # a non-empty reason string is returned
+
+    @pytest.mark.parametrize(
+        "sentinel",
+        [
+            "No lesson content provided.",
+            "no lesson content provided",
+            "No content",
+            "No content.",
+        ],
+    )
+    def test_rejects_fallback_sentinel_phrases(self, sentinel):
+        # _build_fallback_distilled_text() emits "No lesson content provided." when
+        # raw_input is empty. That is a placeholder dressed as a sentence and must
+        # not pass, or a model returning "..." with empty source would store junk.
+        ok, reason = is_meaningful_lesson_text(sentinel)
+        assert ok is False, f"sentinel wrongly accepted: {sentinel!r}"
+        assert reason
+
+    @pytest.mark.parametrize(
+        "non_english",
+        [
+            "領導力需要信任與耐心。",          # Chinese: leadership needs trust and patience
+            "Le leadership exige de la confiance.",  # French (accented)
+            "Liderazgo requiere confianza diaria.",  # Spanish
+        ],
+    )
+    def test_accepts_non_english_lessons(self, non_english):
+        # Unicode-aware word detection: legitimate non-English lessons must pass.
+        ok, reason = is_meaningful_lesson_text(non_english)
+        assert ok is True, f"rejected valid non-English lesson ({reason}): {non_english}"
+
+    def test_rejects_none(self):
+        ok, reason = is_meaningful_lesson_text(None)
+        assert ok is False
+        assert reason
+
+    def test_rejects_single_word(self):
+        # A lone word is not a standalone insight.
+        ok, _ = is_meaningful_lesson_text("Simplicity.")
+        assert ok is False
+
+    @pytest.mark.parametrize(
+        "valid",
+        [
+            "Simplicity is prerequisite for reliability.",
+            "Consumer spending accounts for nearly 70% of the US economy.",
+            "The programmer is accountable for their work, not the machine.",
+            "If you want the rainbow, you must be willing to endure the rain.",
+        ],
+    )
+    def test_accepts_real_short_lessons(self, valid):
+        # These are the shortest genuine lessons currently in the store; they must pass.
+        ok, reason = is_meaningful_lesson_text(valid)
+        assert ok is True, f"rejected valid lesson ({reason}): {valid}"
+
+    def test_accepts_text_with_two_real_words(self):
+        ok, _ = is_meaningful_lesson_text("Compound growth.")
+        assert ok is True
+
+
+def _make_lesson(text: str, category=LessonCategory.OBSERVATIONS) -> Lesson:
+    """Build a Lesson with the given distilled text for retrieval tests."""
+    return Lesson(
+        distilled_text=text,
+        metadata=LessonMetadata(
+            category=category,
+            original_input="raw source input for the lesson",
+            distilled_by_model="test-model",
+        ),
+    )
+
+
 @pytest.fixture
 def temp_db_dir():
     """Create a temporary directory for test database."""
@@ -272,6 +361,31 @@ class TestMemoryPalaceDB:
         assert len(all_lessons) == 1
         assert all_lessons[0].distilled_text == lesson.distilled_text
 
+    @pytest.mark.parametrize("bad_text", ["...", "   ", "No lesson content provided.", "Simplicity."])
+    def test_add_lesson_rejects_placeholder_at_chokepoint(self, mock_config, bad_text):
+        """add_lesson is the persistence chokepoint; it must refuse placeholder text.
+
+        Direct callers (EDITH Telegram bot, migration importer) bypass the
+        ingestion-level guards, so the chokepoint itself must reject meaningless
+        text. Otherwise a user-approved "..." would be stored, reproducing the
+        original empty-newsletter bug.
+        """
+        db = MemoryPalaceDB()
+        lesson = Lesson(
+            distilled_text=bad_text,
+            metadata=LessonMetadata(
+                category=LessonCategory.OBSERVATIONS,
+                original_input="raw source",
+                distilled_by_model="test-model",
+            ),
+        )
+
+        with pytest.raises(ValueError):
+            db.add_lesson(lesson)
+
+        # Nothing should have been persisted.
+        assert db.get_all_lessons(include_forgotten=True, exclude_placeholders=False) == []
+
     def test_get_lesson_by_id(self, mock_config):
         """Test direct lesson lookup by ID."""
         db = MemoryPalaceDB()
@@ -324,6 +438,33 @@ class TestMemoryPalaceDB:
         ok, reasons = is_objective_lesson_text(refreshed.distilled_text)
         assert ok is True, reasons
 
+    @pytest.mark.parametrize("bad_text", ["...", "No lesson content provided.", "Simplicity."])
+    def test_update_lesson_text_rejects_placeholder(self, mock_config, bad_text):
+        """update_lesson_text must not turn a valid lesson into a placeholder.
+
+        A cleanup/rewrite flow that produced "..." would otherwise reintroduce
+        the empty-newsletter bug. The original text must be preserved.
+        """
+        original = "Abundant resources increase wastage unless incentives enforce disciplined use."
+        db = MemoryPalaceDB()
+        lesson = Lesson(
+            distilled_text=original,
+            metadata=LessonMetadata(
+                category=LessonCategory.PSYCHOLOGY,
+                source="migration",
+                original_input="raw",
+                distilled_by_model="m",
+            ),
+        )
+        db.add_lesson(lesson)
+
+        result = db.update_lesson_text(lesson.id, bad_text, rewritten_by_model="cleanup-model")
+        assert result is False
+
+        # Original text must be unchanged.
+        refreshed = db.get_lesson_by_id(lesson.id)
+        assert refreshed.distilled_text == original
+
     def test_get_lesson_count(self, mock_config):
         """Test lesson counting."""
         db = MemoryPalaceDB()
@@ -331,7 +472,7 @@ class TestMemoryPalaceDB:
 
         for i in range(3):
             lesson = Lesson(
-                distilled_text=f"Lesson {i}",
+                distilled_text=f"Historical empires fell when lesson number {i} was ignored.",
                 metadata=LessonMetadata(
                     category=LessonCategory.HISTORY,
                     original_input=f"Input {i}",
@@ -350,7 +491,7 @@ class TestMemoryPalaceDB:
         categories = [LessonCategory.STRATEGY, LessonCategory.PSYCHOLOGY, LessonCategory.STRATEGY]
         for i, cat in enumerate(categories):
             lesson = Lesson(
-                distilled_text=f"Lesson {i}",
+                distilled_text=f"Distinct standalone lesson number {i} about decision making.",
                 metadata=LessonMetadata(
                     category=cat,
                     original_input=f"Input {i}",
@@ -372,7 +513,7 @@ class TestMemoryPalaceDB:
         # Add lessons
         for cat in [LessonCategory.STRATEGY, LessonCategory.STRATEGY, LessonCategory.HISTORY]:
             lesson = Lesson(
-                distilled_text="Test",
+                distilled_text="A meaningful test lesson with several real words.",
                 metadata=LessonMetadata(
                     category=cat,
                     original_input="test",
@@ -452,7 +593,7 @@ class TestMemoryPalaceDB:
         lessons = []
         for i in range(5):
             lesson = Lesson(
-                distilled_text=f"Lesson {i}",
+                distilled_text=f"Leadership grows when you delegate task number {i} with trust.",
                 metadata=LessonMetadata(
                     category=LessonCategory.LEADERSHIP,
                     original_input=f"Input {i}",
@@ -472,6 +613,45 @@ class TestMemoryPalaceDB:
         examples = db.get_few_shot_examples()
         assert len(examples) == 3  # Default fallback examples
         assert any("Tit-for-Tat" in ex for ex in examples)
+
+
+class TestRetrievalFiltersPlaceholders:
+    """Retrieval must never surface stored placeholder lessons (e.g. '...').
+
+    Even though ingestion is now gated, the store already contains corrupt rows
+    from past ingests. Retrieval is the last line of defense for the newsletter.
+    """
+
+    def _insert_raw(self, db, text):
+        """Insert a lesson via the low-level path to simulate pre-existing corruption."""
+        db._insert_lesson(_make_lesson(text), persist=True)
+
+    def test_get_all_lessons_excludes_placeholder(self, mock_config):
+        db = MemoryPalaceDB()
+        db.add_lesson(_make_lesson("Compound interest accelerates wealth over decades."))
+        self._insert_raw(db, "...")
+
+        texts = [l.distilled_text for l in db.get_all_lessons()]
+        assert "..." not in texts
+        assert "Compound interest accelerates wealth over decades." in texts
+
+    def test_get_random_lesson_never_returns_placeholder(self, mock_config):
+        db = MemoryPalaceDB()
+        # One real lesson, many placeholders: random draw must always be the real one.
+        db.add_lesson(_make_lesson("Simplicity is prerequisite for reliability."))
+        for _ in range(20):
+            self._insert_raw(db, "...")
+
+        for _ in range(15):
+            lesson = db.get_random_lesson(exclude_recent=False)
+            assert lesson is not None
+            assert lesson.distilled_text == "Simplicity is prerequisite for reliability."
+
+    def test_get_random_lesson_returns_none_when_only_placeholders(self, mock_config):
+        db = MemoryPalaceDB()
+        for _ in range(5):
+            self._insert_raw(db, "...")
+        assert db.get_random_lesson(exclude_recent=False) is None
 
 
 class TestShownHistory:
@@ -596,6 +776,38 @@ class TestDistillLesson:
         assert "author" not in result.distilled_text.lower()
         ok, reasons = is_objective_lesson_text(result.distilled_text)
         assert ok is True, reasons
+
+    @patch("helper_functions.memory_palace_db.get_client")
+    @patch("helper_functions.memory_palace_db.config")
+    def test_distill_lesson_rejects_placeholder_output(self, mock_config, mock_get_client):
+        """A model returning the literal '...' must not be stored verbatim.
+
+        Regression test for the 2026-06-09 bulk ingest that wrote 61 lessons
+        with distilled_text='...', producing an empty newsletter section.
+        """
+        mock_config.memory_palace_provider = "litellm"
+        mock_config.memory_palace_model_tier = "fast"
+        mock_config.memory_palace_primary_model = "test-model"
+        mock_config.memory_palace_fallback_model = None
+
+        mock_client = Mock()
+        # Every call (primary + repair) returns the placeholder.
+        mock_client.chat_completion.return_value = json.dumps({
+            "distilled_text": "...",
+            "suggested_category": "observations",
+            "suggested_tags": [],
+        })
+        mock_get_client.return_value = mock_client
+
+        raw_input = (
+            "Mastery is forged in the dark hours; skill is not a gift but the "
+            "result of solitary, deliberate experimentation over many years."
+        )
+        result = distill_lesson(raw_input)
+
+        ok, reason = is_meaningful_lesson_text(result.distilled_text)
+        assert ok is True, f"placeholder leaked through distillation ({reason}): {result.distilled_text!r}"
+        assert result.distilled_text != "..."
 
     @patch("helper_functions.memory_palace_db.get_client")
     @patch("helper_functions.memory_palace_db.config")

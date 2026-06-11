@@ -19,6 +19,7 @@ from helper_functions.memory_palace_db import (
     LessonMetadata,
     MemoryPalaceDB,
     distill_lesson,
+    is_meaningful_lesson_text,
     is_objective_lesson_text,
 )
 from helper_functions.memory_palace_local import save_memory
@@ -378,6 +379,14 @@ def upload_to_edith(
                         tags=result.suggested_tags + [content.source_type],
                     ),
                 )
+
+            # Final guard: never persist placeholder/empty text (covers both
+            # the skip_distill and distill paths). Prevents the '...' corruption
+            # that produced empty newsletter Memory Palace sections.
+            meaningful, reason = is_meaningful_lesson_text(lesson.distilled_text)
+            if not meaningful:
+                print(f"  [{i}/{len(takeaways)}] SKIPPED: non-meaningful lesson text ({reason})")
+                continue
 
             db.add_lesson(lesson)
             label = lesson.distilled_text[:70]

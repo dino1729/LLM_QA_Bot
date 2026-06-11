@@ -246,6 +246,30 @@ class TestMigrateFile:
         assert stats["added"] == 3
         mock_db.add_lesson.assert_not_called()
 
+    def test_migrate_file_skips_invalid_without_aborting(self, temp_migration_dir, mock_db):
+        """A placeholder row in source JSON is skipped, not crash the migration.
+
+        add_lesson now raises ValueError on non-meaningful text; migration must
+        count it as skipped_invalid and continue processing the rest.
+        """
+        file_path = Path(temp_migration_dir) / "file1.json"
+        seen_hashes = set()
+
+        # Reject the second lesson ("Lesson B") as if it were a placeholder.
+        def add_side_effect(lesson):
+            if lesson.distilled_text == "Lesson B":
+                raise ValueError("Refusing to store non-meaningful lesson text")
+            return "test-id"
+
+        mock_db.add_lesson.side_effect = add_side_effect
+
+        stats = migrate_file(mock_db, file_path, seen_hashes, dry_run=False)
+
+        assert stats["total"] == 3
+        assert stats["added"] == 2          # A and C stored
+        assert stats["skipped_invalid"] == 1  # B rejected
+        assert mock_db.add_lesson.call_count == 3  # all attempted
+
     def test_migrate_file_deduplicates(self, temp_migration_dir, mock_db):
         """Test cross-file deduplication."""
         file1 = Path(temp_migration_dir) / "file1.json"

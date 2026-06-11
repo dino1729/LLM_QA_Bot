@@ -83,7 +83,10 @@ def _iter_lessons(
     include_forgotten: bool,
     source_filter: Optional[str],
 ) -> List[Lesson]:
-    lessons = db.get_all_lessons(include_forgotten=include_forgotten)
+    # Repair/audit tooling must see placeholder rows so they can be fixed.
+    lessons = db.get_all_lessons(
+        include_forgotten=include_forgotten, exclude_placeholders=False
+    )
     if source_filter:
         source_filter_norm = source_filter.lower()
         lessons = [

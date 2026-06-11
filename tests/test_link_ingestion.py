@@ -8,7 +8,9 @@ from helper_functions.link_ingestion import (
     LinkPreview,
     prepare_link_preview,
     save_link_preview,
+    upload_to_edith,
 )
+from helper_functions.memory_palace_db import LessonDistillationResult
 
 
 def sample_content():
@@ -87,3 +89,32 @@ def test_save_link_preview_skips_archive_when_already_archived(
     assert result.local_memory_status == "Saved to Memory Palace"
     assert result.archive_status == "Already in Knowledge Archive (skipped)"
     mock_upload_to_archive.assert_not_called()
+
+
+@patch("helper_functions.link_ingestion.distill_lesson")
+@patch("helper_functions.link_ingestion.MemoryPalaceDB")
+def test_upload_to_edith_skips_placeholder_distillation(mock_db_class, mock_distill):
+    """A placeholder distillation ('...') must never be stored.
+
+    Regression guard for the 2026-06-09 bulk ingest that wrote 61 lessons with
+    distilled_text='...' to the store, producing an empty newsletter section.
+    """
+    mock_db = Mock()
+    mock_db.get_few_shot_examples.return_value = []
+    mock_db_class.return_value = mock_db
+
+    # Simulate the small model emitting a placeholder distillation.
+    mock_distill.return_value = LessonDistillationResult(
+        distilled_text="...",
+        suggested_category="observations",
+        suggested_tags=[],
+    )
+
+    stored = upload_to_edith(
+        ["Mastery is forged in the dark hours through deliberate practice."],
+        sample_content(),
+        per_item_delay_seconds=0.0,
+    )
+
+    assert stored == 0
+    mock_db.add_lesson.assert_not_called()

@@ -1364,6 +1364,8 @@ def render_lesson_html(lesson: Dict[str, Any]) -> str:
     """Render lesson content from structured dict to HTML."""
     import html as html_module
 
+    from helper_functions.memory_palace_db import is_meaningful_lesson_text
+
     html_parts = ['<div class="wisdom-grid">']
 
     key_insight = lesson.get("key_insight", "")
@@ -1393,10 +1395,13 @@ def render_lesson_html(lesson: Dict[str, Any]) -> str:
             <div class="wisdom-text">{safe_application}</div>
         </div>''')
 
-    # Memory Palace wisdom section (curated insights from past learning)
+    # Memory Palace wisdom section (curated insights from past learning).
+    # Guard against placeholder text (e.g. "...") so a corrupt lesson never
+    # renders an empty section in the newsletter.
     mp_insight = lesson.get("mp_insight", "")
     mp_topic = lesson.get("mp_topic", "")
-    if mp_insight:
+    mp_meaningful, _ = is_meaningful_lesson_text(mp_insight)
+    if mp_meaningful:
         safe_mp_insight = html_module.escape(mp_insight)
         safe_mp_topic = html_module.escape(mp_topic) if mp_topic else "Memory Palace"
         html_parts.append(f'''

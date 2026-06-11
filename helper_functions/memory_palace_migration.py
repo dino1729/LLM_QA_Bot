@@ -172,6 +172,7 @@ def migrate_file(
         "total": 0,
         "added": 0,
         "skipped_duplicate": 0,
+        "skipped_invalid": 0,
         "by_category": {},
     }
 
@@ -208,7 +209,13 @@ def migrate_file(
                         tags=[old_category],  # Preserve old category as tag
                     )
                 )
-                db.add_lesson(lesson)
+                try:
+                    db.add_lesson(lesson)
+                except ValueError as exc:
+                    # Source JSON had placeholder/empty text; skip without aborting.
+                    stats["skipped_invalid"] += 1
+                    logger.warning(f"Skipping non-meaningful lesson: {exc}")
+                    continue
 
             stats["added"] += 1
             stats["by_category"][new_category] += 1
@@ -264,6 +271,7 @@ def migrate_all(
         "total_lessons": 0,
         "added": 0,
         "skipped_duplicate": 0,
+        "skipped_invalid": 0,
         "skipped_files": [],
         "by_category": {},
         "by_file": {},
@@ -286,6 +294,7 @@ def migrate_all(
         overall_stats["total_lessons"] += stats["total"]
         overall_stats["added"] += stats["added"]
         overall_stats["skipped_duplicate"] += stats["skipped_duplicate"]
+        overall_stats["skipped_invalid"] += stats.get("skipped_invalid", 0)
         overall_stats["by_file"][filename] = stats
 
         # Merge category stats

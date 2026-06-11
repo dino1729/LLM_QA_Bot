@@ -324,6 +324,59 @@ def is_objective_lesson_text(text: str) -> Tuple[bool, List[str]]:
     return len(reasons) == 0, reasons
 
 
+# Short tokens and sentence-shaped phrases that are placeholders, not insights.
+# Compared case-insensitively against the whole normalized text (trailing
+# punctuation stripped). "No lesson content provided." is what
+# _build_fallback_distilled_text() emits when the raw source is empty.
+_PLACEHOLDER_LESSON_TEXTS = frozenset({
+    "n/a", "na", "tbd", "todo", "none", "null", "unknown",
+    "no lesson content provided", "no content",
+})
+
+
+def is_meaningful_lesson_text(text: Optional[str]) -> Tuple[bool, str]:
+    """Check whether lesson text carries a real, standalone insight.
+
+    Guards against placeholder distillations (e.g. the literal "...") that some
+    small models emit instead of a real sentence. ``is_objective_lesson_text``
+    only screens for source-referential phrasing, so it passes "..." through;
+    this function closes that gap.
+
+    Returns:
+        (is_meaningful, reason). ``reason`` is empty when meaningful, otherwise a
+        short machine-readable tag describing why it was rejected.
+    """
+    if not text:
+        return False, "empty"
+
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return False, "empty"
+
+    # Compare against known placeholder phrases, ignoring trailing punctuation.
+    if normalized.lower().rstrip(".!?").strip() in _PLACEHOLDER_LESSON_TEXTS:
+        return False, "placeholder_token"
+
+    # Count meaningful units. For space-delimited scripts (Latin, Cyrillic, ...)
+    # a "real word" is a 2+ char token containing a letter. For scriptio-continua
+    # scripts (CJK), words are not space-separated, so each ideograph counts as a
+    # unit. `\w` and str.isalpha() are Unicode-aware in Python 3.
+    cjk_chars = re.findall(
+        r"[぀-ヿ㐀-䶿一-鿿豈-﫿]",
+        normalized,
+    )
+    candidate_tokens = re.findall(r"\w{2,}", normalized, flags=re.UNICODE)
+    real_words = [tok for tok in candidate_tokens if any(ch.isalpha() for ch in tok)]
+
+    # Reject unless there are >=2 space-delimited words OR >=2 CJK ideographs.
+    # This drops "...", "--", "***" (0 of each) and lone single words, while
+    # accepting genuine multi-word or multi-ideograph lessons.
+    if len(real_words) < 2 and len(cjk_chars) < 2:
+        return False, "insufficient_words"
+
+    return True, ""
+
+
 def _apply_deterministic_objective_rewrite(raw_text: str) -> str:
     """
     Best-effort non-LLM rewrite for obvious meta phrasing.
@@ -643,7 +696,20 @@ class MemoryPalaceDB:
         return lesson.id
 
     def add_lesson(self, lesson: Lesson) -> str:
-        """Add a lesson to the store."""
+        """Add a lesson to the store.
+
+        Raises:
+            ValueError: if the lesson text is a placeholder/empty (e.g. "...").
+                This is the persistence chokepoint, so every caller (Telegram
+                bot, migration, ingestion) is protected from storing the
+                meaningless text that produced empty newsletter sections.
+        """
+        meaningful, reason = is_meaningful_lesson_text(lesson.distilled_text)
+        if not meaningful:
+            raise ValueError(
+                f"Refusing to store non-meaningful lesson text ({reason}): "
+                f"{lesson.distilled_text!r}"
+            )
         self._insert_lesson(lesson, persist=True)
         logger.info(f"Added lesson {lesson.id[:8]}... to Memory Palace (category: {lesson.metadata.category})")
         return lesson.id
@@ -753,8 +819,20 @@ class MemoryPalaceDB:
             self.shown_history_file.unlink()
         logger.info("Reset Memory Palace shown history")
 
-    def get_all_lessons(self, include_forgotten: bool = False) -> List[Lesson]:
-        """Get all lessons from the store."""
+    def get_all_lessons(
+        self,
+        include_forgotten: bool = False,
+        exclude_placeholders: bool = True,
+    ) -> List[Lesson]:
+        """Get all lessons from the store.
+
+        Args:
+            include_forgotten: Include soft-deleted lessons.
+            exclude_placeholders: Drop lessons whose text is a meaningless
+                placeholder (e.g. "..."). Defaults to True so the newsletter and
+                few-shot sampler never surface corrupt rows. Repair/audit tooling
+                can pass False to inspect and fix them.
+        """
         if self._store is None:
             return []
 
@@ -771,8 +849,15 @@ class MemoryPalaceDB:
                     continue
 
                 lesson = self._parse_lesson_from_doc(doc_id, meta, data.get("text", ""))
-                if lesson is not None:
-                    lessons.append(lesson)
+                if lesson is None:
+                    continue
+
+                if exclude_placeholders:
+                    meaningful, _ = is_meaningful_lesson_text(lesson.distilled_text)
+                    if not meaningful:
+                        continue
+
+                lessons.append(lesson)
         except Exception as e:
             logger.exception(f"Error enumerating store: {e}")
 
@@ -822,6 +907,12 @@ class MemoryPalaceDB:
 
         normalized_text = _normalize_distilled_text(new_text, max_chars=220)
         if not normalized_text:
+            return False
+
+        # Never let a rewrite turn a stored lesson into a placeholder ("...",
+        # "No lesson content provided.", a lone word). Preserve the original.
+        meaningful, _ = is_meaningful_lesson_text(normalized_text)
+        if not meaningful:
             return False
 
         category_value = (
@@ -1012,7 +1103,10 @@ JSON RESPONSE:"""
             suggested_category = "observations"
 
         distilled_text = _normalize_distilled_text(parsed.get("distilled_text", ""))
-        if not distilled_text:
+        meaningful, _ = is_meaningful_lesson_text(distilled_text)
+        if not meaningful:
+            # Model emitted a placeholder (e.g. "...") or empty text; recover the
+            # insight from the raw source instead of storing the placeholder.
             distilled_text = _build_fallback_distilled_text(raw_input)
 
         valid_text, _ = is_objective_lesson_text(distilled_text)
@@ -1035,6 +1129,11 @@ JSON RESPONSE:"""
             deterministic = _normalize_distilled_text(deterministic, max_chars=220)
             if deterministic:
                 distilled_text = deterministic
+
+        # Final safety net: never return a placeholder as the distilled lesson.
+        meaningful, _ = is_meaningful_lesson_text(distilled_text)
+        if not meaningful:
+            distilled_text = _build_fallback_distilled_text(raw_input)
 
         tags = _normalize_suggested_tags(parsed.get("suggested_tags", []))
 
