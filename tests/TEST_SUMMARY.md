@@ -129,7 +129,7 @@
 
 ### Run All Tests
 ```bash
-cd /home/dino/myprojects/LLM_QA_Bot
+cd LLM_QA_Bot
 source venv/bin/activate
 pytest tests/ -v
 ```

@@ -46,13 +46,13 @@ $ python --version
 Python 3.11.11
 
 $ pip --version
-pip 25.3 from /home/dkatam/myprojects/LLM_QA_Bot/.venv/lib/python3.14/site-packages/pip (python 3.14)
+pip 25.3 from /home/<user>/myprojects/LLM_QA_Bot/.venv/lib/python3.14/site-packages/pip (python 3.14)
 
 $ ls -la .venv/bin/python*
-lrwxrwxrwx 1 dkatam dkatam 47 Dec 11 18:17 .venv/bin/python -> /home/dkatam/.pyenv/versions/3.11.11/bin/python
-lrwxrwxrwx 1 dkatam dkatam  6 Dec 11 18:17 .venv/bin/python3 -> python
-lrwxrwxrwx 1 dkatam dkatam  6 Dec 11 18:17 .venv/bin/python3.11 -> python
-lrwxrwxrwx 1 dkatam dkatam 57 Dec 12 12:29 .venv/bin/python3.14 -> /home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14
+lrwxrwxrwx 1 <user> <user> 47 Dec 11 18:17 .venv/bin/python -> /home/<user>/.pyenv/versions/3.11.11/bin/python
+lrwxrwxrwx 1 <user> <user>  6 Dec 11 18:17 .venv/bin/python3 -> python
+lrwxrwxrwx 1 <user> <user>  6 Dec 11 18:17 .venv/bin/python3.11 -> python
+lrwxrwxrwx 1 <user> <user> 57 Dec 12 12:29 .venv/bin/python3.14 -> /home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14
 ```
 
 **Problem Identified:**
@@ -82,7 +82,7 @@ The venv was likely contaminated by:
 ### Step 1: Remove Corrupted Virtual Environment
 
 ```bash
-cd /home/dkatam/myprojects/LLM_QA_Bot
+cd /home/<user>/myprojects/LLM_QA_Bot
 rm -rf .venv
 ```
 
@@ -92,7 +92,7 @@ rm -rf .venv
 
 ```bash
 # Use EXPLICIT path to Python 3.11
-/home/dkatam/.pyenv/versions/3.11.11/bin/python -m venv .venv
+/home/<user>/.pyenv/versions/3.11.11/bin/python -m venv .venv
 ```
 
 **Critical**: Don't use `python -m venv` - use the full path to ensure correct Python version.
@@ -359,11 +359,11 @@ pip show chatterbox-tts
 
 ```bash
 # 1. CLEAN SLATE
-cd /home/dkatam/myprojects/LLM_QA_Bot
+cd /home/<user>/myprojects/LLM_QA_Bot
 rm -rf .venv
 
 # 2. CREATE VENV WITH EXPLICIT PYTHON PATH
-/home/dkatam/.pyenv/versions/3.11.11/bin/python -m venv .venv
+/home/<user>/.pyenv/versions/3.11.11/bin/python -m venv .venv
 
 # 3. ACTIVATE AND VERIFY
 source .venv/bin/activate
@@ -517,7 +517,7 @@ Keep a `VENV_SETUP.md` in your project:
 # Virtual Environment Setup
 
 ## Create
-/home/dkatam/.pyenv/versions/3.11.11/bin/python -m venv .venv
+/home/<user>/.pyenv/versions/3.11.11/bin/python -m venv .venv
 
 ## Activate
 source .venv/bin/activate
@@ -568,7 +568,7 @@ fi
 
 ### Test Command
 ```bash
-cd /home/dkatam/myprojects/LLM_QA_Bot
+cd /home/<user>/myprojects/LLM_QA_Bot
 source .venv/bin/activate
 python tests/test_chatterbox_with_persona.py
 ```

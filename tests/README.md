@@ -22,7 +22,7 @@ This directory contains comprehensive unit tests for the LLM QA Bot project, tar
 
 ### Setup
 ```bash
-cd /home/dino/myprojects/LLM_QA_Bot
+cd LLM_QA_Bot
 source venv/bin/activate
 ```
 

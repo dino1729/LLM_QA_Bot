@@ -107,13 +107,20 @@ class VibeVoiceTTS:
         self._initialize_model()
 
     def _find_vibevoice_path(self) -> Optional[str]:
-        """Find the VibeVoice installation directory."""
+        """Find the VibeVoice installation directory.
+
+        Set the VIBEVOICE_PATH env var to override discovery; otherwise common
+        locations relative to the home and working directories are searched.
+        """
         possible_paths = [
-            Path("/home/dino/myprojects/VibeVoice"),
             Path.home() / "myprojects" / "VibeVoice",
             Path.cwd().parent / "VibeVoice",
             Path.cwd() / "VibeVoice",
         ]
+
+        env_path = os.environ.get("VIBEVOICE_PATH")
+        if env_path:
+            possible_paths.insert(0, Path(env_path))
 
         try:
             import vibevoice
