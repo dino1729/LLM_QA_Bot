@@ -21,7 +21,7 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from helper_functions.tts_chatterbox import ChatterboxTTS, get_chatterbox_tts
+from helper_functions.tts_chatterbox import ChatterboxTTS, get_chatterbox_tts, _autocast_disabled
 from config import config
 
 
@@ -294,3 +294,52 @@ class TestChatterboxTTSGPUInfo:
         info = mock_tts_with_torch.get_gpu_memory_info()
 
         assert info == {}
+
+
+class TestAutocastGate:
+    """Tests for the CHATTERBOX_DISABLE_AUTOCAST fp32/Pascal gate.
+
+    The gate lets Pascal-class GPUs (e.g. GTX 1070) skip fp16 autocast, which is
+    slower than fp32 on those cards. Kept as a pure helper so it is testable
+    without importing torch.
+    """
+
+    @pytest.mark.parametrize(
+        "env_value, expected",
+        [
+            (None, False),        # unset -> autocast stays ON (default behaviour)
+            ("", False),          # empty -> gate not triggered
+            ("0", False),         # explicit falsey
+            ("false", False),     # word falsey (case-insensitive)
+            ("False", False),
+            ("no", False),
+            ("off", False),
+            ("1", True),          # truthy -> disable autocast
+            ("true", True),
+            ("TRUE", True),
+            ("yes", True),
+            ("on", True),
+        ],
+    )
+    def test_autocast_disabled_parses_env(self, env_value, expected):
+        assert _autocast_disabled(env_value) is expected
+
+    def test_autocast_disabled_ignores_surrounding_whitespace(self):
+        assert _autocast_disabled("  1  ") is True
+        assert _autocast_disabled("  0  ") is False
+
+    @pytest.mark.parametrize("bad_value", ["tru", "2", "disable", "falsee", "enabled"])
+    def test_autocast_disabled_warns_on_unrecognized_and_keeps_default(self, bad_value, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            result = _autocast_disabled(bad_value)
+        assert result is False  # unrecognized -> keep autocast on (safe default)
+        assert any("not recognized" in rec.message for rec in caplog.records)
+
+    def test_autocast_disabled_off_words_do_not_warn(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            assert _autocast_disabled("off") is False
+        assert not caplog.records  # recognized falsey value: no warning noise

@@ -12,15 +12,48 @@ Key features:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
 from typing import List, Optional, Callable
 
 import numpy as np
-import pyaudio
 
 from config import config
+
+
+logger = logging.getLogger(__name__)
+
+
+_AUTOCAST_TRUE = {"1", "true", "yes", "on"}
+_AUTOCAST_FALSE = {"0", "false", "no", "off", ""}
+
+
+def _autocast_disabled(env_value: Optional[str]) -> bool:
+    """Return True when CUDA autocast (fp16) should be skipped.
+
+    On Pascal GPUs (e.g. GTX 1070, compute 6.1) fp16 has no throughput
+    advantage and is often slower than fp32, so ``CHATTERBOX_DISABLE_AUTOCAST``
+    lets those hosts force fp32 CUDA inference. Unset/empty/falsey keeps the
+    default fp16 autocast used by tensor-core GPUs. Unrecognized values keep the
+    default (autocast on) but log a warning so a typo doesn't silently defeat
+    the Pascal workaround.
+    """
+    if env_value is None:
+        return False
+    token = env_value.strip().lower()
+    if token in _AUTOCAST_TRUE:
+        return True
+    if token in _AUTOCAST_FALSE:
+        return False
+    logger.warning(
+        "CHATTERBOX_DISABLE_AUTOCAST=%r not recognized; keeping autocast enabled "
+        "(expected one of %s to disable)",
+        env_value,
+        sorted(_AUTOCAST_TRUE),
+    )
+    return False
 
 
 def split_text_for_chatterbox(text: str, max_chars: int = 300) -> List[str]:
@@ -395,13 +428,22 @@ class ChatterboxTTS:
             all_audio = []
             total_start_time = time.time()
             
-            # Use autocast only for CUDA, no-op context for CPU
+            # Use autocast only for CUDA, no-op context for CPU. Pascal GPUs
+            # (e.g. GTX 1070) run fp16 slower than fp32, so honor
+            # CHATTERBOX_DISABLE_AUTOCAST to force fp32 CUDA inference there.
             from contextlib import nullcontext
-            autocast_context = (
-                self._torch.amp.autocast('cuda') 
-                if self.device == "cuda" 
-                else nullcontext()
+            use_autocast = (
+                self.device == "cuda"
+                and not _autocast_disabled(os.getenv("CHATTERBOX_DISABLE_AUTOCAST"))
             )
+            if self.device == "cuda":
+                if not use_autocast:
+                    print("-> CUDA autocast disabled (fp32 inference, Pascal-friendly)")
+                # enabled=False explicitly disables autocast even under an outer
+                # autocast context, rather than merely skipping this one.
+                autocast_context = self._torch.amp.autocast('cuda', enabled=use_autocast)
+            else:
+                autocast_context = nullcontext()
             
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
@@ -574,6 +616,18 @@ class ChatterboxTTS:
 
         # Convert to int16 for playback
         audio_int16 = np.clip(audio_float * 32767.0, -32768, 32767).astype(np.int16)
+
+        # Lazy import: pyaudio is only needed for live speaker playback, not for
+        # file generation. Keeping it out of module scope lets headless hosts
+        # (e.g. a file-only TTS cron) import this module without PortAudio installed.
+        try:
+            import pyaudio
+        except ImportError as exc:
+            raise RuntimeError(
+                "pyaudio is required for live audio playback but is not installed. "
+                "Install it (and system PortAudio) only on hosts that play audio; "
+                "the file-generating cron path does not need it."
+            ) from exc
 
         pa = pyaudio.PyAudio()
         stream = None
