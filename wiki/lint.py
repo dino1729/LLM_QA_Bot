@@ -193,13 +193,18 @@ class WikiLinter:
         # Count inbound links per page
         inbound_counts: Dict[str, int] = {p.stem: 0 for p in pages}
 
-        for page_path in pages:
+        # Also scan navigation files at wiki/ root (e.g., index.md). These link
+        # to every page but are not themselves candidates for orphan status.
+        nav_files = [p for p in (self.vault_root / "wiki").glob("*.md") if p.is_file()]
+        sources = list(pages) + nav_files
+
+        for page_path in sources:
             content = page_path.read_text(encoding="utf-8")
             for match in wikilink_pattern.finditer(content):
                 target = match.group(1).strip().lower().replace(" ", "-")
                 if "/" in target:
                     target = Path(target).stem
-                if target in inbound_counts:
+                if target in inbound_counts and target != page_path.stem:
                     inbound_counts[target] += 1
 
         for slug, count in inbound_counts.items():
@@ -291,7 +296,12 @@ class WikiLinter:
             self._fix_updated(issue)
 
     def _fix_source_count(self, issue: LintIssue) -> None:
-        """Fix source count mismatch in frontmatter."""
+        """Fix source count mismatch in frontmatter.
+
+        Handles both int (`sources: 1`) and list (`sources: []`, `sources: ["x"]`)
+        frontmatter formats. PageWriter writes the int form; older skill-generated
+        pages use the list form.
+        """
         page_path = self._find_page(issue.page)
         if not page_path:
             return
@@ -300,18 +310,29 @@ class WikiLinter:
         body = self.page_writer.read_page_body(page_path)
 
         sources_match = re.search(r"## Sources\n(.*?)(?:\n##|\Z)", body, re.DOTALL)
-        if sources_match:
-            source_lines = [l for l in sources_match.group(1).strip().split("\n") if l.strip().startswith("-")]
-            actual_count = len(source_lines)
+        if not sources_match:
+            return
 
-            # Update frontmatter
-            text = re.sub(
-                r"(sources:\s*)\d+",
-                f"\\g<1>{actual_count}",
+        source_lines = [l for l in sources_match.group(1).strip().split("\n") if l.strip().startswith("-")]
+        actual_count = len(source_lines)
+
+        # Try int form first (sources: N), then list form (sources: [...])
+        new_text, n = re.subn(
+            r"(sources:\s*)\d+",
+            f"\\g<1>{actual_count}",
+            text,
+            count=1,
+        )
+        if n == 0:
+            new_text, n = re.subn(
+                r"^sources:\s*\[.*?\]\s*$",
+                f"sources: {actual_count}",
                 text,
                 count=1,
+                flags=re.MULTILINE,
             )
-            _atomic_write(page_path, text)
+        if n > 0:
+            _atomic_write(page_path, new_text)
             issue.fixed = True
 
     def _fix_confidence_upgrade(self, issue: LintIssue) -> None:

@@ -919,7 +919,7 @@ Write 1-2 powerful sentences capturing the core wisdom about this topic.
 Share ONE brief historical anecdote (2-3 sentences) that illustrates this principle.
 
 [APPLICATION]
-Write 1-2 sentences on how this applies to modern engineering or leadership.
+Write 1-2 sentences on how this applies to becoming a visionary technology leader in the spirit of Jensen Huang. Tie the lesson to first-principles technical judgment, bold long-term bets, platform thinking, customer obsession, ecosystem building, execution intensity, or the ability to turn deep technology into world-changing products when relevant.
 
 CRITICAL RULES:
 1. Your FIRST line MUST be "[KEY INSIGHT]" followed by your insight
@@ -1059,7 +1059,7 @@ RULES:
 3. Keep each section brief (1-3 sentences)
 4. NO introductions, NO meta-commentary - just the formatted content
 
-Context: The user is an engineer who values first principles thinking and systems-level reasoning."""
+Context: The user is an engineer aiming to become a visionary technology leader in the spirit of Jensen Huang. They value first principles thinking, systems-level reasoning, deep technical judgment, bold long-term bets, platform strategy, customer obsession, ecosystem building, execution discipline, and the ability to turn complex technology into world-changing products."""
 
     conversation = [
         {"role": "system", "content": syspromptmessage},
@@ -1112,7 +1112,7 @@ def _get_fallback_lesson(topic: str = ""):
 History repeatedly rewards builders who stay close to observable reality. From Roman aqueduct engineers to Renaissance workshops, durable progress came from measuring constraints carefully, documenting what worked, and improving systems through repeated refinement.
 
 [APPLICATION]
-In engineering and leadership, compare improvements against the current state the user or team actually feels. Make changes legible, test where perception thresholds move, and prioritize the interventions that create a meaningful shift in experience."""
+As a visionary technology leader, compare improvements against the current state customers, teams, and markets actually feel. Make progress measurable, keep a long-horizon platform view, and prioritize the technical and organizational bets that can compound into world-changing products."""
 
     logger.info("Using fallback lesson content")
     return fallback

@@ -32,6 +32,47 @@ from year_progress_and_news_reporter_litellm import (
 )
 
 
+class _StubClient:
+    def __init__(self, response):
+        self.response = response
+
+    def chat_completion(self, **kwargs):
+        return self.response
+
+
+def test_generate_gpt_response_falls_back_on_blank_response(monkeypatch):
+    """Blank LLM responses must not produce empty TTS/newsletter scripts."""
+    from helper_functions import newsletter_generation as ng
+
+    monkeypatch.setattr(ng, "get_client", lambda **kwargs: _StubClient("   \n"))
+
+    result = ng.generate_gpt_response(
+        "Create a spoken year progress announcement. MEMORY PALACE WISDOM - Topic: Strategy\nKey Insight: Constraints improve focus.",
+        "litellm",
+        "fast",
+    )
+
+    assert result.strip()
+    assert "Dinesh" in result
+    assert "Constraints improve focus" in result
+
+
+def test_generate_gpt_response_falls_back_when_cleaning_removes_meta(monkeypatch):
+    """Meta-only responses should not clean down to an empty script."""
+    from helper_functions import newsletter_generation as ng
+
+    monkeypatch.setattr(ng, "get_client", lambda **kwargs: _StubClient("The user wants a spoken update."))
+
+    result = ng.generate_gpt_response(
+        "Create a spoken year progress announcement. Quote: Test quote. Key Insight: Small habits compound.",
+        "litellm",
+        "fast",
+    )
+
+    assert result.strip()
+    assert "Small habits compound" in result
+
+
 def test_newsletter_parsing():
     """Test the newsletter parsing with sample content"""
     

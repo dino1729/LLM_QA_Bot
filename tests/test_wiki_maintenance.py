@@ -244,6 +244,62 @@ class TestLinterIntegration:
         # Both pages exist but registry is empty
         assert len(registry_issues) >= 2
 
+    def test_lint_counts_index_md_as_inbound_link_source(self, vault):
+        """Links from wiki/index.md must count toward inbound counts.
+
+        index.md sits at wiki/ root (not in a content subdir) and was previously
+        invisible to orphan detection, causing pages catalogued in the index to
+        be falsely reported as orphans.
+        """
+        # Add an index.md that links to the orphan-page
+        (vault / "wiki" / "index.md").write_text(
+            "# Index\n\n- [[concepts/orphan-page|Orphan Page]]\n"
+        )
+
+        registry = EntityRegistry(vault / "raw" / "refs" / "legacy-schema" / "entity_registry.json")
+        registry.load()
+        linter = WikiLinter(vault, registry)
+
+        report = linter.run(auto_fix=False)
+        orphan_pages = {i.page for i in report.issues if i.category == "orphan"}
+        assert "orphan-page" not in orphan_pages
+
+    def test_lint_auto_fix_handles_list_format_sources(self, vault, tmp_path):
+        """The sources auto-fixer must handle `sources: []` list form, not just `sources: N` int form.
+
+        Older skill-generated pages use the list form; PageWriter writes the int form.
+        Both must be auto-fixable.
+        """
+        page_path = vault / "wiki" / "concepts" / "list-form-page.md"
+        page_path.write_text(
+            "---\n"
+            "title: \"List Form\"\n"
+            "type: concept\n"
+            "category: engineering\n"
+            "created: \"2026-04-14\"\n"
+            "updated: \"2026-04-14\"\n"
+            "sources: []\n"
+            "tags: [test]\n"
+            "---\n"
+            "# List Form\n\n"
+            "Body. Link to [[orphan-page]] so it isn't an orphan.\n\n"
+            "## Sources\n\n"
+            "- One real source\n"
+        )
+
+        registry = EntityRegistry(vault / "raw" / "refs" / "legacy-schema" / "entity_registry.json")
+        registry.load()
+        linter = WikiLinter(vault, registry)
+
+        report = linter.run(auto_fix=True)
+        # The source_count issue should be marked fixed and the file should now have `sources: 1`
+        source_fixes = [i for i in report.issues if i.category == "source_count" and i.page == "list-form-page"]
+        assert source_fixes, "Expected a source_count issue for list-form-page"
+        assert source_fixes[0].fixed is True
+        content = page_path.read_text()
+        assert "sources: 1" in content
+        assert "sources: []" not in content
+
 
 class TestNewsletterMaintenanceHook:
     """Test that the newsletter pipeline maintenance hook is wired correctly."""

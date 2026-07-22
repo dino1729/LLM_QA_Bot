@@ -147,6 +147,30 @@ class TestWikiIndexer:
 
         content = (populated_vault / "wiki" / "concepts" / "knowledge-connections.md").read_text()
         assert "Knowledge Connections" in content
+        # Page must emit frontmatter so the linter recognizes it as a real concept page
+        assert content.startswith("---\n")
+        assert "title: Knowledge Connections" in content
+        assert "type: concept" in content
+        assert "created:" in content
+        assert "updated:" in content
+
+    def test_update_connections_preserves_created_date(self, populated_vault):
+        """Weekly regeneration must keep the original created date stable."""
+        indexer = WikiIndexer(populated_vault)
+        indexer.update_connections()
+
+        path = populated_vault / "wiki" / "concepts" / "knowledge-connections.md"
+        first = path.read_text()
+        import re
+        first_created = re.search(r"^created:\s*(\S+)", first, re.MULTILINE).group(1)
+
+        # Simulate a later run where someone manually set the created date in the past
+        edited = first.replace(f"created: {first_created}", "created: 2024-01-01")
+        path.write_text(edited)
+
+        indexer.update_connections()
+        second = path.read_text()
+        assert "created: 2024-01-01" in second
 
     def test_compute_stats(self, populated_vault):
         indexer = WikiIndexer(populated_vault)

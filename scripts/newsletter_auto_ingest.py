@@ -423,7 +423,8 @@ def _try_wiki_maintenance(state_file: Path) -> None:
     failures are logged silently.
     """
     try:
-        from config import wiki_config as wc
+        import importlib
+        wc = importlib.import_module("config.wiki_config")
         if not getattr(wc, "wiki_enabled", False):
             return
         if not getattr(wc, "wiki_lint_run_with_newsletter_cron", True):

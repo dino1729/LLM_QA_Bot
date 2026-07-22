@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -10,6 +11,99 @@ from helper_functions.newsletter_parsing import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_prompt_value(prompt: str, label: str) -> str:
+    """Extract a single-line value from the progress prompt."""
+    match = re.search(rf"^{re.escape(label)}:\s*(.+)$", prompt, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    inline_match = re.search(rf"\b{re.escape(label)}:\s*([^\n.]+(?:\.[^\n.]*)?)", prompt)
+    return inline_match.group(1).strip() if inline_match else ""
+
+
+def _extract_prompt_block(prompt: str, start_label: str, stop_labels: List[str]) -> str:
+    """Extract a block from the progress prompt until the next known section."""
+    start = prompt.find(start_label)
+    if start < 0:
+        return ""
+    block = prompt[start + len(start_label):]
+    stop_positions = [block.find(label) for label in stop_labels if block.find(label) >= 0]
+    if stop_positions:
+        block = block[:min(stop_positions)]
+    return block.strip()
+
+
+def _build_progress_script_fallback(user_message: str) -> str:
+    """Build a deterministic spoken script when the LLM returns unusable text."""
+    prompt = str(user_message or "")
+
+    days_completed = _extract_prompt_value(prompt, "- Days completed")
+    days_remaining = _extract_prompt_value(prompt, "- Days remaining")
+    percent_complete = _extract_prompt_value(prompt, "- Percent complete")
+    location = _extract_prompt_value(prompt, "- Location")
+    temperature = _extract_prompt_value(prompt, "- Temperature")
+    conditions = _extract_prompt_value(prompt, "- Conditions")
+
+    quote_match = re.search(r'INSPIRATIONAL QUOTE:\s*\n"?(.+?)"?\s*-\s*(.+)', prompt, re.DOTALL)
+    quote_text = ""
+    quote_author = ""
+    if quote_match:
+        quote_text = quote_match.group(1).splitlines()[0].strip().strip('"')
+        quote_author = quote_match.group(2).splitlines()[0].strip()
+
+    lesson_topic = _extract_prompt_value(prompt, "MEMORY PALACE WISDOM - Topic")
+    lesson_insight = _extract_prompt_value(prompt, "Key Insight")
+    if not lesson_insight:
+        lesson_insight = _extract_prompt_value(prompt, "Curated Insight")
+    if not lesson_topic:
+        lesson_topic = _extract_prompt_value(prompt, "DAILY LESSON - Topic")
+
+    weather_part = ""
+    if location or temperature or conditions:
+        weather_part = (
+            f" In {location or 'your area'}, it is {temperature or 'currently updating'}"
+            f" with {conditions or 'conditions worth checking before you head out'}."
+        )
+
+    quote_part = ""
+    if quote_text:
+        quote_text = quote_text.rstrip(".!?")
+        quote_part = f" Today's quote from {quote_author or 'the archive'} is: {quote_text}."
+
+    lesson_part = ""
+    if lesson_insight:
+        topic_text = f" on {lesson_topic}" if lesson_topic else ""
+        lesson_part = f" The lesson{topic_text} is this: {lesson_insight}"
+
+    progress_part = ""
+    if days_completed or days_remaining or percent_complete:
+        progress_part = (
+            f" You've completed {days_completed or 'another meaningful stretch'}"
+            f" of the year, with {days_remaining or 'time still ahead'} remaining."
+            f" That puts the year at {percent_complete or 'a real checkpoint'} complete."
+        )
+
+    return (
+        "Dinesh, quick systems check from EDITH."
+        f"{progress_part}{weather_part}{quote_part}{lesson_part}"
+        " Use it as a practical cue today: protect attention, choose the next high-leverage action, and keep compounding."
+    ).strip()
+
+
+def _is_unusable_generated_response(text: str) -> bool:
+    """Return True when a model response should not be sent to TTS/output."""
+    normalized = re.sub(r"\s+", " ", (text or "")).strip().lower()
+    if not normalized:
+        return True
+    meta_only = (
+        "the user wants",
+        "user wants",
+        "we need",
+        "let me",
+        "task:",
+    )
+    return any(normalized.startswith(prefix) for prefix in meta_only) and len(normalized.split()) < 12
 
 
 def load_persona_content(voice_persona: str, personas_dir: str = "personas") -> str | None:
@@ -108,7 +202,11 @@ Do NOT include meta-commentary like "The user wants..." - just speak directly to
         temperature=0.4,
     )
 
-    cleaned = message.strip()
+    cleaned = (message or "").strip()
+
+    if _is_unusable_generated_response(cleaned):
+        logger.warning("LLM returned an unusable progress script; using deterministic fallback")
+        return _build_progress_script_fallback(user_message)
 
     if cleaned.lower().startswith(
         ("the user", "user wants", "we need", "let me", "task:")
@@ -131,6 +229,10 @@ Do NOT include meta-commentary like "The user wants..." - just speak directly to
                 start_idx = i
                 break
         cleaned = "\n".join(lines[start_idx:]).strip()
+
+    if _is_unusable_generated_response(cleaned):
+        logger.warning("Cleaned progress script was unusable; using deterministic fallback")
+        return _build_progress_script_fallback(user_message)
 
     return cleaned
 

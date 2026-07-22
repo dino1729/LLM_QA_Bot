@@ -451,6 +451,58 @@ class MemoryPalaceBot:
         lines.append("Save these to your Memory Palace?")
         return "\n".join(lines)
 
+    async def _answer_callback_safely(self, query, text: Optional[str] = None) -> None:
+        """Acknowledge a Telegram callback without blocking the main action."""
+        try:
+            kwargs = {"text": text} if text else {}
+            await query.answer(**kwargs)
+        except Exception as e:
+            logger.warning("Failed to answer Telegram callback: %s", e)
+
+    async def _edit_callback_message_safely(self, query, text: str) -> bool:
+        """Edit the inline-keyboard message without making feedback failures fatal."""
+        try:
+            await query.edit_message_text(text)
+            return True
+        except Exception as e:
+            logger.warning("Failed to edit Telegram callback message: %s", e)
+            return False
+
+    async def _send_progress_message_safely(self, query, text: str):
+        """Send a visible progress message at the bottom of the chat."""
+        message = getattr(query, "message", None)
+        reply_text = getattr(message, "reply_text", None)
+        if reply_text is None:
+            return None
+
+        try:
+            return await reply_text(text)
+        except Exception as e:
+            logger.warning("Failed to send Telegram progress message: %s", e)
+            return None
+
+    async def _finish_progress_message_safely(self, query, progress_message, text: str) -> bool:
+        """Turn the progress message into a final receipt, or send a fallback receipt."""
+        edit_text = getattr(progress_message, "edit_text", None) if progress_message else None
+        if edit_text is not None:
+            try:
+                await edit_text(text)
+                return True
+            except Exception as e:
+                logger.warning("Failed to edit Telegram progress message: %s", e)
+
+        message = getattr(query, "message", None)
+        reply_text = getattr(message, "reply_text", None)
+        if reply_text is not None:
+            try:
+                await reply_text(text)
+                return True
+            except Exception as e:
+                logger.warning("Failed to send Telegram fallback receipt: %s", e)
+
+        await self._edit_callback_message_safely(query, text)
+        return False
+
     @authorized_only
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1029,30 +1081,50 @@ class MemoryPalaceBot:
     ) -> int:
         """Handle save or skip actions for a pasted-link preview."""
         query = update.callback_query
-        await query.answer()
 
         pending = context.user_data.get("pending_link_preview")
         if not pending:
-            await query.edit_message_text(
+            await self._answer_callback_safely(query, text="That link preview expired.")
+            await self._edit_callback_message_safely(
+                query,
                 "I've lost track of that link preview. Please paste the link again."
             )
             return State.AWAITING_LESSON
 
         if query.data == "link_skip":
+            await self._answer_callback_safely(query, text="Skipped")
             title = pending.get("title", "that link")
             self._clear_link_preview(context)
-            await query.edit_message_text(f"Skipped saving insights from {title}.")
+            await self._edit_callback_message_safely(
+                query,
+                f"Skipped saving insights from {title}.",
+            )
             return State.AWAITING_LESSON
 
         preview = pending.get("preview")
         if preview is None:
+            await self._answer_callback_safely(query, text="Preview expired.")
             self._clear_link_preview(context)
-            await query.edit_message_text(
+            await self._edit_callback_message_safely(
+                query,
                 "I've lost the extracted preview state. Please paste the link again."
             )
             return State.AWAITING_LESSON
 
         save_archive = query.data == "link_save_archive"
+        title = pending.get("title", "Untitled")
+        await self._answer_callback_safely(query, text="Saving to Memory Palace...")
+        await self._edit_callback_message_safely(
+            query,
+            f"Saving insights from {title}...\n\n"
+            "I'll post a confirmation below when the database write finishes.",
+        )
+        progress_message = await self._send_progress_message_safely(
+            query,
+            f"Saving insights from {title}...\n"
+            "I'll confirm when the Memory Palace write finishes.",
+        )
+
         try:
             result = await asyncio.to_thread(
                 save_link_preview,
@@ -1063,21 +1135,40 @@ class MemoryPalaceBot:
         except Exception as e:
             logger.error("Failed saving link preview for %s: %s", pending.get("source_url"), e)
             self._clear_link_preview(context)
-            await query.edit_message_text(f"Failed to save extracted insights: {e}")
+            failure_text = f"Failed to save extracted insights from {title}: {e}"
+            posted_below = await self._finish_progress_message_safely(
+                query,
+                progress_message,
+                failure_text,
+            )
+            if posted_below:
+                await self._edit_callback_message_safely(
+                    query,
+                    f"Save failed for {title}.\n\nDetails posted below.",
+                )
             return State.AWAITING_LESSON
 
         archive_status = result.archive_status
         if pending.get("already_archived") and not save_archive:
             archive_status = "Already in Knowledge Archive (skipped)"
 
-        title = pending.get("title", "Untitled")
         self._clear_link_preview(context)
-        await query.edit_message_text(
+        receipt_text = (
             f"✅ Saved insights from {title}\n\n"
             f"Lessons saved: {result.edith_count}\n"
             f"Local Memory: {result.local_memory_status}\n"
             f"Archive: {archive_status}"
         )
+        posted_below = await self._finish_progress_message_safely(
+            query,
+            progress_message,
+            receipt_text,
+        )
+        if posted_below:
+            await self._edit_callback_message_safely(
+                query,
+                f"Saved insights from {title}.\n\nConfirmation posted below.",
+            )
 
         # Wiki hook: update wiki pages in background (non-blocking)
         if preview is not None:

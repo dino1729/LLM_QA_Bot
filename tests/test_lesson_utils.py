@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from helper_functions.lesson_utils import (
     _get_fallback_lesson,
     generate_lesson_response,
+    get_random_lesson,
     parse_lesson_to_dict,
 )
 
@@ -59,3 +60,19 @@ def test_fallback_lesson_is_structured_and_parseable():
     assert parsed["key_insight"]
     assert parsed["historical"]
     assert parsed["application"]
+
+
+def test_random_lesson_application_prompt_targets_visionary_technology_leadership():
+    """Daily lesson applications should be aimed at visionary technology leadership."""
+    with patch("helper_functions.lesson_utils.get_random_topic", return_value="Systems thinking"), patch(
+        "helper_functions.lesson_utils.generate_lesson_response",
+        return_value="[KEY INSIGHT]\nInsight.\n\n[HISTORICAL]\nHistory.\n\n[APPLICATION]\nApplication.",
+    ) as mock_generate:
+        topic, _ = get_random_lesson("litellm", model_tier="smart")
+
+    prompt = mock_generate.call_args.args[0]
+
+    assert topic == "Systems thinking"
+    assert "visionary technology leader" in prompt.lower()
+    assert "jensen huang" in prompt.lower()
+    assert "semiconductor" not in prompt.lower()

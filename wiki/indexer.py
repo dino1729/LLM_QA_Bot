@@ -9,7 +9,7 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -168,8 +168,21 @@ class WikiIndexer:
         # Identify clusters (connected components with 3+ nodes)
         clusters = self._find_clusters(link_graph)
 
-        # Write CONNECTIONS.md
+        today = date.today().isoformat()
+        created = self._read_existing_created_date(self.connections_path) or today
+
+        # Write CONNECTIONS.md with frontmatter so lint passes and the page is recognized as a concept
         lines = [
+            "---\n",
+            "title: Knowledge Connections\n",
+            "type: concept\n",
+            "category: meta\n",
+            f"created: {created}\n",
+            f"updated: {today}\n",
+            "sources: 0\n",
+            "tags: [auto-generated, index, clusters]\n",
+            "---\n",
+            "\n",
             "# Knowledge Connections\n",
             "\nConcept clusters identified by wikilink density.\n",
             "Auto-updated by the wiki pipeline.\n\n---\n",
@@ -190,6 +203,21 @@ class WikiIndexer:
         self.connections_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(self.connections_path, "".join(lines))
         logger.info("Updated knowledge-connections.md: %d clusters", len(clusters))
+
+    @staticmethod
+    def _read_existing_created_date(path: Path) -> Optional[str]:
+        """Return the existing `created:` date from frontmatter if present, else None."""
+        if not path.exists():
+            return None
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
+        if not match:
+            return None
+        created_match = re.search(r"^created:\s*(\S+)", match.group(1), re.MULTILINE)
+        return created_match.group(1).strip().strip('"\'') if created_match else None
 
     def update_timeline(self) -> None:
         """

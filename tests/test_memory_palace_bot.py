@@ -1110,6 +1110,10 @@ class TestLinkPreviewFlow:
         query.data = "link_save"
         query.answer = AsyncMock()
         query.edit_message_text = AsyncMock()
+        progress_message = AsyncMock()
+        progress_message.edit_text = AsyncMock()
+        query.message = MagicMock()
+        query.message.reply_text = AsyncMock(return_value=progress_message)
 
         update = MagicMock()
         update.callback_query = query
@@ -1127,7 +1131,9 @@ class TestLinkPreviewFlow:
         }
 
         bot = MemoryPalaceBot()
-        result = await bot.handle_link_preview_response(update, context)
+        with patch("helper_functions.memory_palace_bot.asyncio.create_task") as mock_create_task:
+            mock_create_task.side_effect = lambda coro: coro.close()
+            result = await bot.handle_link_preview_response(update, context)
 
         assert result == State.AWAITING_LESSON
         mock_save_link_preview.assert_called_once_with(
@@ -1136,6 +1142,13 @@ class TestLinkPreviewFlow:
             edith_delay_seconds=0.0,
         )
         assert "pending_link_preview" not in context.user_data
+        query.answer.assert_called_once_with(text="Saving to Memory Palace...")
+        progress_text = query.message.reply_text.call_args[0][0]
+        assert "Saving insights from Test Video" in progress_text
+        final_text = progress_message.edit_text.call_args[0][0]
+        assert "Saved insights from Test Video" in final_text
+        assert "Lessons saved: 2" in final_text
+        assert "Local Memory: Saved to Memory Palace" in final_text
 
     @pytest.mark.asyncio
     @patch("helper_functions.memory_palace_bot.save_link_preview", create=True)
@@ -1189,7 +1202,9 @@ class TestLinkPreviewFlow:
         }
 
         bot = MemoryPalaceBot()
-        result = await bot.handle_link_preview_response(update, context)
+        with patch("helper_functions.memory_palace_bot.asyncio.create_task") as mock_create_task:
+            mock_create_task.side_effect = lambda coro: coro.close()
+            result = await bot.handle_link_preview_response(update, context)
 
         assert result == State.AWAITING_LESSON
         mock_save_link_preview.assert_called_once_with(
