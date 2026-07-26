@@ -143,7 +143,8 @@ function apiCall<T>(
       } catch (parseError) {
         // If JSON parsing fails for successful response, throw descriptive error
         throw new Error(
-          `Failed to parse JSON response from ${url}: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`
+          `Failed to parse JSON response from ${url}: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+          { cause: parseError },
         );
       }
     } catch (error) {
